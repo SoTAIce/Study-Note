@@ -1,0 +1,25 @@
+node_modules/
+dist/
+pnpm-debug.log
+*.log
+
+# 运行时数据与个人内容：一律不进 git（公开仓库里由 bin/publish.ps1 兜底剔除）
+data/index.db
+data/index.db-*
+data/index.db-journal
+data/.history/
+data/.trash/
+data/config.json
+data/backup-state.json
+data/backup-manifest.json
+
+# 个人笔记与分组数据：只留在本机（data/notes 里自己再开一个 git 做本地版本历史）
+data/notes/*
+!data/notes/.gitkeep
+data/groups.json
+
+# 计划执行期的本地工作区
+.superpowers/
+
+# 会话记录是本机聊天数据（含工具调用细节），不进 git
+data/chats/

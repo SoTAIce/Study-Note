@@ -1,0 +1,290 @@
+import { useEffect, useState } from "react";
+import type { KeyboardEvent, RefObject, SyntheticEvent } from "react";
+import Preview from "./Preview.tsx";
+import type { ConflictInfo, NoteDetail } from "../api.ts";
+import { relativeTime } from "../lib/time.ts";
+
+export type SaveStatus = "idle" | "saving" | "saved" | "dirty" | "error" | "conflict";
+
+const STATUS_TEXT: Record<SaveStatus, string> = {
+  idle: "",
+  saving: "保存中…",
+  saved: "已保存",
+  dirty: "未保存",
+  error: "保存失败",
+  conflict: "有冲突",
+};
+
+const TYPE_LABEL: Record<NoteDetail["meta"]["type"], string> = {
+  note: "笔记",
+  idea: "想法",
+  source: "来源",
+};
+
+type Props = {
+  note: NoteDetail;
+  title: string;
+  body: string;
+  tags: string[];
+  /** 已有分组，供输入框联想 */
+  groups: string[];
+  /**
+   * 把这篇笔记移到某个组（null = 移出分组）。
+   * 返回值表示是否成功；失败时输入框要还原成磁盘上的组名。
+   */
+  onMoveToGroup: (group: string | null) => Promise<boolean>;
+  status: SaveStatus;
+  saveError: string | null;
+  conflict: ConflictInfo | null;
+  textareaRef: RefObject<HTMLTextAreaElement | null>;
+  railOpen: boolean;
+  onChangeTitle: (value: string) => void;
+  onChangeBody: (value: string) => void;
+  onSaveNow: () => void;
+  onRetrySave: () => void;
+  onDelete: () => void;
+  onToggleRail: () => void;
+  onResolveOverwrite: () => void;
+  onResolveReload: () => void;
+  onOpenWikilink: (target: string) => void;
+  onFilterTag: (tag: string) => void;
+  onSelectionChange: (length: number) => void;
+  /** 回到首页（欢迎界面），那里是「新建笔记」的入口。 */
+  onGoHome: () => void;
+  /** 打开全屏预览（铺满窗口阅读）。 */
+  onOpenPreviewFull: () => void;
+  /** 上一次「整篇替换」是否还能撤销。 */
+  aiUndoAvailable: boolean;
+  onUndoAiReplace: () => void;
+};
+
+export default function EditorPane({
+  note,
+  title,
+  body,
+  tags,
+  groups,
+  onMoveToGroup,
+  status,
+  saveError,
+  conflict,
+  textareaRef,
+  railOpen,
+  onChangeTitle,
+  onChangeBody,
+  onSaveNow,
+  onRetrySave,
+  onDelete,
+  onToggleRail,
+  onResolveOverwrite,
+  onResolveReload,
+  onOpenWikilink,
+  onFilterTag,
+  onSelectionChange,
+  onGoHome,
+  onOpenPreviewFull,
+  aiUndoAvailable,
+  onUndoAiReplace,
+}: Props) {
+  const lines = body ? body.split("\n").length : 0;
+  const [groupDraft, setGroupDraft] = useState(note.meta.group ?? "");
+
+  // 切到别的笔记 / 外部改了分组时，输入框要跟着变（否则会显示上一篇的组名）
+  useEffect(() => {
+    setGroupDraft(note.meta.group ?? "");
+  }, [note.id, note.meta.group]);
+
+  async function commitGroup(): Promise<void> {
+    const next = groupDraft.trim();
+    const current = (note.meta.group ?? "").trim();
+    if (next === current) {
+      setGroupDraft(current);
+      return;
+    }
+    const ok = await onMoveToGroup(next ? next : null);
+    // 失败（比如组名非法、磁盘被外部改动）就别让输入框停在跟文件不一致的内容上
+    if (!ok) setGroupDraft(note.meta.group ?? "");
+  }
+
+  function handleTitleKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      textareaRef.current?.focus();
+    }
+  }
+
+  function reportSelection(event: SyntheticEvent<HTMLTextAreaElement>): void {
+    const target = event.currentTarget;
+    onSelectionChange(Math.max(0, target.selectionEnd - target.selectionStart));
+  }
+
+  return (
+    <div className="editor">
+      <header className="editor__head">
+        <div className="editor__titlewrap">
+          <input
+            className="editor__title"
+            value={title}
+            onChange={(event) => onChangeTitle(event.target.value)}
+            onKeyDown={handleTitleKeyDown}
+            placeholder="无标题"
+            aria-label="笔记标题"
+            spellCheck={false}
+          />
+          <div className="editor__meta">
+            <span className={`type-badge type-badge--${note.meta.type}`}>{TYPE_LABEL[note.meta.type]}</span>
+            <span className="editor__updated">更新于 {relativeTime(note.meta.updated)}</span>
+            <label className="editor__group" title="把这篇文章归到某个分组（只改组名，不改笔记内容，也不改更新时间）">
+              <span className="editor__group-label">分组</span>
+              <input
+                className="editor__group-input"
+                value={groupDraft}
+                onChange={(event) => setGroupDraft(event.target.value)}
+                onBlur={() => commitGroup()}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    event.currentTarget.blur();
+                  }
+                  if (event.key === "Escape") {
+                    setGroupDraft(note.meta.group ?? "");
+                    event.currentTarget.blur();
+                  }
+                }}
+                list="editor-group-options"
+                placeholder="未分组"
+                spellCheck={false}
+                aria-label="笔记分组"
+              />
+              <datalist id="editor-group-options">
+                {groups.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            </label>
+          </div>
+        </div>
+
+        <div className="editor__actions">
+          <span className={`save-state save-state--${status}`} aria-live="polite">
+            <span className="save-state__dot" aria-hidden="true" />
+            {STATUS_TEXT[status]}
+          </span>
+          <button type="button" className="btn btn--small" onClick={onGoHome} title="回到首页（那里可以新建笔记）">
+            ← 首页
+          </button>
+          {aiUndoAvailable ? (
+            <button
+              type="button"
+              className="btn btn--small btn--undo"
+              onClick={onUndoAiReplace}
+              title="恢复 AI 整篇替换之前的正文"
+            >
+              撤销 AI 改写
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="btn btn--small"
+            onClick={onOpenPreviewFull}
+            title="全屏预览（Ctrl+Shift+F）"
+          >
+            ⛶ 全屏预览
+          </button>
+          <button type="button" className="btn btn--small" onClick={onSaveNow} title="立即保存（Ctrl+S）">
+            保存
+          </button>
+          <button
+            type="button"
+            className="btn btn--small"
+            onClick={onToggleRail}
+            aria-pressed={railOpen}
+            title={railOpen ? "收起关联面板" : "展开关联面板"}
+          >
+            {railOpen ? "隐藏关联" : "关联"}
+          </button>
+          <button type="button" className="btn btn--small btn--danger" onClick={onDelete}>
+            删除
+          </button>
+        </div>
+      </header>
+
+      {conflict ? (
+        <div className="conflict" role="alert">
+          <div className="conflict__text">
+            <strong>文件已被外部修改</strong>
+            <span>
+              磁盘上的版本在 {relativeTime(conflict.diskUpdated)} 变了，你的修改还没保存。
+              要覆盖磁盘版本，还是丢掉本地修改重新加载？
+            </span>
+          </div>
+          <div className="conflict__actions">
+            <button type="button" className="btn btn--small btn--warn" onClick={onResolveOverwrite}>
+              以我的覆盖
+            </button>
+            <button type="button" className="btn btn--small" onClick={onResolveReload}>
+              重新加载
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {status === "error" && saveError ? (
+        <div className="error-bar" role="alert">
+          <span>保存失败：{saveError}</span>
+          <button type="button" className="btn btn--small" onClick={onRetrySave}>
+            重试
+          </button>
+        </div>
+      ) : null}
+
+      <div className="tagline" aria-label="标签">
+        {tags.length === 0 ? (
+          <span className="tagline__hint">在正文里写 #标签 就会自动归类。</span>
+        ) : (
+          tags.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              className="tagline__chip"
+              onClick={() => onFilterTag(tag)}
+              title={`筛选 #${tag}`}
+            >
+              #{tag}
+            </button>
+          ))
+        )}
+      </div>
+
+      <div className="split">
+        <div className="split__pane split__pane--write">
+          <textarea
+            ref={textareaRef}
+            className="editor__textarea"
+            value={body}
+            onChange={(event) => onChangeBody(event.target.value)}
+            onSelect={reportSelection}
+            onKeyUp={reportSelection}
+            onMouseUp={reportSelection}
+            placeholder={"在这里记。Markdown、[[双链]]、#标签 都支持。\nCtrl+S 立即保存，离开会自动保存。"}
+            aria-label="笔记正文"
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </div>
+        <div className="split__pane split__pane--preview">
+          <Preview markdown={body} onOpenWikilink={onOpenWikilink} onFilterTag={onFilterTag} />
+        </div>
+      </div>
+
+      <footer className="editor__foot">
+        <span className="editor__path" title={note.relPath}>
+          {note.relPath}
+        </span>
+        <span className="editor__stats">
+          {lines} 行 · {body.length} 字 · 自动保存
+        </span>
+      </footer>
+    </div>
+  );
+}

@@ -1,0 +1,73 @@
+:root {
+  --bg: #0f1115;
+  --bg-raised: #161a21;
+  --bg-sunken: #0b0d11;
+  --line: #262c36;
+  --text: #e6e9ef;
+  --text-dim: #9aa4b2;
+  --text-faint: #6b7684;
+  --accent: #7aa2f7;
+  --accent-soft: rgba(122, 162, 247, 0.14);
+  --warn: #e0af68;
+  --danger: #f7768e;
+  --radius: 8px;
+  --font-ui: -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.boot {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.boot h1 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.boot-status {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.boot-status--ok {
+  color: var(--accent);
+}
+
+.boot-status--down {
+  color: var(--danger);
+}

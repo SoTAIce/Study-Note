@@ -1,0 +1,31 @@
+{
+  "name": "study-notes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "个人学习记录与想法捕捉工作台：Markdown 为真源，SQLite 为索引",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "vite",
+    "dev:server": "node --watch server/main.ts",
+    "build": "vite build",
+    "start": "node server/main.ts",
+    "test": "node --test --test-isolation=none \"server/tests/*.test.ts\" \"web/src/lib/*.test.ts\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "marked": "^18.1.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  }
+}

@@ -1,0 +1,25 @@
+# Study Notes MCP 注册片段（参考用；真正安装请跑 bin\install-mcp.ps1）
+#
+# DSH 的 desktop profile 由 Electron 应用独占管理，`dsh --profile desktop` 会被拒绝，
+# 所以正确做法是把它追加到用户 patch 层：
+#   C:\Users\<user>\.dsh\profiles\desktop\cordis.patch.yml
+# 该层在每个 bundle 层之后应用，改完重启 DSH 生效（MCP 工具在启动时发现）。
+#
+# 已用 `dsh --profile <临时profile> --patch mcp.patch.yml --dump-config` 验证：真实 loader 接受这段
+# insert，并把它组合进配置树（mcp-study-notes / @deepseek-ai/dsh-mcp-client / serverName: study-notes）。
+#
+# 注意：command 用绝对路径（本机 node 在 C:\Program Files\nodejs\node.exe）。
+- insert:
+    - id: mcp-study-notes
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: study-notes
+        transport: stdio
+        command: 'C:\Program Files\nodejs\node.exe'
+        args:
+          - 'D:\work\study-notes\dsh-mcp\server.mjs'
+        env:
+          STUDY_NOTES_DIR: 'D:\work\study-notes'
+          STUDY_DATA: 'D:\work\study-notes\data'
+        toolCallTimeoutMs: 60000
+        failOnStartupError: false

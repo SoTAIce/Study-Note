@@ -1,0 +1,189 @@
+import fs from "node:fs";
+import path from "node:path";
+import type { DatabaseSync } from "node:sqlite";
+import { contentHash, excerpt, extractLinks, extractTags } from "./parse.ts";
+import { toLocalIso, type NoteStore, type StoredNote } from "./store.ts";
+
+const DEBOUNCE_MS = 250;
+/** 自己的写入事件通常几毫秒内就到；超过这个窗口的事件当外部修改，正常索引。 */
+const SELF_WRITE_WINDOW_MS = 800;
+
+export class Indexer {
+  private readonly db: DatabaseSync;
+  private readonly store: NoteStore;
+  private readonly now: () => Date;
+  private readonly ignored = new Map<string, number>();
+
+  constructor(deps: { db: DatabaseSync; store: NoteStore; now?: () => Date }) {
+    this.db = deps.db;
+    this.store = deps.store;
+    this.now = deps.now ?? (() => new Date());
+  }
+
+  /** 自己写入文件时先登记，watcher 在时间窗内看到该路径就跳过，避免自触发重索引。 */
+  ignoreNext(relPath: string): void {
+    this.ignored.set(relPath, Date.now() + SELF_WRITE_WINDOW_MS);
+    setTimeout(() => {
+      const until = this.ignored.get(relPath);
+      if (until !== undefined && until <= Date.now()) this.ignored.delete(relPath);
+    }, SELF_WRITE_WINDOW_MS + 50).unref?.();
+  }
+
+  private isSelfWrite(relPath: string): boolean {
+    const until = this.ignored.get(relPath);
+    if (until === undefined) return false;
+    if (Date.now() <= until) return true;
+    this.ignored.delete(relPath);
+    return false;
+  }
+
+  /**
+   * 两个文件可能共用同一个 frontmatter id（Explorer 里复制 .md 就会发生）。
+   * 索引按「路径优先」：后出现的那个改用从路径派生的稳定 id，两条笔记都留在索引里。
+   */
+  private uniqueId(candidate: string, relPath: string): string {
+    const row = this.db.prepare("SELECT path FROM notes WHERE id = ?").get(candidate) as
+      | { path: string }
+      | undefined;
+    if (!row || row.path === relPath) return candidate;
+    const derived = `${candidate}-${contentHash(relPath).slice(0, 6)}`;
+    console.warn(`[index] id 冲突：${relPath} 与 ${row.path} 共用 id ${candidate}，前者索引为 ${derived}`);
+    return derived;
+  }
+
+  indexFile(relPath: string): void {
+    if (!fs.existsSync(this.store.absPath(relPath))) {
+      this.removeFile(relPath);
+      return;
+    }
+    const note = this.store.read(relPath);
+    const at = toLocalIso(this.now());
+
+    const previous = this.db.prepare("SELECT id FROM notes WHERE path = ?").get(relPath) as
+      | { id: string }
+      | undefined;
+    if (previous) this.deleteById(previous.id);
+    const id = this.uniqueId(note.id, relPath);
+
+    const tags = new Set<string>([...note.parsed.meta.tags, ...extractTags(note.parsed.body)]);
+    const links = extractLinks(note.parsed.body);
+
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO notes (id, path, title, excerpt, type, created, updated, content_hash, chars, indexed_at, group_name)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        relPath,
+        note.parsed.meta.title,
+        excerpt(note.parsed.body, 160),
+        note.parsed.meta.type,
+        note.parsed.meta.created,
+        note.parsed.meta.updated,
+        note.hash,
+        note.parsed.body.length,
+        at,
+        note.parsed.meta.group ?? null,
+      );
+
+    const insertTag = this.db.prepare("INSERT OR IGNORE INTO tags (note_id, tag) VALUES (?, ?)");
+    for (const tag of tags) insertTag.run(id, tag);
+
+    const insertLink = this.db.prepare(
+      "INSERT INTO links (src_id, target_title, target_id) VALUES (?, ?, ?)",
+    );
+    for (const link of links) {
+      insertLink.run(id, link.title, this.resolveTargetId(link.title));
+    }
+
+    this.db.prepare("DELETE FROM notes_fts WHERE note_id = ?").run(id);
+    this.db
+      .prepare("INSERT INTO notes_fts (note_id, title, body) VALUES (?, ?, ?)")
+      .run(id, note.parsed.meta.title, note.parsed.body);
+
+    // 之前引用过我标题的笔记，现在可以补上 target_id 了
+    this.db
+      .prepare("UPDATE links SET target_id = ? WHERE target_title = ? AND target_id IS NULL")
+      .run(id, note.parsed.meta.title);
+  }
+
+  removeFile(relPath: string): void {
+    const row = this.db.prepare("SELECT id FROM notes WHERE path = ?").get(relPath) as
+      | { id: string }
+      | undefined;
+    if (!row) return;
+    this.deleteById(row.id);
+  }
+
+  private deleteById(id: string): void {
+    this.db.prepare("DELETE FROM notes WHERE id = ?").run(id);
+    this.db.prepare("DELETE FROM tags WHERE note_id = ?").run(id);
+    this.db.prepare("DELETE FROM links WHERE src_id = ?").run(id);
+    this.db.prepare("UPDATE links SET target_id = NULL WHERE target_id = ?").run(id);
+    this.db.prepare("DELETE FROM notes_fts WHERE note_id = ?").run(id);
+  }
+
+  private resolveTargetId(title: string): string | null {
+    const row = this.db
+      .prepare("SELECT id FROM notes WHERE title = ? ORDER BY path LIMIT 1")
+      .get(title) as { id: string } | undefined;
+    return row ? row.id : null;
+  }
+
+  reindexAll(): { indexed: number; removed: number; failed: number } {
+    const files = this.store.list();
+    const known = new Set(
+      (this.db.prepare("SELECT path FROM notes").all() as Array<{ path: string }>).map((r) => r.path),
+    );
+    let indexed = 0;
+    let removed = 0;
+    let failed = 0;
+    for (const relPath of files) {
+      try {
+        this.indexFile(relPath);
+        indexed += 1;
+      } catch (err) {
+        // 单个文件坏掉（编码异常、被别的程序锁住、同名目录）不该拖垮整次启动
+        failed += 1;
+        console.warn(`[index] 跳过无法索引的文件 ${relPath}：${(err as Error).message}`);
+      }
+      known.delete(relPath);
+    }
+    for (const stale of known) {
+      this.removeFile(stale);
+      removed += 1;
+    }
+    return { indexed, removed, failed };
+  }
+
+  watch(): () => void {
+    const timers = new Map<string, NodeJS.Timeout>();
+    const watcher = fs.watch(this.store.notesRoot, { recursive: true }, (_event, filename) => {
+      if (!filename) return;
+      const rel = String(filename).split(path.sep).join("/").split("\\").join("/");
+      if (!rel.toLowerCase().endsWith(".md")) return;
+      if (this.isSelfWrite(rel)) return;
+      const pending = timers.get(rel);
+      if (pending) clearTimeout(pending);
+      timers.set(
+        rel,
+        setTimeout(() => {
+          timers.delete(rel);
+          try {
+            this.indexFile(rel);
+          } catch {
+            // 文件在防抖窗口内被删掉了；下次扫描会纠正
+          }
+        }, DEBOUNCE_MS),
+      );
+    });
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+      watcher.close();
+    };
+  }
+}
+
+export type { StoredNote };
