@@ -353,7 +353,7 @@ export function createSession(opts = {}) {
       const current = store.read(relPath);
       const stamp = localStamp(clock());
       const body = `${current.parsed.body}\n\n### ${stamp}\n${text}\n`;
-      const saved = store.save(relPath, body, current.hash);
+      const saved = store.save(relPath, body, current.hash, {}, { checkpoint: "agent" });
       await notifyApp(saved.relPath);
       return `已追加到「${saved.parsed.meta.title}」\nid: ${saved.id}\npath: ${saved.relPath}\n小标题: ### ${stamp}`;
     },

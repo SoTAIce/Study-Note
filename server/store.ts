@@ -14,6 +14,38 @@ import {
   type ParsedNote,
 } from "./parse.ts";
 import { normalizeGroupName, validateGroupName } from "./groups.ts";
+import {
+  COALESCE_MS,
+  compareNewestFirst,
+  isValidNoteId,
+  isValidVersionId,
+  makeVersionId,
+  parseVersionId,
+  planPrune,
+  type HistoryReason,
+  type ParsedVersionId,
+} from "./history.ts";
+
+export type { HistoryReason } from "./history.ts";
+
+/** 历史版本列表里的一项（不含正文）。 */
+export type HistoryEntry = {
+  versionId: string;
+  /** 这份内容当时的保存时间（frontmatter 的 updated；读不到退回拍摄时间） */
+  at: string;
+  /** 快照是什么时候拍的（即被哪次保存覆盖掉的） */
+  takenAt: string;
+  reason: HistoryReason;
+  title: string;
+  chars: number;
+  bytes: number;
+};
+
+export type HistoryVersion = HistoryEntry & { meta: NoteMeta; body: string; raw: string };
+
+export class HistoryNotFoundError extends Error {
+  readonly code = "NOT_FOUND" as const;
+}
 
 /** 组名规范化 + 校验：非法直接抛中文错误，调用方不用重复判。 */
 function cleanGroup(raw: string | null | undefined): string | undefined {
@@ -51,7 +83,6 @@ export type StoredNote = {
 
 export type TrashedNote = { name: string; origPath: string; deletedAt: string };
 
-const MAX_HISTORY = 20;
 const MAX_VERSION_BYTES = 2 * 1024 * 1024;
 const pad = (n: number, width = 2): string => String(n).padStart(width, "0");
 
@@ -237,6 +268,7 @@ export class NoteStore {
     body: string,
     baseHash: string,
     patch: { title?: string; tags?: string[]; group?: string | null } = {},
+    opts: { checkpoint?: HistoryReason } = {},
   ): StoredNote {
     const current = this.read(relPath);
     if (baseHash !== current.hash) {
@@ -255,9 +287,7 @@ export class NoteStore {
       if (group) meta.group = group;
       else delete meta.group;
     }
-    if (Buffer.byteLength(current.raw, "utf8") <= MAX_VERSION_BYTES) {
-      this.saveHistory(current);
-    }
+    this.snapshot(current, opts.checkpoint);
     this.writeAtomic(relPath, serializeNote(meta, body));
     return this.read(relPath);
   }
@@ -293,28 +323,133 @@ export class NoteStore {
     return this.read(relPath);
   }
 
-  private saveHistory(note: StoredNote): void {
+  /**
+   * 覆盖前给旧内容拍一份快照。
+   * - 带 checkpoint：一定拍（打开后的第一次保存、AI 改写、恢复、AI 计划……）
+   * - 不带：距上一份快照超过 10 分钟才拍，自动保存不再每 0.8 秒存一份
+   * - 和最近一份完全相同就跳过；超过 2MB 的不存
+   */
+  private snapshot(note: StoredNote, checkpoint?: HistoryReason): void {
+    if (Buffer.byteLength(note.raw, "utf8") > MAX_VERSION_BYTES) return;
+    if (!isValidNoteId(note.id)) return;
     const dir = path.join(this.historyDir, note.id);
+    const existing = this.scanHistory(note.id);
+    const latest = existing[0];
+    const nowMs = this.now().getTime();
+    if (latest) {
+      if (!checkpoint && nowMs - latest.takenAt < COALESCE_MS) return;
+      try {
+        if (fs.readFileSync(path.join(dir, `${latest.versionId}.md`), "utf8") === note.raw) return;
+      } catch {
+        // 读不了最近一份就当不同，照常拍
+      }
+    }
     fs.mkdirSync(dir, { recursive: true });
-    const stamp = note.mtime.replace(/[-:T+]/g, "").slice(0, 17);
     this.seq += 1;
-    const name = `${stamp}-${pad(this.seq, 3)}-${randomUUID().slice(0, 4)}.md`;
-    fs.writeFileSync(path.join(dir, name), note.raw, "utf8");
-    this.rotateHistory(dir);
+    const versionId = makeVersionId(new Date(nowMs), this.seq, randomUUID().slice(0, 4), checkpoint ?? "edit");
+    fs.writeFileSync(path.join(dir, `${versionId}.md`), note.raw, "utf8");
+    this.pruneHistory(note.id, nowMs);
   }
 
-  private rotateHistory(dir: string): void {
-    const files = fs
-      .readdirSync(dir)
-      .filter((f) => f.endsWith(".md"))
-      .map((f) => {
-        const full = path.join(dir, f);
-        return { full, at: fs.statSync(full).mtimeMs };
-      })
-      .sort((a, b) => b.at - a.at);
-    for (const stale of files.slice(MAX_HISTORY)) {
-      fs.rmSync(stale.full, { force: true });
+  /** 读出某篇的全部快照（新→旧），附带文件大小；不认识的文件名忽略。 */
+  private scanHistory(noteId: string): Array<ParsedVersionId & { bytes: number }> {
+    const dir = path.join(this.historyDir, noteId);
+    let names: string[];
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      return [];
     }
+    const out: Array<ParsedVersionId & { bytes: number }> = [];
+    for (const name of names) {
+      if (!name.endsWith(".md")) continue;
+      const parsed = parseVersionId(name.slice(0, -3));
+      if (!parsed) continue;
+      let bytes = 0;
+      try {
+        bytes = fs.statSync(path.join(dir, name)).size;
+      } catch {
+        continue;
+      }
+      out.push({ ...parsed, bytes });
+    }
+    return out.sort(compareNewestFirst);
+  }
+
+  private pruneHistory(noteId: string, nowMs: number): void {
+    const dir = path.join(this.historyDir, noteId);
+    for (const versionId of planPrune(this.scanHistory(noteId), nowMs)) {
+      fs.rmSync(path.join(dir, `${versionId}.md`), { force: true });
+    }
+  }
+
+  private loadVersion(noteId: string, versionId: string): HistoryVersion {
+    if (!isValidNoteId(noteId) || !isValidVersionId(versionId)) {
+      throw new Error("参数错误：版本 ID 不合法");
+    }
+    const parsedId = parseVersionId(versionId);
+    const file = path.join(this.historyDir, noteId, `${versionId}.md`);
+    let raw: string;
+    try {
+      raw = fs.readFileSync(file, "utf8");
+    } catch {
+      throw new HistoryNotFoundError("这个历史版本不存在（可能已被自动清理）");
+    }
+    const takenAtIso = toLocalIso(new Date(parsedId!.takenAt));
+    const parsed = parseNote(raw, { path: `${noteId}.md`, mtime: takenAtIso, id: noteId });
+    return {
+      versionId,
+      at: parsed.meta.updated || takenAtIso,
+      takenAt: takenAtIso,
+      reason: parsedId!.reason,
+      title: parsed.meta.title,
+      chars: parsed.body.length,
+      bytes: Buffer.byteLength(raw, "utf8"),
+      meta: parsed.meta,
+      body: parsed.body,
+      raw,
+    };
+  }
+
+  /** 列出某篇笔记的历史版本（新→旧）。读坏的文件跳过，不让一份坏快照拖垮整个列表。 */
+  listHistory(noteId: string): HistoryEntry[] {
+    if (!isValidNoteId(noteId)) throw new Error("参数错误：笔记 ID 不合法");
+    const out: HistoryEntry[] = [];
+    for (const v of this.scanHistory(noteId)) {
+      try {
+        const { meta: _meta, body: _body, raw: _raw, ...entry } = this.loadVersion(noteId, v.versionId);
+        out.push(entry);
+      } catch {
+        // 跳过
+      }
+    }
+    return out;
+  }
+
+  readVersion(noteId: string, versionId: string): HistoryVersion {
+    return this.loadVersion(noteId, versionId);
+  }
+
+  /**
+   * 恢复到某个历史版本：正文、标题、标签变回去；id / created / 分组保留现在的，updated 记为现在。
+   * 恢复前一定先给当前内容拍一份 restore 快照，所以恢复本身也能撤销。
+   */
+  restoreVersion(relPath: string, versionId: string, baseHash: string): StoredNote {
+    const current = this.read(relPath);
+    if (baseHash !== current.hash) {
+      throw new ConflictError(current.hash, current.mtime);
+    }
+    const version = this.loadVersion(current.id, versionId);
+    const meta: NoteMeta = {
+      ...current.parsed.meta,
+      id: current.id,
+      title: version.meta.title || current.parsed.meta.title,
+      tags: [...(version.meta.tags ?? [])],
+      updated: toLocalIso(this.now()),
+    };
+    this.snapshot(current, "restore");
+    this.writeAtomic(relPath, serializeNote(meta, version.body));
+    return this.read(relPath);
   }
 
   moveToTrash(relPath: string): { name: string } {
@@ -412,9 +547,7 @@ export class NoteStore {
       if (baseHash && baseHash !== current.hash) {
         throw new ConflictError(current.hash, current.mtime);
       }
-      if (Buffer.byteLength(current.raw, "utf8") <= MAX_VERSION_BYTES) {
-        this.saveHistory(current);
-      }
+      this.snapshot(current, "backup-restore");
     }
     const at = toLocalIso(this.now());
     const parsed = parseNote(raw, { path: relPath, mtime: at });

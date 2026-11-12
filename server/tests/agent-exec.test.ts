@@ -93,6 +93,10 @@ test("执行 create/append/rewrite/trash 四条结果都是 ok", () => {
     assert.ok(ctx.store.read(appendTarget.relPath).parsed.body.includes("追加一行"));
     assert.equal(ctx.store.read(rewriteTarget.relPath).parsed.body.trim(), "全新内容");
     assert.equal(fs.existsSync(ctx.store.absPath(trashTarget.relPath)), false);
+    // AI 计划改过的笔记在历史版本里有一份「AI 计划前」
+    const versions = ctx.store.listHistory(rewriteTarget.id);
+    assert.equal(versions[0]?.reason, "agent");
+    assert.equal(ctx.store.readVersion(rewriteTarget.id, versions[0].versionId).body, "旧内容");
   } finally {
     ctx.cleanup();
   }

@@ -171,3 +171,57 @@ test("坏 JSON 返回 400，未知 /api 路径返回 404", async () => {
   const unknown = await call("GET", "/api/nope");
   assert.equal(unknown.status, 404);
 });
+
+test("历史版本：存档点 → 列表 → 读取 → 恢复（含 409 / 400 / 404）", async () => {
+  const created = await call("POST", "/api/notes", { title: "历史接口", body: "第一版 #甲", tags: [] });
+  const id = created.json.id as string;
+  const first = await call("GET", `/api/notes/${id}`);
+
+  // 打开后第一次保存带 checkpoint：一定存一份
+  const saved = await call("PUT", `/api/notes/${id}`, {
+    body: "第二版",
+    baseHash: first.json.hash,
+    checkpoint: "edit",
+  });
+  assert.equal(saved.status, 200);
+
+  // 不认识的 checkpoint 被忽略（客户端不能伪造 restore / agent）
+  const forged = await call("PUT", `/api/notes/${id}`, {
+    body: "第三版",
+    baseHash: saved.json.hash,
+    checkpoint: "restore",
+  });
+  assert.equal(forged.status, 200);
+
+  const list = await call("GET", `/api/notes/${id}/history`);
+  assert.equal(list.status, 200);
+  const items = list.json.items as Array<{ versionId: string; reason: string; title: string }>;
+  assert.ok(items.length >= 1);
+  assert.ok(items.every((item) => item.reason === "edit"));
+  const oldest = items[items.length - 1];
+
+  const one = await call("GET", `/api/notes/${id}/history/${oldest.versionId}`);
+  assert.equal(one.status, 200);
+  assert.equal(one.json.body, "第一版 #甲");
+  assert.equal(one.json.raw, undefined, "不回传整篇原文");
+
+  const stale = await call("POST", `/api/notes/${id}/history/${oldest.versionId}/restore`, { baseHash: "0".repeat(64) });
+  assert.equal(stale.status, 409);
+
+  const restored = await call("POST", `/api/notes/${id}/history/${oldest.versionId}/restore`, {
+    baseHash: forged.json.hash,
+  });
+  assert.equal(restored.status, 200);
+  assert.equal(restored.json.body, "第一版 #甲");
+  const after = await call("GET", `/api/notes/${id}/history`);
+  assert.equal(after.json.items[0].reason, "restore");
+
+  // 恢复后索引同步：标签回来了
+  const detail = await call("GET", `/api/notes/${id}`);
+  assert.ok((detail.json.tags as string[]).includes("甲"));
+
+  assert.equal((await call("GET", `/api/notes/${id}/history/..%2F..%2Fx`)).status, 400);
+  assert.equal((await call("GET", `/api/notes/${id}/history/20200101T000000-001-abcd.edit`)).status, 404);
+  assert.equal((await call("GET", `/api/notes/nope/history`)).status, 404);
+  assert.equal((await call("POST", `/api/notes/${id}/history/${oldest.versionId}/restore`, {})).status, 400);
+});

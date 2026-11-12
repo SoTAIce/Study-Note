@@ -4,7 +4,7 @@
  * 约定：只有精确的修饰键组合才触发动作，避免误触
  * （例如 Ctrl+Alt+K 是浏览器的「复制链接」类组合，必须放行）。
  */
-export type Action = "search" | "new" | "save" | "ai" | "capture" | "preview";
+export type Action = "search" | "new" | "save" | "ai" | "capture" | "preview" | "history";
 
 export type KeyInput = {
   key: string;
@@ -29,8 +29,8 @@ export function resolveKey(ev: KeyInput): Action | null {
     return shift ? "capture" : null;
   }
 
-  // 全屏预览：唯一带 Shift 的字母组合，其余 Shift 组合一律放行。
-  if (shift) return key === "f" ? "preview" : null;
+  // 全屏预览 / 历史版本：只有这两个带 Shift 的字母组合，其余 Shift 组合一律放行。
+  if (shift) return key === "f" ? "preview" : key === "h" ? "history" : null;
 
   switch (key) {
     case "k":

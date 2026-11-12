@@ -40,7 +40,8 @@ import {
 import type { Indexer } from "./indexer.ts";
 import type { NoteType } from "./parse.ts";
 import { search } from "./search.ts";
-import { ConflictError, toLocalIso, type NoteStore } from "./store.ts";
+import { ConflictError, HistoryNotFoundError, toLocalIso, type HistoryReason, type NoteStore } from "./store.ts";
+import { isValidVersionId } from "./history.ts";
 
 const MAX_BODY = 5 * 1024 * 1024;
 
@@ -309,6 +310,58 @@ export function createApi(deps: ApiDeps) {
         return true;
       }
 
+      // /api/notes/:id/history[/:versionId[/restore]]
+      if (route[0] === "notes" && route.length >= 3 && route[2] === "history") {
+        const row = findNote(route[1]);
+        const versionId = route[3];
+        if (versionId !== undefined && !isValidVersionId(versionId)) {
+          throw new HttpError(400, "版本 ID 不合法");
+        }
+        try {
+          if (route.length === 3 && method === "GET") {
+            const note = store.read(row.path);
+            sendJson(res, 200, { items: store.listHistory(note.id) });
+            return true;
+          }
+          if (route.length === 4 && method === "GET") {
+            const note = store.read(row.path);
+            const version = store.readVersion(note.id, versionId);
+            const { raw: _raw, ...rest } = version;
+            sendJson(res, 200, rest);
+            return true;
+          }
+          if (route.length === 5 && route[4] === "restore" && method === "POST") {
+            const payload = await readJson(req);
+            const baseHash = typeof payload.baseHash === "string" ? payload.baseHash : "";
+            if (!baseHash) throw new HttpError(400, "缺少 baseHash 字段");
+            indexer.ignoreNext(row.path);
+            const restored = store.restoreVersion(row.path, versionId, baseHash);
+            indexer.indexFile(row.path);
+            sendJson(res, 200, {
+              id: restored.id,
+              relPath: restored.relPath,
+              hash: restored.hash,
+              meta: restored.parsed.meta,
+              body: restored.parsed.body,
+            });
+            return true;
+          }
+        } catch (err) {
+          if (err instanceof ConflictError) {
+            sendJson(res, 409, {
+              error: "文件已被外部修改",
+              currentHash: err.currentHash,
+              diskUpdated: err.diskUpdated,
+            });
+            return true;
+          }
+          if (err instanceof HistoryNotFoundError) throw new HttpError(404, err.message);
+          if (err instanceof Error && err.message.startsWith("参数错误")) throw new HttpError(400, err.message);
+          throw err;
+        }
+        throw new HttpError(405, "不支持的请求方法");
+      }
+
       // /api/notes/:id
       if (route[0] === "notes" && route.length === 2) {
         const id = route[1];
@@ -336,9 +389,12 @@ export function createApi(deps: ApiDeps) {
           const patch: { title?: string; tags?: string[] } = {};
           if (typeof payload.title === "string" && payload.title.trim()) patch.title = payload.title.trim();
           if (Array.isArray(payload.tags)) patch.tags = payload.tags.map(String);
+          // 前端只能要求 edit / ai 两种存档点；restore、agent 等由服务端自己决定
+          const checkpoint: HistoryReason | undefined =
+            payload.checkpoint === "edit" || payload.checkpoint === "ai" ? payload.checkpoint : undefined;
           try {
             indexer.ignoreNext(row.path);
-            const saved = store.save(row.path, body, baseHash, patch);
+            const saved = store.save(row.path, body, baseHash, patch, { checkpoint });
             indexer.indexFile(row.path);
             sendJson(res, 200, {
               id: saved.id,

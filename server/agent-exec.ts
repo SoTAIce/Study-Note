@@ -83,7 +83,9 @@ export function executePlan(
           // 只换分组：setGroup 不动 updated、不写历史快照
           deps.store.setGroup(op.path, op.group ?? null, { baseHash: op.before.hash });
         } else {
-          deps.store.save(op.path, op.after, op.before.hash, op.group ? { group: op.group } : {});
+          deps.store.save(op.path, op.after, op.before.hash, op.group ? { group: op.group } : {}, {
+            checkpoint: "agent",
+          });
         }
       }
       entry.afterHash = currentHash(deps.store, op);

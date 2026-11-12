@@ -61,12 +61,13 @@ test("save 会把旧版本留在 history 里", () => {
   assert.notEqual(saved.hash, n.hash);
 });
 
-test("连续保存 25 次后历史只保留最近 20 份", () => {
+test("连续自动保存 25 次只在开头存一份历史（10 分钟内合并）", () => {
   const { store } = mkStore();
-  let n = store.create({ title: "轮转", body: "v0" });
+  let n = store.create({ title: "合并", body: "v0" });
   for (let i = 1; i <= 25; i++) n = store.save(n.relPath, `v${i}`, n.hash);
   const files = fs.readdirSync(path.join(store.historyDir, n.id));
-  assert.equal(files.length, 20);
+  assert.equal(files.length, 1);
+  assert.ok(fs.readFileSync(path.join(store.historyDir, n.id, files[0]), "utf8").includes("v0"));
   assert.ok(fs.readFileSync(path.join(store.notesRoot, n.relPath), "utf8").includes("v25"));
 });
 

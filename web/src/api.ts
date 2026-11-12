@@ -62,6 +62,8 @@ export type SaveInput = {
   baseHash: string;
   title?: string;
   tags?: string[];
+  /** 强制在历史版本里存一份「保存前」：edit = 打开后的第一次保存，ai = AI 改写后的保存 */
+  checkpoint?: "edit" | "ai";
 };
 
 export type SearchHit = {
@@ -315,6 +317,39 @@ export function createNote(input: CreateInput): Promise<SaveResult & { body: str
 
 export function saveNote(id: string, input: SaveInput): Promise<SaveResult> {
   return request(`/notes/${encodeURIComponent(id)}`, { method: "PUT", body: jsonBody(input) });
+}
+
+// —— 历史版本 ——
+
+export type HistoryReason = "edit" | "ai" | "restore" | "backup-restore" | "agent";
+
+export type HistoryEntry = {
+  versionId: string;
+  /** 这份内容当时的保存时间 */
+  at: string;
+  /** 快照拍摄时间（被哪次保存覆盖） */
+  takenAt: string;
+  reason: HistoryReason;
+  title: string;
+  chars: number;
+  bytes: number;
+};
+
+export type HistoryVersion = HistoryEntry & { meta: NoteMeta; body: string };
+
+export function listHistory(id: string): Promise<{ items: HistoryEntry[] }> {
+  return request(`/notes/${encodeURIComponent(id)}/history`);
+}
+
+export function getHistoryVersion(id: string, versionId: string): Promise<HistoryVersion> {
+  return request(`/notes/${encodeURIComponent(id)}/history/${encodeURIComponent(versionId)}`);
+}
+
+export function restoreHistoryVersion(id: string, versionId: string, baseHash: string): Promise<SaveResult> {
+  return request(`/notes/${encodeURIComponent(id)}/history/${encodeURIComponent(versionId)}/restore`, {
+    method: "POST",
+    body: jsonBody({ baseHash }),
+  });
 }
 
 export function deleteNote(id: string): Promise<{ ok: true; name: string }> {

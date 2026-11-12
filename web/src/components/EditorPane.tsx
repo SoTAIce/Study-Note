@@ -66,6 +66,8 @@ type Props = {
   onUndoAiReplace: () => void;
   viewMode: ViewMode;
   onViewMode: (mode: ViewMode) => void;
+  /** 打开历史版本面板 */
+  onOpenHistory: () => void;
 };
 
 export default function EditorPane({
@@ -97,6 +99,7 @@ export default function EditorPane({
   onUndoAiReplace,
   viewMode,
   onViewMode,
+  onOpenHistory,
 }: Props) {
   const lines = body ? body.split("\n").length : 0;
   const [groupDraft, setGroupDraft] = useState(note.meta.group ?? "");
@@ -241,6 +244,15 @@ export default function EditorPane({
             aria-label="全屏阅读"
           >
             <Icon name="expand" size={16} />
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={onOpenHistory}
+            title="历史版本（Ctrl+Shift+H）"
+            aria-label="历史版本"
+          >
+            <Icon name="history" size={16} />
           </button>
           <button type="button" className="icon-btn" onClick={onSaveNow} title="立即保存（Ctrl+S）" aria-label="立即保存">
             <Icon name="save" size={16} />

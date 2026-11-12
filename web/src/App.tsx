@@ -21,6 +21,7 @@ import ComposeView from "./components/ComposeView.tsx";
 import AiChatPage from "./components/AiChatPage.tsx";
 import PreviewOverlay from "./components/PreviewOverlay.tsx";
 import BackupPanel from "./components/BackupPanel.tsx";
+import HistoryPanel from "./components/HistoryPanel.tsx";
 import NoteTabs from "./components/NoteTabs.tsx";
 import * as groupsApi from "./groups-api.ts";
 import type { GroupView } from "./groups-api.ts";
@@ -101,6 +102,7 @@ export default function App() {
 
   // —— 全屏预览 ——
   const [previewFull, setPreviewFull] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // —— 外观：主题 / 编辑视图 / 窄屏导航抽屉 ——
   const [themePref, setThemePref] = useState<ThemePref>(() => readThemePref());
@@ -117,6 +119,8 @@ export default function App() {
   const noteIdRef = useRef<string | null>(null);
   const draftRef = useRef(draft);
   const conflictRef = useRef(false);
+  /** 下一次保存要不要强制存一份历史版本：打开笔记后第一次保存 = edit，AI 改写后 = ai */
+  const checkpointRef = useRef<"edit" | "ai" | null>(null);
   const listSeq = useRef(0);
   const navigateSeq = useRef(0);
   const toastTimer = useRef<number | null>(null);
@@ -262,7 +266,9 @@ export default function App() {
       body: draftRef.current.body,
       title: draftRef.current.title,
       baseHash: hashRef.current,
+      checkpoint: checkpointRef.current,
     };
+    checkpointRef.current = null;
     setSaveStatus("saving");
     setSaveError(null);
 
@@ -272,6 +278,7 @@ export default function App() {
           body: snapshot.body,
           baseHash: snapshot.baseHash,
           title: snapshot.title.trim() ? snapshot.title.trim() : undefined,
+          ...(snapshot.checkpoint ? { checkpoint: snapshot.checkpoint } : {}),
         });
 
         // 期间已经切换了笔记：这次结果只更新列表，不碰当前草稿。
@@ -313,6 +320,8 @@ export default function App() {
             setSaveError(api.errorMessage(err));
             setSaveStatus("error");
             dirtyRef.current = true;
+            // 没存成功：存档点要留给下一次重试
+            if (snapshot.checkpoint && checkpointRef.current === null) checkpointRef.current = snapshot.checkpoint;
           }
         }
         return false;
@@ -361,6 +370,8 @@ export default function App() {
     aiUndoRef.current = null;
     setAiUndoAvailable(false);
     setPreviewFull(false);
+    setHistoryOpen(false);
+    checkpointRef.current = null;
     setCurrent(null);
     setDraft({ title: "", body: "" });
     setSaveStatus("idle");
@@ -390,6 +401,8 @@ export default function App() {
       noteIdRef.current = detail.id;
       hashRef.current = detail.hash;
       dirtyRef.current = false;
+      checkpointRef.current = "edit";
+      setHistoryOpen(false);
       aiUndoRef.current = null;
       setAiUndoAvailable(false);
       setCurrent(detail);
@@ -584,6 +597,7 @@ export default function App() {
   function replaceWholeBody(next: string): void {
     const prev = draftRef.current.body;
     aiUndoRef.current = prev;
+    checkpointRef.current = "ai";
     setAiUndoAvailable(true);
     setDraft((currentDraft) => ({ ...currentDraft, body: next }));
     draftRef.current = { ...draftRef.current, body: next };
@@ -666,7 +680,7 @@ export default function App() {
     await doSave();
   }
 
-  async function resolveReload(): Promise<void> {
+  async function resolveReload(message = "已重新加载磁盘版本"): Promise<void> {
     const id = noteIdRef.current;
     if (!id) return;
     const seq = ++navigateSeq.current;
@@ -683,12 +697,43 @@ export default function App() {
       setSaveStatus("saved");
       setSelectionLength(0);
       void loadBacklinks(detail.id);
-      showToast("已重新加载磁盘版本", "ok");
+      showToast(message, "ok");
     } catch (err) {
       showToast(`重新加载失败：${api.errorMessage(err)}`, "error");
     } finally {
       if (seq === navigateSeq.current) setLoadingNote(false);
     }
+  }
+
+  // —— 历史版本 ——
+  function openHistory(): void {
+    if (screen !== "notes" || !noteIdRef.current) return;
+    // 打开前先把手上的改动落盘，列表才包含这次保存拍下的那一份
+    void doSave().finally(() => setHistoryOpen(true));
+  }
+
+  async function restoreFromHistory(versionId: string, label: string): Promise<boolean> {
+    const id = noteIdRef.current;
+    if (!id) return false;
+    if (!(await doSave())) {
+      showToast("当前笔记还没保存成功，先处理冲突再恢复", "error");
+      return false;
+    }
+    try {
+      await api.restoreHistoryVersion(id, versionId, hashRef.current);
+    } catch (err) {
+      const info = api.conflictInfo(err);
+      showToast(
+        info ? "文件刚被外部改过，先关掉面板确认最新内容再恢复" : `恢复失败：${api.errorMessage(err)}`,
+        "error",
+      );
+      return false;
+    }
+    aiUndoRef.current = null;
+    setAiUndoAvailable(false);
+    await resolveReload(`已恢复到 ${label} 的版本；恢复前的内容在历史版本里`);
+    void Promise.all([loadList(filter), refreshSidebar()]);
+    return true;
   }
 
   // —— 捕获 / 回收站 / 重建索引 ——
@@ -761,6 +806,7 @@ export default function App() {
     }
 
     const next = body.slice(0, insertAt) + payload + body.slice(removeTo);
+    checkpointRef.current = "ai";
     setDraft((prev) => ({ ...prev, body: next }));
     draftRef.current = { ...draftRef.current, body: next };
     dirtyRef.current = true;
@@ -790,9 +836,10 @@ export default function App() {
     saveNow: () => undefined as void,
     focusAi: () => undefined as void,
     togglePreview: () => undefined as void,
+    openHistory: () => undefined as void,
   });
   keyContext.current = {
-    modalOpen: paletteOpen || captureOpen || previewFull || backupOpen || screen === "ai",
+    modalOpen: paletteOpen || captureOpen || previewFull || backupOpen || historyOpen || screen === "ai",
     openPalette: () => setPaletteOpen(true),
     openCapture: () => setCaptureOpen(true),
     createNote: () => void openCompose(),
@@ -804,6 +851,10 @@ export default function App() {
     togglePreview: () => {
       if (screen !== "notes" || !current) return;
       setPreviewFull((value) => !value);
+    },
+    openHistory: () => {
+      if (!current) return;
+      openHistory();
     },
   };
 
@@ -832,6 +883,9 @@ export default function App() {
           break;
         case "preview":
           context.togglePreview();
+          break;
+        case "history":
+          context.openHistory();
           break;
       }
     }
@@ -1022,6 +1076,7 @@ export default function App() {
               onUndoAiReplace={undoReplace}
               viewMode={viewMode}
               onViewMode={changeViewMode}
+              onOpenHistory={openHistory}
             />
           ) : (
             <section className="welcome">
@@ -1213,6 +1268,17 @@ export default function App() {
             setPreviewFull(false);
             setFilter({ kind: "tag", tag });
           }}
+        />
+      ) : null}
+
+      {current ? (
+        <HistoryPanel
+          open={historyOpen && screen === "notes"}
+          noteId={current.id}
+          noteTitle={draft.title || current.meta.title}
+          currentBody={draft.body}
+          onClose={() => setHistoryOpen(false)}
+          onRestore={restoreFromHistory}
         />
       ) : null}
 

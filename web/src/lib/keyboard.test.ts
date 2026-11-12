@@ -52,3 +52,8 @@ test("Ctrl+Shift+F → preview（全屏预览）", () => {
 test("Ctrl+Shift+P → null（只有 F 例外，别顺手接管其它 Shift 组合）", () => {
   assert.equal(resolveKey({ ...none, key: "p", ctrlKey: true, shiftKey: true }), null);
 });
+
+test("Ctrl+Shift+H → history（历史版本）", () => {
+  assert.equal(resolveKey({ ...none, key: "h", ctrlKey: true, shiftKey: true }), "history");
+  assert.equal(resolveKey({ ...none, key: "h", ctrlKey: true }), null);
+});
