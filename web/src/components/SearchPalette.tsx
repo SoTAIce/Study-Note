@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import * as api from "../api.ts";
 import type { SearchHit } from "../api.ts";
+import Icon from "./Icon.tsx";
 
 type Props = {
   open: boolean;
@@ -103,7 +104,7 @@ export default function SearchPalette({ open, onClose, onOpenNote }: Props) {
       >
         <div className="palette__inputrow">
           <span className="palette__icon" aria-hidden="true">
-            ⌕
+            <Icon name="search" size={17} />
           </span>
           <input
             ref={inputRef}

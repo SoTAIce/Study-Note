@@ -1,18 +1,124 @@
+/* ============================================================
+   设计 token：浅色为基底，深色由系统偏好或 data-theme 切换。
+   所有组件只用这些变量；带透明度的颜色走 *-rgb 变量。
+   ============================================================ */
+
 :root {
-  --bg: #0f1115;
-  --bg-raised: #161a21;
-  --bg-sunken: #0b0d11;
-  --line: #262c36;
-  --text: #e6e9ef;
-  --text-dim: #9aa4b2;
-  --text-faint: #6b7684;
-  --accent: #7aa2f7;
-  --accent-soft: rgba(122, 162, 247, 0.14);
-  --warn: #e0af68;
-  --danger: #f7768e;
+  color-scheme: light;
+
+  /* 表面 */
+  --bg: #fbfaf8;
+  --bg-raised: #ffffff;
+  --bg-side: #f5f4f0;
+  --bg-sunken: #f1efea;
+  --bg-elev: #ffffff;
+  --bg-hover: rgba(28, 29, 33, 0.045);
+  --bg-hover-strong: rgba(28, 29, 33, 0.08);
+
+  /* 线 */
+  --line: #e8e5df;
+  --line-strong: #d7d3cb;
+
+  /* 文字 */
+  --text: #1d1e22;
+  --text-dim: #5a5d66;
+  --text-faint: #8e919a;
+
+  /* 品牌色：靛紫 */
+  --accent-rgb: 91, 91, 214;
+  --accent: rgb(var(--accent-rgb));
+  --accent-strong: #4343b8;
+  --accent-soft: rgba(var(--accent-rgb), 0.1);
+  --on-accent: #ffffff;
+  --accent-grad: linear-gradient(135deg, #6d6af0 0%, #5b5bd6 45%, #8b5cf6 100%);
+
+  /* 语义色 */
+  --ok-rgb: 34, 150, 98;
+  --ok: rgb(var(--ok-rgb));
+  --warn-rgb: 196, 124, 18;
+  --warn: rgb(var(--warn-rgb));
+  --danger-rgb: 214, 64, 90;
+  --danger: rgb(var(--danger-rgb));
+
+  /* 阴影 / 遮罩 */
+  --shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.06);
+  --shadow-md: 0 4px 14px rgba(20, 20, 30, 0.08), 0 1px 3px rgba(20, 20, 30, 0.05);
+  --shadow-lg: 0 24px 60px rgba(20, 20, 40, 0.18), 0 4px 14px rgba(20, 20, 40, 0.08);
+  --overlay: rgba(24, 24, 34, 0.32);
+  --scrollbar: rgba(28, 29, 33, 0.16);
+
+  /* 形状与字体 */
   --radius: 8px;
-  --font-ui: -apple-system, "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
-  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  --radius-sm: 6px;
+  --radius-lg: 14px;
+  --font-ui: "Inter", -apple-system, "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei UI",
+    "Microsoft YaHei", system-ui, sans-serif;
+  --font-read: -apple-system, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI",
+    "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, "Microsoft YaHei Mono", monospace;
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* 深色：跟随系统（没手动选浅色时） */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #131417;
+    --bg-raised: #1a1b1f;
+    --bg-side: #16171a;
+    --bg-sunken: #0f1012;
+    --bg-elev: #1f2025;
+    --bg-hover: rgba(255, 255, 255, 0.045);
+    --bg-hover-strong: rgba(255, 255, 255, 0.08);
+    --line: #26282d;
+    --line-strong: #363940;
+    --text: #e9e9ed;
+    --text-dim: #a3a6ae;
+    --text-faint: #6e717a;
+    --accent-rgb: 142, 140, 245;
+    --accent-strong: #b6b4ff;
+    --accent-soft: rgba(var(--accent-rgb), 0.14);
+    --on-accent: #0f0f1f;
+    --accent-grad: linear-gradient(135deg, #8e8cf5 0%, #7c7af0 45%, #a78bfa 100%);
+    --ok-rgb: 95, 196, 143;
+    --warn-rgb: 226, 166, 74;
+    --danger-rgb: 240, 113, 138;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.35);
+    --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
+    --overlay: rgba(4, 5, 8, 0.6);
+    --scrollbar: rgba(255, 255, 255, 0.14);
+  }
+}
+
+/* 深色：手动选择 */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #131417;
+  --bg-raised: #1a1b1f;
+  --bg-side: #16171a;
+  --bg-sunken: #0f1012;
+  --bg-elev: #1f2025;
+  --bg-hover: rgba(255, 255, 255, 0.045);
+  --bg-hover-strong: rgba(255, 255, 255, 0.08);
+  --line: #26282d;
+  --line-strong: #363940;
+  --text: #e9e9ed;
+  --text-dim: #a3a6ae;
+  --text-faint: #6e717a;
+  --accent-rgb: 142, 140, 245;
+  --accent-strong: #b6b4ff;
+  --accent-soft: rgba(var(--accent-rgb), 0.14);
+  --on-accent: #0f0f1f;
+  --accent-grad: linear-gradient(135deg, #8e8cf5 0%, #7c7af0 45%, #a78bfa 100%);
+  --ok-rgb: 95, 196, 143;
+  --warn-rgb: 226, 166, 74;
+  --danger-rgb: 240, 113, 138;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
+  --overlay: rgba(4, 5, 8, 0.6);
+  --scrollbar: rgba(255, 255, 255, 0.14);
 }
 
 * {
@@ -31,7 +137,10 @@ body {
   color: var(--text);
   font-family: var(--font-ui);
   font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 button {
@@ -40,6 +149,11 @@ button {
   background: none;
   border: none;
   cursor: pointer;
+}
+
+.icon {
+  flex: none;
+  display: block;
 }
 
 .boot {

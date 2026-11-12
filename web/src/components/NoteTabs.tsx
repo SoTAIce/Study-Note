@@ -1,4 +1,5 @@
 import type { NoteTab } from "../lib/note-tabs.ts";
+import Icon from "./Icon.tsx";
 
 type Props = {
   tabs: NoteTab[];
@@ -14,6 +15,7 @@ export default function NoteTabs({ tabs, activeId, onActivate, onClose }: Props)
     <div className="note-tabs" role="tablist" aria-label="打开的笔记">
       {tabs.map((tab) => (
         <div key={tab.id} className={`note-tab${tab.id === activeId ? " is-active" : ""}`}>
+          <Icon name="notes" size={14} className="note-tab__icon" />
           <button
             type="button"
             className="note-tab__label"
@@ -31,7 +33,7 @@ export default function NoteTabs({ tabs, activeId, onActivate, onClose }: Props)
             title="关闭标签"
             onClick={() => onClose(tab.id)}
           >
-            ×
+            <Icon name="x" size={13} />
           </button>
         </div>
       ))}

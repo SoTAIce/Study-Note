@@ -29,6 +29,17 @@ import { filterLabel, type Filter } from "./lib/nav.ts";
 import { closeNoteTab, renameNoteTab, upsertNoteTab, type NoteTab } from "./lib/note-tabs.ts";
 import { isScreenVisible } from "./lib/screen-visibility.ts";
 import { relativeTime } from "./lib/time.ts";
+import {
+  applyThemePref,
+  nextThemePref,
+  readThemePref,
+  readViewMode,
+  saveViewMode,
+  THEME_LABEL,
+  type ThemePref,
+  type ViewMode,
+} from "./lib/theme.ts";
+import Icon from "./components/Icon.tsx";
 import "./styles/app.css";
 
 type Screen = "notes" | "trash" | "compose" | "ai";
@@ -91,6 +102,11 @@ export default function App() {
   // —— 全屏预览 ——
   const [previewFull, setPreviewFull] = useState(false);
 
+  // —— 外观：主题 / 编辑视图 / 窄屏导航抽屉 ——
+  const [themePref, setThemePref] = useState<ThemePref>(() => readThemePref());
+  const [viewMode, setViewMode] = useState<ViewMode>(() => readViewMode());
+  const [navOpen, setNavOpen] = useState(false);
+
   // —— refs（自动保存与异步竞态） ——
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const saveTimer = useRef<number | null>(null);
@@ -115,6 +131,26 @@ export default function App() {
   useEffect(() => {
     document.title = current ? `${draft.title || current.meta.title} · Study Notes` : "Study Notes";
   }, [current, draft.title]);
+
+  function cycleTheme(): void {
+    const next = nextThemePref(themePref);
+    applyThemePref(next);
+    setThemePref(next);
+    showToast(`主题：${THEME_LABEL[next]}`, "info");
+  }
+
+  function changeViewMode(mode: ViewMode): void {
+    setViewMode(mode);
+    saveViewMode(mode);
+  }
+
+  /** 窄屏下，左栏里点了东西就把抽屉收起来。 */
+  function fromNav<A extends unknown[]>(fn: (...args: A) => void): (...args: A) => void {
+    return (...args: A) => {
+      setNavOpen(false);
+      fn(...args);
+    };
+  }
 
   // —— 提示 ——
   function showToast(text: string, kind: ToastKind = "info"): void {
@@ -804,6 +840,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!navOpen) return;
+    function onKey(event: KeyboardEvent): void {
+      if (event.key === "Escape") setNavOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [navOpen]);
+
+  useEffect(() => {
     function onBeforeUnload(event: BeforeUnloadEvent): void {
       if (!dirtyRef.current) return;
       event.preventDefault();
@@ -816,7 +861,22 @@ export default function App() {
   // —— 渲染 ——
   const railVisible = railOpen && screen === "notes" && current !== null;
   const aiVisible = isScreenVisible(screen, "ai");
-  const recent = timeline.slice(0, 4);
+  // 时间流按创建时间排序；「最近更新」要按 updated 重新排一次
+  const recent = [...timeline].sort((x, y) => (x.updated < y.updated ? 1 : x.updated > y.updated ? -1 : 0)).slice(0, 6);
+  const ideaCount = timeline.filter((item) => item.type === "idea").length;
+  const hour = new Date().getHours();
+  const greeting = hour < 5 ? "夜深了" : hour < 11 ? "早上好" : hour < 14 ? "中午好" : hour < 18 ? "下午好" : "晚上好";
+  const todayLabel = new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" });
+  const mobileTitle =
+    screen === "ai"
+      ? "AI 对话"
+      : screen === "trash"
+        ? "回收站"
+        : screen === "compose"
+          ? "新建笔记"
+          : current
+            ? draft.title || current.meta.title || "未命名"
+            : "Study Notes";
 
   return (
     <div className={`app${railVisible ? " app--rail" : ""}`}>
@@ -833,37 +893,57 @@ export default function App() {
         groups={groups}
         ungroupedCount={ungroupedCount}
         backupStatus={backupStatus}
-        onFilter={(next) => {
+        onFilter={fromNav((next: Filter) => {
           setScreen("notes");
           setFilter(next);
-        }}
-        onOpenNote={(id) => void openNote(id)}
-        onOpenTrash={() => {
+        })}
+        onOpenNote={fromNav((id: string) => void openNote(id))}
+        onOpenTrash={fromNav(() => {
           void doSave();
           setScreen("trash");
           setBacklinks(null);
-        }}
-        onOpenSearch={() => setPaletteOpen(true)}
-        onOpenCapture={() => setCaptureOpen(true)}
-        onNewNote={() => void openCompose()}
+        })}
+        onOpenSearch={fromNav(() => setPaletteOpen(true))}
+        onOpenCapture={fromNav(() => setCaptureOpen(true))}
+        onNewNote={fromNav(() => void openCompose())}
         onReindex={() => void reindexNow()}
         onReload={() => {
           void loadList(filter);
           void refreshSidebar();
         }}
-        onOpenBackup={() => setBackupOpen(true)}
-        onOpenAi={() => {
+        onOpenBackup={fromNav(() => setBackupOpen(true))}
+        onOpenAi={fromNav(() => {
           setAiMounted(true);
           setScreen("ai");
           setRailOpen(false);
-        }}
+        })}
         aiActive={screen === "ai"}
         onCreateGroup={(name) => void handleCreateGroup(name)}
         onRenameGroup={(from, to) => void handleRenameGroup(from, to)}
         onDeleteGroup={(name) => void handleDeleteGroup(name)}
+        open={navOpen}
+        onClose={() => setNavOpen(false)}
+        themePref={themePref}
+        onCycleTheme={cycleTheme}
       />
 
+      {navOpen ? (
+        <button type="button" className="nav-backdrop" aria-label="关闭导航" onClick={() => setNavOpen(false)} />
+      ) : null}
+
       <main className="main" aria-label="编辑区">
+        <div className="mobilebar">
+          <button type="button" className="icon-btn" onClick={() => setNavOpen(true)} aria-label="打开导航">
+            <Icon name="menu" size={18} />
+          </button>
+          <span className="mobilebar__title">{mobileTitle}</span>
+          <button type="button" className="icon-btn" onClick={() => setPaletteOpen(true)} aria-label="搜索">
+            <Icon name="search" size={17} />
+          </button>
+          <button type="button" className="icon-btn" onClick={() => void openCompose()} aria-label="新建笔记">
+            <Icon name="plus" size={18} />
+          </button>
+        </div>
         <NoteTabs
           tabs={noteTabs}
           activeId={screen === "notes" ? current?.id ?? null : null}
@@ -940,62 +1020,143 @@ export default function App() {
               onOpenPreviewFull={() => setPreviewFull(true)}
               aiUndoAvailable={aiUndoAvailable}
               onUndoAiReplace={undoReplace}
+              viewMode={viewMode}
+              onViewMode={changeViewMode}
             />
           ) : (
             <section className="welcome">
-            <div className="welcome__inner">
-              <p className="welcome__kicker">Markdown 是唯一真源 · 数据在本机</p>
-              <h1>记下来，再说整理。</h1>
-              <p className="welcome__lede">
-                左栏是笔记、标签与时间流，中间写，右边是双链和 AI。所有内容都写在 data/notes 里的
-                .md 文件中，随时能用别的编辑器打开。
-              </p>
-              <div className="welcome__actions">
-                <button type="button" className="btn btn--primary" onClick={() => void openCompose()}>
-                  新建笔记 <kbd>Ctrl N</kbd>
-                </button>
-                <button type="button" className="btn" onClick={() => setCaptureOpen(true)}>
-                  快速捕获 <kbd>Ctrl Shift Space</kbd>
-                </button>
-                <button type="button" className="btn" onClick={() => setPaletteOpen(true)}>
-                  搜索 <kbd>Ctrl K</kbd>
-                </button>
-              </div>
+              <div className="welcome__inner">
+                <p className="welcome__kicker">
+                  <span className="welcome__kicker-dot">
+                    <Icon name="check" size={11} strokeWidth={2.6} />
+                  </span>
+                  Markdown 是唯一真源 · 数据只在本机
+                </p>
+                <p className="welcome__greet">
+                  {greeting}，今天是{todayLabel}
+                </p>
+                <h1>
+                  记下来，<em>再说整理。</em>
+                </h1>
+                <p className="welcome__lede">
+                  左栏是笔记、分组与标签，中间写，右边是双链和 AI。所有内容都保存在 <code>data/notes</code> 里的
+                  .md 文件中，随时能用别的编辑器打开。
+                </p>
 
-              {recent.length > 0 ? (
-                <div className="welcome__recent">
-                  <h2>最近更新</h2>
-                  <ul>
-                    {recent.map((item) => (
-                      <li key={item.id}>
-                        <button
-                          type="button"
-                          className="welcome__recentitem"
-                          onClick={() => void openNote(item.id)}
-                        >
-                          <span className="welcome__recenttitle">{item.title || "未命名"}</span>
-                          <span className="welcome__recentmeta">
-                            {item.type === "idea" ? "idea · " : ""}
-                            {relativeTime(item.updated)}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                <div className="welcome__stats">
+                  <button type="button" className="stat-card" onClick={() => setFilter({ kind: "all" })}>
+                    <span className="stat-card__label">
+                      <Icon name="notes" size={14} />
+                      全部笔记
+                    </span>
+                    <span className="stat-card__value">{timeline.length}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="stat-card"
+                    style={{ ["--stat-tone" as string]: "var(--warn)" }}
+                    onClick={() => setFilter({ kind: "inbox" })}
+                  >
+                    <span className="stat-card__label">
+                      <Icon name="lightbulb" size={14} />
+                      收件箱想法
+                    </span>
+                    <span className="stat-card__value">{ideaCount}</span>
+                  </button>
+                  <div
+                    className="stat-card"
+                    style={{ ["--stat-tone" as string]: "var(--ok)" }}
+                  >
+                    <span className="stat-card__label">
+                      <Icon name="hash" size={14} />
+                      标签
+                    </span>
+                    <span className="stat-card__value">{tags.length}</span>
+                  </div>
+                  <div
+                    className="stat-card"
+                    style={{ ["--stat-tone" as string]: "#a26bf4" }}
+                  >
+                    <span className="stat-card__label">
+                      <Icon name="folder" size={14} />
+                      分组
+                    </span>
+                    <span className="stat-card__value">{groups.length}</span>
+                  </div>
                 </div>
-              ) : (
-                <p className="welcome__empty">
-                  还没有笔记。新建一条，或者按 Ctrl+Shift+Space 先把想法收进 inbox。
-                </p>
-              )}
 
-              {listsError ? (
-                <p className="welcome__error" role="alert">
-                  加载失败：{listsError}
-                </p>
-              ) : null}
-              <p className="welcome__foot">当前筛选：{filterLabel(filter)}</p>
-            </div>
+                <div className="welcome__actions">
+                  <button type="button" className="action-card action-card--primary" onClick={() => void openCompose()}>
+                    <span className="action-card__icon">
+                      <Icon name="plus" size={18} strokeWidth={2.2} />
+                    </span>
+                    <span className="action-card__title">新建笔记</span>
+                    <span className="action-card__desc">从一个标题开始，Markdown 实时预览</span>
+                    <kbd>Ctrl N</kbd>
+                  </button>
+                  <button
+                    type="button"
+                    className="action-card action-card--capture"
+                    onClick={() => setCaptureOpen(true)}
+                  >
+                    <span className="action-card__icon">
+                      <Icon name="zap" size={18} />
+                    </span>
+                    <span className="action-card__title">快速捕获</span>
+                    <span className="action-card__desc">一闪而过的想法先丢进收件箱</span>
+                    <kbd>Ctrl ⇧ Space</kbd>
+                  </button>
+                  <button type="button" className="action-card" onClick={() => setPaletteOpen(true)}>
+                    <span className="action-card__icon">
+                      <Icon name="search" size={18} />
+                    </span>
+                    <span className="action-card__title">全文搜索</span>
+                    <span className="action-card__desc">标题、正文、标签一起搜</span>
+                    <kbd>Ctrl K</kbd>
+                  </button>
+                </div>
+
+                {recent.length > 0 ? (
+                  <div className="welcome__recent">
+                    <h2>
+                      最近更新
+                      <span>{filterLabel(filter)}</span>
+                    </h2>
+                    <ul>
+                      {recent.map((item) => (
+                        <li key={item.id}>
+                          <button
+                            type="button"
+                            className="welcome__recentitem"
+                            onClick={() => void openNote(item.id)}
+                          >
+                            <span className="welcome__recenthead">
+                              <Icon name={item.type === "idea" ? "lightbulb" : "notes"} size={15} />
+                              <span className="welcome__recenttitle">{item.title || "未命名"}</span>
+                            </span>
+                            <span className="welcome__recentmeta">
+                              {item.type === "idea" ? <span className="badge badge--idea">idea</span> : null}
+                              <Icon name="clock" size={11} />
+                              {relativeTime(item.updated)}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="welcome__empty">
+                    <Icon name="lightbulb" size={18} />
+                    还没有笔记。新建一条，或者按 Ctrl+Shift+Space 先把想法收进收件箱。
+                  </p>
+                )}
+
+                {listsError ? (
+                  <p className="welcome__error" role="alert">
+                    加载失败：{listsError}
+                  </p>
+                ) : null}
+              </div>
             </section>
           )}
         </div>
@@ -1083,6 +1244,9 @@ export default function App() {
 
       {toast ? (
         <div className={`toast toast--${toast.kind}`} role="status" key={toast.id}>
+          <span className="toast__icon" aria-hidden="true">
+            <Icon name={toast.kind === "error" ? "x" : toast.kind === "ok" ? "check" : "sparkles"} size={12} strokeWidth={2.4} />
+          </span>
           {toast.text}
         </div>
       ) : null}

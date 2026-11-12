@@ -133,7 +133,14 @@ function serveStatic(
     sendJson(res, 405, { error: "只支持 GET" });
     return;
   }
-  const rel = decodeURIComponent(pathname).replace(/^\/+/, "");
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    sendJson(res, 400, { error: "路径编码不合法" });
+    return;
+  }
+  const rel = decoded.replace(/^\/+/, "");
   const requested = path.resolve(distDir, rel || "index.html");
   if (requested !== distDir && !requested.startsWith(distDir + path.sep)) {
     sendJson(res, 403, { error: "路径越界" });

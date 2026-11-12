@@ -1,6 +1,7 @@
 import * as api from "../api.ts";
 import type { BacklinksResult } from "../api.ts";
 import AiPanel from "./AiPanel.tsx";
+import Icon from "./Icon.tsx";
 
 type Props = {
   backlinks: BacklinksResult | null;
@@ -36,9 +37,12 @@ export default function RightRail({
   return (
     <aside className="rail" aria-label="关联与 AI">
       <header className="rail__head">
-        <h2>关联</h2>
+        <h2>
+          <Icon name="link" size={15} />
+          关联与 AI
+        </h2>
         <button type="button" className="icon-btn" onClick={onClose} aria-label="收起关联面板" title="收起">
-          ×
+          <Icon name="x" size={16} />
         </button>
       </header>
 

@@ -3,6 +3,14 @@ import type { KeyboardEvent, RefObject, SyntheticEvent } from "react";
 import Preview from "./Preview.tsx";
 import type { ConflictInfo, NoteDetail } from "../api.ts";
 import { relativeTime } from "../lib/time.ts";
+import type { ViewMode } from "../lib/theme.ts";
+import Icon, { type IconName } from "./Icon.tsx";
+
+const VIEW_OPTIONS: Array<{ mode: ViewMode; icon: IconName; label: string }> = [
+  { mode: "write", icon: "pen", label: "只写" },
+  { mode: "split", icon: "columns", label: "分栏" },
+  { mode: "preview", icon: "eye", label: "只看预览" },
+];
 
 export type SaveStatus = "idle" | "saving" | "saved" | "dirty" | "error" | "conflict";
 
@@ -56,6 +64,8 @@ type Props = {
   /** 上一次「整篇替换」是否还能撤销。 */
   aiUndoAvailable: boolean;
   onUndoAiReplace: () => void;
+  viewMode: ViewMode;
+  onViewMode: (mode: ViewMode) => void;
 };
 
 export default function EditorPane({
@@ -85,6 +95,8 @@ export default function EditorPane({
   onOpenPreviewFull,
   aiUndoAvailable,
   onUndoAiReplace,
+  viewMode,
+  onViewMode,
 }: Props) {
   const lines = body ? body.split("\n").length : 0;
   const [groupDraft, setGroupDraft] = useState(note.meta.group ?? "");
@@ -133,9 +145,13 @@ export default function EditorPane({
           />
           <div className="editor__meta">
             <span className={`type-badge type-badge--${note.meta.type}`}>{TYPE_LABEL[note.meta.type]}</span>
-            <span className="editor__updated">更新于 {relativeTime(note.meta.updated)}</span>
+            <span className="editor__updated">
+              <Icon name="clock" size={12} />
+              更新于 {relativeTime(note.meta.updated)}
+            </span>
             <label className="editor__group" title="把这篇文章归到某个分组（只改组名，不改笔记内容，也不改更新时间）">
-              <span className="editor__group-label">分组</span>
+              <Icon name="folder" size={12} />
+              <span className="sr-only">分组</span>
               <input
                 className="editor__group-input"
                 value={groupDraft}
@@ -162,6 +178,23 @@ export default function EditorPane({
                 ))}
               </datalist>
             </label>
+            <span className="editor__tags" aria-label="标签">
+              {tags.length === 0 ? (
+                <span className="tagline__hint">正文里写 #标签 自动归类</span>
+              ) : (
+                tags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    className="tagline__chip"
+                    onClick={() => onFilterTag(tag)}
+                    title={`筛选 #${tag}`}
+                  >
+                    #{tag}
+                  </button>
+                ))
+              )}
+            </span>
           </div>
         </div>
 
@@ -170,9 +203,6 @@ export default function EditorPane({
             <span className="save-state__dot" aria-hidden="true" />
             {STATUS_TEXT[status]}
           </span>
-          <button type="button" className="btn btn--small" onClick={onGoHome} title="回到首页（那里可以新建笔记）">
-            ← 首页
-          </button>
           {aiUndoAvailable ? (
             <button
               type="button"
@@ -180,31 +210,59 @@ export default function EditorPane({
               onClick={onUndoAiReplace}
               title="恢复 AI 整篇替换之前的正文"
             >
+              <Icon name="undo" size={13} />
               撤销 AI 改写
             </button>
           ) : null}
+          <div className="segmented" role="group" aria-label="编辑视图">
+            {VIEW_OPTIONS.map((option) => (
+              <button
+                key={option.mode}
+                type="button"
+                className={`segmented__btn${viewMode === option.mode ? " is-active" : ""}`}
+                onClick={() => onViewMode(option.mode)}
+                aria-pressed={viewMode === option.mode}
+                title={option.label}
+                aria-label={option.label}
+              >
+                <Icon name={option.icon} size={14} />
+              </button>
+            ))}
+          </div>
+          <span className="editor__divider" aria-hidden="true" />
+          <button type="button" className="icon-btn" onClick={onGoHome} title="回到首页" aria-label="回到首页">
+            <Icon name="home" size={16} />
+          </button>
           <button
             type="button"
-            className="btn btn--small"
+            className="icon-btn"
             onClick={onOpenPreviewFull}
-            title="全屏预览（Ctrl+Shift+F）"
+            title="全屏阅读（Ctrl+Shift+F）"
+            aria-label="全屏阅读"
           >
-            ⛶ 全屏预览
+            <Icon name="expand" size={16} />
           </button>
-          <button type="button" className="btn btn--small" onClick={onSaveNow} title="立即保存（Ctrl+S）">
-            保存
+          <button type="button" className="icon-btn" onClick={onSaveNow} title="立即保存（Ctrl+S）" aria-label="立即保存">
+            <Icon name="save" size={16} />
           </button>
           <button
             type="button"
-            className="btn btn--small"
+            className="icon-btn"
             onClick={onToggleRail}
             aria-pressed={railOpen}
-            title={railOpen ? "收起关联面板" : "展开关联面板"}
+            title={railOpen ? "收起关联与 AI 面板" : "展开关联与 AI 面板（Ctrl+J）"}
+            aria-label="关联与 AI 面板"
           >
-            {railOpen ? "隐藏关联" : "关联"}
+            <Icon name="panelRight" size={16} />
           </button>
-          <button type="button" className="btn btn--small btn--danger" onClick={onDelete}>
-            删除
+          <button
+            type="button"
+            className="icon-btn icon-btn--danger"
+            onClick={onDelete}
+            title="删除（移入回收站）"
+            aria-label="删除笔记"
+          >
+            <Icon name="trash" size={16} />
           </button>
         </div>
       </header>
@@ -238,25 +296,7 @@ export default function EditorPane({
         </div>
       ) : null}
 
-      <div className="tagline" aria-label="标签">
-        {tags.length === 0 ? (
-          <span className="tagline__hint">在正文里写 #标签 就会自动归类。</span>
-        ) : (
-          tags.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              className="tagline__chip"
-              onClick={() => onFilterTag(tag)}
-              title={`筛选 #${tag}`}
-            >
-              #{tag}
-            </button>
-          ))
-        )}
-      </div>
-
-      <div className="split">
+      <div className={`split split--${viewMode}`}>
         <div className="split__pane split__pane--write">
           <textarea
             ref={textareaRef}
@@ -279,10 +319,11 @@ export default function EditorPane({
 
       <footer className="editor__foot">
         <span className="editor__path" title={note.relPath}>
+          <Icon name="notes" size={12} />
           {note.relPath}
         </span>
         <span className="editor__stats">
-          {lines} 行 · {body.length} 字 · 自动保存
+          {lines} 行 · {body.length} 字 · 约 {Math.max(1, Math.round(body.length / 400))} 分钟读完 · 自动保存
         </span>
       </footer>
     </div>

@@ -23,6 +23,16 @@ export function escapeHtml(text: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/** transformText 拿到的是已转义文本：生成双链前先还原，否则 & / 引号会被二次转义。 */
+function unescapeHtml(text: string): string {
+  return text
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
 /** 只允许安全协议，挡住 javascript: / vbscript: / 非常规 data:。 */
 function safeHref(raw: string): string {
   const href = raw.trim();
@@ -36,7 +46,7 @@ function safeHref(raw: string): string {
 function renderWikilink(raw: string): string {
   // ![[图片]] 原样保留（Obsidian 的嵌入语法，本期不解析）。
   if (raw.startsWith("!")) return raw;
-  const inner = raw.slice(2, -2);
+  const inner = unescapeHtml(raw.slice(2, -2));
   const pipe = inner.indexOf("|");
   const targetPart = pipe >= 0 ? inner.slice(0, pipe) : inner;
   const alias = pipe >= 0 ? inner.slice(pipe + 1).trim() : "";

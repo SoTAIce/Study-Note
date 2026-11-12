@@ -41,6 +41,8 @@ function isInside(realRoot: string, realTarget: string): boolean {
 export function resolveInside(root: string, rel: string): string {
   if (typeof rel !== "string" || !rel.trim()) throw new ToolError("BAD_ARG", "路径为空");
   if (rel.includes("\0")) throw new ToolError("BAD_PATH", "路径含非法字符");
+  // 非 Windows 平台上 "C:\\x" / "\\\\host\\share" 会被当成相对文件名，这里统一按越界拒绝
+  if (!path.isAbsolute(rel) && path.win32.isAbsolute(rel)) throw new ToolError("BAD_PATH", `路径越界：${rel}`);
   const base = path.resolve(root);
   const target = path.isAbsolute(rel) ? path.resolve(rel) : path.resolve(base, rel);
   if (!isInside(base, target)) throw new ToolError("BAD_PATH", `路径越界：${rel}`);

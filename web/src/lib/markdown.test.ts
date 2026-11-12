@@ -75,3 +75,10 @@ test("renderInline: 处理双链与标签，并转义 HTML", () => {
   assert.ok(html.includes('<span class="tag-pill">#深度学习</span>'), `实际：${html}`);
   assert.ok(!html.includes("<b>"), `实际：${html}`);
 });
+
+test("双链里的 & 与引号只转义一次（点击目标要和标题一致）", () => {
+  const html = renderMarkdown("[[C++ & Rust]] [[\"引号\"]]");
+  assert.match(html, /data-target="C\+\+ &amp; Rust">C\+\+ &amp; Rust<\/a>/);
+  assert.match(html, /data-target="&quot;引号&quot;">&quot;引号&quot;<\/a>/);
+  assert.ok(!html.includes("&amp;amp;"), `实际：${html}`);
+});

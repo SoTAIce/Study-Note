@@ -38,3 +38,8 @@ test("未知的 /api 路径返回 404 JSON", async () => {
   const body = (await res.json()) as { error: string };
   assert.equal(typeof body.error, "string");
 });
+
+test("静态路径编码不合法返回 400 而不是 500", async () => {
+  const res = await fetch(`${base}/%E0%A4%A`);
+  assert.equal(res.status, 400);
+});
