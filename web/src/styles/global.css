@@ -6,119 +6,127 @@
 :root {
   color-scheme: light;
 
-  /* 表面 */
-  --bg: #fbfaf8;
+  /* 表面：canvas 是编辑区，side（parchment）是侧栏 / 标签条 / 底栏。见 DESIGN.md */
+  --bg: #ffffff;
   --bg-raised: #ffffff;
-  --bg-side: #f5f4f0;
-  --bg-sunken: #f1efea;
+  --bg-side: #f5f5f7;
+  --bg-sunken: #ededf0;
   --bg-elev: #ffffff;
-  --bg-hover: rgba(28, 29, 33, 0.045);
-  --bg-hover-strong: rgba(28, 29, 33, 0.08);
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-hover-strong: rgba(0, 0, 0, 0.07);
+  /* 毛玻璃顶栏的半透明底，配 backdrop-filter 使用 */
+  --glass: rgba(255, 255, 255, 0.72);
 
   /* 线 */
-  --line: #e8e5df;
-  --line-strong: #d7d3cb;
+  --line: #e5e5ea;
+  --line-strong: #d2d2d7;
 
-  /* 文字 */
-  --text: #1d1e22;
-  --text-dim: #5a5d66;
-  --text-faint: #8e919a;
+  /* 文字：三级灰，不要再加 */
+  --text: #1d1d1f;
+  --text-dim: #6e6e73;
+  --text-faint: #86868b;
 
-  /* 品牌色：靛紫 */
-  --accent-rgb: 91, 91, 214;
+  /* 唯一的强调色：系统蓝 */
+  --accent-rgb: 0, 113, 227;
   --accent: rgb(var(--accent-rgb));
-  --accent-strong: #4343b8;
+  --accent-strong: #0062c4;
   --accent-soft: rgba(var(--accent-rgb), 0.1);
   --on-accent: #ffffff;
-  --accent-grad: linear-gradient(135deg, #6d6af0 0%, #5b5bd6 45%, #8b5cf6 100%);
 
-  /* 语义色 */
-  --ok-rgb: 34, 150, 98;
+  /* 语义色：只表达状态，不做装饰 */
+  --ok-rgb: 36, 138, 61;
   --ok: rgb(var(--ok-rgb));
-  --warn-rgb: 196, 124, 18;
+  --warn-rgb: 178, 80, 0;
   --warn: rgb(var(--warn-rgb));
-  --danger-rgb: 214, 64, 90;
+  --danger-rgb: 215, 0, 21;
   --danger: rgb(var(--danger-rgb));
 
-  /* 阴影 / 遮罩 */
-  --shadow-sm: 0 1px 2px rgba(20, 20, 30, 0.06);
-  --shadow-md: 0 4px 14px rgba(20, 20, 30, 0.08), 0 1px 3px rgba(20, 20, 30, 0.05);
-  --shadow-lg: 0 24px 60px rgba(20, 20, 40, 0.18), 0 4px 14px rgba(20, 20, 40, 0.08);
-  --overlay: rgba(24, 24, 34, 0.32);
-  --scrollbar: rgba(28, 29, 33, 0.16);
+  /* 阴影只给浮层；--shadow-sm 仅用于分段控件的选中块 */
+  --shadow-sm: 0 0 0 0.5px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 0 0 0.5px rgba(0, 0, 0, 0.06), 0 8px 24px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 24px 70px rgba(0, 0, 0, 0.18);
+  --overlay: rgba(0, 0, 0, 0.25);
+  --scrollbar: rgba(0, 0, 0, 0.2);
 
-  /* 形状与字体 */
-  --radius: 8px;
+  /* 形状：5 / 6 / 8 / 11 / 18 / 胶囊，不取中间值 */
+  --radius-xs: 5px;
   --radius-sm: 6px;
-  --radius-lg: 14px;
-  --font-ui: "Inter", -apple-system, "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei UI",
-    "Microsoft YaHei", system-ui, sans-serif;
-  --font-read: -apple-system, "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI",
-    "Microsoft YaHei", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "Cascadia Code", "SF Mono", Consolas, "Microsoft YaHei Mono", monospace;
-  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --radius: 8px;
+  --radius-ctl: 11px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
+
+  /* 字体：系统字体栈，不打包字体（Mac 上是 SF Pro，Windows 上是 Segoe UI Variable + 微软雅黑） */
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --font-read: var(--font-ui);
+  --font-mono: "SF Mono", "JetBrains Mono", "Cascadia Code", Consolas, "Microsoft YaHei Mono", monospace;
+  --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --press: scale(0.97);
 }
 
 /* 深色：跟随系统（没手动选浅色时） */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #131417;
-    --bg-raised: #1a1b1f;
-    --bg-side: #16171a;
-    --bg-sunken: #0f1012;
-    --bg-elev: #1f2025;
-    --bg-hover: rgba(255, 255, 255, 0.045);
-    --bg-hover-strong: rgba(255, 255, 255, 0.08);
-    --line: #26282d;
-    --line-strong: #363940;
-    --text: #e9e9ed;
-    --text-dim: #a3a6ae;
-    --text-faint: #6e717a;
-    --accent-rgb: 142, 140, 245;
-    --accent-strong: #b6b4ff;
-    --accent-soft: rgba(var(--accent-rgb), 0.14);
-    --on-accent: #0f0f1f;
-    --accent-grad: linear-gradient(135deg, #8e8cf5 0%, #7c7af0 45%, #a78bfa 100%);
-    --ok-rgb: 95, 196, 143;
-    --warn-rgb: 226, 166, 74;
-    --danger-rgb: 240, 113, 138;
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-    --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.35);
-    --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
-    --overlay: rgba(4, 5, 8, 0.6);
-    --scrollbar: rgba(255, 255, 255, 0.14);
+    --bg: #1d1d1f;
+    --bg-raised: #232325;
+    --bg-side: #161617;
+    --bg-sunken: #111112;
+    --bg-elev: #2c2c2e;
+    --bg-hover: rgba(255, 255, 255, 0.05);
+    --bg-hover-strong: rgba(255, 255, 255, 0.09);
+    --glass: rgba(29, 29, 31, 0.72);
+    --line: #2f2f32;
+    --line-strong: #424245;
+    --text: #f5f5f7;
+    --text-dim: #a1a1a6;
+    --text-faint: #6e6e73;
+    --accent-rgb: 10, 132, 255;
+    --accent-strong: #409cff;
+    --accent-soft: rgba(var(--accent-rgb), 0.16);
+    --on-accent: #ffffff;
+    --ok-rgb: 48, 209, 88;
+    --warn-rgb: 255, 159, 10;
+    --danger-rgb: 255, 69, 58;
+    --shadow-sm: 0 0 0 0.5px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 8px 24px rgba(0, 0, 0, 0.45);
+    --shadow-lg: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 24px 70px rgba(0, 0, 0, 0.6);
+    --overlay: rgba(0, 0, 0, 0.5);
+    --scrollbar: rgba(255, 255, 255, 0.2);
   }
 }
 
 /* 深色：手动选择 */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #131417;
-  --bg-raised: #1a1b1f;
-  --bg-side: #16171a;
-  --bg-sunken: #0f1012;
-  --bg-elev: #1f2025;
-  --bg-hover: rgba(255, 255, 255, 0.045);
-  --bg-hover-strong: rgba(255, 255, 255, 0.08);
-  --line: #26282d;
-  --line-strong: #363940;
-  --text: #e9e9ed;
-  --text-dim: #a3a6ae;
-  --text-faint: #6e717a;
-  --accent-rgb: 142, 140, 245;
-  --accent-strong: #b6b4ff;
-  --accent-soft: rgba(var(--accent-rgb), 0.14);
-  --on-accent: #0f0f1f;
-  --accent-grad: linear-gradient(135deg, #8e8cf5 0%, #7c7af0 45%, #a78bfa 100%);
-  --ok-rgb: 95, 196, 143;
-  --warn-rgb: 226, 166, 74;
-  --danger-rgb: 240, 113, 138;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55);
-  --overlay: rgba(4, 5, 8, 0.6);
-  --scrollbar: rgba(255, 255, 255, 0.14);
+  --bg: #1d1d1f;
+  --bg-raised: #232325;
+  --bg-side: #161617;
+  --bg-sunken: #111112;
+  --bg-elev: #2c2c2e;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-hover-strong: rgba(255, 255, 255, 0.09);
+  --glass: rgba(29, 29, 31, 0.72);
+  --line: #2f2f32;
+  --line-strong: #424245;
+  --text: #f5f5f7;
+  --text-dim: #a1a1a6;
+  --text-faint: #6e6e73;
+  --accent-rgb: 10, 132, 255;
+  --accent-strong: #409cff;
+  --accent-soft: rgba(var(--accent-rgb), 0.16);
+  --on-accent: #ffffff;
+  --ok-rgb: 48, 209, 88;
+  --warn-rgb: 255, 159, 10;
+  --danger-rgb: 255, 69, 58;
+  --shadow-sm: 0 0 0 0.5px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 0 0 0.5px rgba(255, 255, 255, 0.08), 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 24px 70px rgba(0, 0, 0, 0.6);
+  --overlay: rgba(0, 0, 0, 0.5);
+  --scrollbar: rgba(255, 255, 255, 0.2);
 }
 
 * {
@@ -137,7 +145,8 @@ body {
   color: var(--text);
   font-family: var(--font-ui);
   font-size: 14px;
-  line-height: 1.5;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;

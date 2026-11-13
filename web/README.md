@@ -16,6 +16,7 @@ React 19 + Vite，无状态管理库。入口 `src/main.tsx` → `src/App.tsx`�
 ## 约定
 
 - 新颜色先加 token，组件里不写十六进制颜色。
+- 视觉规则以仓库根目录的 `DESIGN.md` 为准；`src/lib/design-rules.test.ts` 把其中能机械检查的几条变成了测试。
 - 新图标加到 `components/Icon.tsx` 的 `PATHS`，不引图标库（要离线可用）。
 - 窄屏断点 760px：左栏变抽屉。改布局后跑 `pnpm e2e`（含 390px 宽度不溢出检查）。
 - 自动保存相关的 ref（`dirtyRef` / `hashRef` / `checkpointRef`）是并发正确性的关键，改动前读 `doSave()` 注释。

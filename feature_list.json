@@ -32,6 +32,26 @@
       "notes": ""
     },
     {
+      "id": "ui-003",
+      "priority": 0,
+      "area": "ui",
+      "title": "按 Apple 风格建立 DESIGN.md 并改造界面",
+      "user_visible_behavior": "界面采用 DESIGN.md 描述的风格：单一系统蓝强调色、parchment 侧栏 + 白色画布、无渐变、非浮层无阴影、胶囊主按钮与搜索框、按下缩小、预览正文 17px；浅色 / 深色都可用。",
+      "status": "passing",
+      "verification": [
+        "pnpm test：web/src/lib/design-rules.test.ts（深色覆盖全部颜色 token、组件不写死颜色、无装饰渐变、字重只用 400/600/700）",
+        "变异检查：往 app.css 塞入写死颜色 / 渐变 / 500 字重，规则测试应失败",
+        "pnpm e2e 全部通过（页面无报错、窄屏不溢出）",
+        "截图核对浅色 / 深色首页、编辑页、搜索面板、历史抽屉、手机抽屉与编辑页"
+      ],
+      "evidence": [
+        "2026-11-13 设计规则测试 4/4 通过；变异检查：注入违规后 fail 3 / pass 1，复原后 4/4",
+        "2026-11-13 ./init.sh 全绿（单元/接口 319 个 + E2E 8 步）；E2E 连跑 8 次全部通过",
+        "2026-11-13 Playwright 截图核对 light/dark 1360×860 与 390×844，无页面报错"
+      ],
+      "notes": "参考 VoltAgent/awesome-design-md 的 design-md/apple/DESIGN.md，按笔记应用改写（差异见 DESIGN.md「和 Apple 原版的差异」）。顺带修复 E2E 首步的竞态：统计数字在数据加载前读取，偶发失败。"
+    },
+    {
       "id": "fix-001",
       "priority": 0,
       "area": "bugfix",
@@ -86,13 +106,13 @@
       "area": "sync",
       "title": "外部编辑后界面自动同步",
       "user_visible_behavior": "用 VS Code / Obsidian 改了笔记后，几秒内左栏列表、标签更新；正在打开且无未保存修改的那篇自动重载；有未保存修改时提示冲突而不是静默覆盖。",
-      "status": "in_progress",
+      "status": "not_started",
       "verification": [
         "server：文件变化事件推送的接口测试",
         "pnpm e2e：外部改文件后界面更新、有未保存修改时出冲突提示"
       ],
       "evidence": [],
-      "notes": "设计方案已写：docs/superpowers/specs/2026-11-13-external-edit-sync-design.md，待用户批准后实现。"
+      "notes": "设计方案已写：docs/superpowers/specs/2026-11-13-external-edit-sync-design.md，待用户批准后实现（会话 006 用户插入了 ui-003，本条暂停）。"
     },
     {
       "id": "perf-001",
@@ -403,6 +423,19 @@
       ],
       "evidence": [],
       "notes": ""
+    },
+    {
+      "id": "ui-004",
+      "priority": 19,
+      "area": "ui",
+      "title": "首页统计在加载中显示占位而不是 0",
+      "user_visible_behavior": "打开首页的一瞬间，统计卡片显示占位（如 —）而不是 0，数据到达后再显示真实数字。",
+      "status": "not_started",
+      "verification": [
+        "E2E 或组件测试：加载中不出现 0"
+      ],
+      "evidence": [],
+      "notes": "会话 006 在修 E2E 竞态时发现。"
     }
   ]
 }

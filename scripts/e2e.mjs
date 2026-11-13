@@ -125,7 +125,10 @@ try {
   await step("首页加载，显示统计与最近更新", async () => {
     await page.goto(base);
     await page.locator(".welcome").waitFor();
-    expect((await page.locator(".stat-card__value").first().textContent()) === "2", "全部笔记计数应为 2");
+    // 统计数字在列表加载完之前是 0（见 feature_list 的 ui-004），等最近更新出现再读
+    await page.locator(".welcome__recentitem").nth(1).waitFor();
+    const total = await page.locator(".stat-card__value").first().textContent();
+    expect(total === "2", `全部笔记计数应为 2，实际 ${total}`);
     expect((await page.locator(".welcome__recentitem").count()) === 2, "最近更新应有 2 张卡片");
     await page.screenshot({ path: path.join(artifacts, "01-home.png") });
   });

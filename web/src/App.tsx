@@ -1130,7 +1130,7 @@ export default function App() {
                   </div>
                   <div
                     className="stat-card"
-                    style={{ ["--stat-tone" as string]: "#a26bf4" }}
+                    style={{ ["--stat-tone" as string]: "var(--accent)" }}
                   >
                     <span className="stat-card__label">
                       <Icon name="folder" size={14} />

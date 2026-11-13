@@ -58,12 +58,13 @@ Study Notes：本地个人笔记应用。`data/notes/*.md` 是唯一真源，SQL
 5. 笔记内容渲染必须转义原始 HTML、过滤危险链接（`web/src/lib/markdown.ts`）。
 6. AI 改笔记必须先出计划、人批准后执行，且可撤销。
 7. 不引入新的运行时依赖，除非设计方案里说明理由并经用户同意（应用要离线可用）。
-8. 颜色只用 `web/src/styles/global.css` 的 token，浅色 / 深色都要能看。
+8. 界面按 `DESIGN.md`（Apple 风格的设计语言）：颜色只用 `web/src/styles/global.css` 的 token，浅色 / 深色都要能看；`design-rules.test.ts` 会检查写死颜色、渐变和字重。
 9. Windows 是主要部署平台：路径处理用 `path`，别假设 `/` 分隔；`.bat` 文件保持纯 ASCII。
 10. 提交信息、代码注释里不写模型名称或型号。
 
 ## 进一步阅读（按需打开）
 
+- 界面长什么样：`DESIGN.md`（改界面前先读）
 - 后端模块地图：`server/README.md`；前端模块地图：`web/README.md`
 - 功能清单（唯一的「要做什么」来源）：`feature_list.json`
 - 进度日志：`claude-progress.md`；交接：`session-handoff.md`
