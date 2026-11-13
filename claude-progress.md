@@ -7,7 +7,7 @@
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
 - 最近一次全绿：2026-11-13，315 个单元/接口测试 + E2E 8 步
-- 优先级最高的未完成功能：`sync-001` 外部编辑后界面自动同步
+- 优先级最高的未完成功能：`sync-001` 外部编辑后界面自动同步（in_progress：方案待批准）
 - 当前阻塞：无
 
 ## 会话记录
@@ -42,3 +42,10 @@
 - 证据：E2E 截图在 `e2e-artifacts/`（不入库，每次重新生成）。
 - 遗留风险：init.sh 是 bash，Windows 本机需用 Git Bash 运行（或 `SKIP_E2E=1`）；E2E 依赖全局 Playwright。
 - 下一步：sync-001（外部编辑后界面自动同步），先写设计方案。
+
+### 会话 005 · 2026-11-13 · sync-001 设计方案
+
+- 目标：sync-001 先出设计方案。
+- 完成：`docs/superpowers/specs/2026-11-13-external-edit-sync-design.md`（SSE 推送 + 索引层统一发事件 + 前端按 hash 比对决定重载 / 冲突 / 删除提示）；sync-001 标为 in_progress。
+- 验证：仅文档改动，未改代码。
+- 下一步：用户批准方案（或调整第八节的默认值）后按方案实现。

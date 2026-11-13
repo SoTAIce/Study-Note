@@ -86,13 +86,13 @@
       "area": "sync",
       "title": "外部编辑后界面自动同步",
       "user_visible_behavior": "用 VS Code / Obsidian 改了笔记后，几秒内左栏列表、标签更新；正在打开且无未保存修改的那篇自动重载；有未保存修改时提示冲突而不是静默覆盖。",
-      "status": "not_started",
+      "status": "in_progress",
       "verification": [
         "server：文件变化事件推送的接口测试",
         "pnpm e2e：外部改文件后界面更新、有未保存修改时出冲突提示"
       ],
       "evidence": [],
-      "notes": ""
+      "notes": "设计方案已写：docs/superpowers/specs/2026-11-13-external-edit-sync-design.md，待用户批准后实现。"
     },
     {
       "id": "perf-001",
