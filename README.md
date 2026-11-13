@@ -41,3 +41,13 @@ pnpm start
 ```
 
 如果没有 pnpm，可将以上命令中的 `pnpm` 替换为 `npm`。
+
+## 开发与协作
+
+本项目按 [Learn Harness Engineering](https://walkinglabs.github.io/learn-harness-engineering/en/) 的方法管理，人和编码代理用同一套流程：
+
+- `AGENTS.md`：入口，写明开工 / 收工流程、完成的定义和硬性约束（`CLAUDE.md` 只是导入它）
+- `feature_list.json`：要做什么、做到哪了的唯一来源，每条带验证步骤和证据
+- `claude-progress.md`：每个会话的进度日志；`session-handoff.md`：中途交接
+- `./init.sh`：标准验证路径（依赖 → 类型检查 → 单元测试 → 构建 → 端到端测试），基线不绿先修基线
+- `pnpm e2e`：真浏览器端到端冒烟测试（需要 Playwright），截图在 `e2e-artifacts/`

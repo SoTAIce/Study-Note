@@ -1,0 +1,408 @@
+{
+  "project": "study-notes",
+  "last_updated": "2026-11-13",
+  "rules": {
+    "single_active_feature": true,
+    "passing_requires_evidence": true,
+    "do_not_skip_verification": true,
+    "priority_order": "数字越小越先做；priority 0 表示已完成的历史条目"
+  },
+  "status_legend": {
+    "not_started": "还没开始。",
+    "in_progress": "当前唯一正在做的功能。",
+    "blocked": "有记录在案的阻塞，解决前不能继续。",
+    "passing": "规定的验证已通过，证据已记录。"
+  },
+  "features": [
+    {
+      "id": "ui-001",
+      "priority": 0,
+      "area": "ui",
+      "title": "界面重建：双主题、图标、左栏/编辑页/首页/右栏重做、窄屏抽屉",
+      "user_visible_behavior": "浅色/深色主题可切换并记住；编辑页可切换只写/分栏/预览；首页有统计和最近更新卡片；390px 宽度下左栏为抽屉且页面不横向溢出。",
+      "status": "passing",
+      "verification": [
+        "pnpm e2e：首页、主题切换、窄屏三步通过",
+        "人工截图核对浅色/深色/手机"
+      ],
+      "evidence": [
+        "2026-11-12 提交 24e2793；截图核对首页/编辑/新建/AI/回收站/备份/捕获/全屏阅读",
+        "2026-11-13 pnpm e2e 8/8 通过（首页、主题、窄屏不溢出）"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "fix-001",
+      "priority": 0,
+      "area": "bugfix",
+      "title": "修复：双链含 & 或引号被二次转义；最近更新排序；Windows 路径越界；非法 URL 编码 500",
+      "user_visible_behavior": "[[C++ & Rust]] 点击能打开同名笔记；首页最近更新按修改时间排序；非法编码路径返回 400。",
+      "status": "passing",
+      "verification": [
+        "pnpm test：markdown.test.ts、agent-tools.test.ts、health.test.ts 对应用例"
+      ],
+      "evidence": [
+        "2026-11-12 提交 24e2793；pnpm test 294/294"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "hist-001",
+      "priority": 0,
+      "area": "history",
+      "title": "笔记历史版本：合并存档、分层保留、对比与恢复",
+      "user_visible_behavior": "编辑页时钟按钮或 Ctrl+Shift+H 打开历史抽屉；可预览、与当前逐行对比、恢复，恢复后可再撤销。",
+      "status": "passing",
+      "verification": [
+        "pnpm test：history.test.ts / api.test.ts / agent-exec.test.ts",
+        "pnpm e2e：历史版本一步（对比、恢复、撤销恢复）"
+      ],
+      "evidence": [
+        "2026-11-12 提交 ca85184；pnpm test 315/315",
+        "2026-11-13 pnpm e2e 历史版本步骤通过"
+      ],
+      "notes": "设计：docs/superpowers/specs/2026-11-12-note-history-design.md"
+    },
+    {
+      "id": "harness-001",
+      "priority": 0,
+      "area": "harness",
+      "title": "按 Learn Harness Engineering 建立项目管理框架",
+      "user_visible_behavior": "仓库内有 AGENTS.md、feature_list.json、claude-progress.md、init.sh、session-handoff.md、E2E 冒烟测试与模块地图；新会话只读仓库就能知道怎么跑、怎么验证、下一步做什么。",
+      "status": "passing",
+      "verification": [
+        "./init.sh 从默认 Node 22 环境跑通（自动切到 Node 24）",
+        "故意改坏 E2E 断言时 pnpm e2e 退出码为 1"
+      ],
+      "evidence": [
+        "2026-11-13 ./init.sh 全绿：typecheck、315 测试、build、E2E 8/8",
+        "2026-11-13 变异检查：改坏断言后 e2e 退出码 1，恢复后 0"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "sync-001",
+      "priority": 1,
+      "area": "sync",
+      "title": "外部编辑后界面自动同步",
+      "user_visible_behavior": "用 VS Code / Obsidian 改了笔记后，几秒内左栏列表、标签更新；正在打开且无未保存修改的那篇自动重载；有未保存修改时提示冲突而不是静默覆盖。",
+      "status": "not_started",
+      "verification": [
+        "server：文件变化事件推送的接口测试",
+        "pnpm e2e：外部改文件后界面更新、有未保存修改时出冲突提示"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "perf-001",
+      "priority": 2,
+      "area": "perf",
+      "title": "自动保存后不再每次刷新侧栏与反链",
+      "user_visible_behavior": "连续打字时每次自动保存只发 1 个保存请求；只有标题/标签/链接变了才刷新侧栏和反链。",
+      "status": "not_started",
+      "verification": [
+        "单测：判断是否需要刷新的纯函数",
+        "E2E 或手动：记录网络请求数"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "ci-001",
+      "priority": 3,
+      "area": "harness",
+      "title": "GitHub Actions 持续集成",
+      "user_visible_behavior": "每次推送和 PR 自动跑 typecheck、test、build、e2e，失败时 PR 上能看到。",
+      "status": "not_started",
+      "verification": [
+        "推一个提交，Actions 全绿",
+        "故意推一个失败的分支，Actions 变红"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "trash-001",
+      "priority": 4,
+      "area": "data",
+      "title": "回收站清空与自动清理",
+      "user_visible_behavior": "回收站页可「清空」（二次确认）；超过 30 天的条目自动清理。",
+      "status": "not_started",
+      "verification": [
+        "store/api 测试：清空、按时间清理",
+        "E2E：回收站清空流程"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "editor-001",
+      "priority": 5,
+      "area": "editor",
+      "title": "编辑器基础能力：Tab 缩进、列表续行、格式快捷键",
+      "user_visible_behavior": "Tab/Shift+Tab 缩进；在列表项回车自动续上 - / 1.；Ctrl+B/I/K 加粗、斜体、链接。",
+      "status": "not_started",
+      "verification": [
+        "单测：文本变换纯函数",
+        "E2E：输入后检查正文"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "editor-002",
+      "priority": 6,
+      "area": "editor",
+      "title": "AI 插入 / 替换可以用 Ctrl+Z 撤销",
+      "user_visible_behavior": "AI 插入或整篇替换后按 Ctrl+Z 能逐步撤回，不丢浏览器撤销栈。",
+      "status": "not_started",
+      "verification": [
+        "E2E：模拟插入后 Ctrl+Z 还原"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "editor-003",
+      "priority": 7,
+      "area": "editor",
+      "title": "输入 [[ 时补全笔记标题",
+      "user_visible_behavior": "输入 [[ 弹出标题候选，方向键选择、回车补全为 [[标题]]。",
+      "status": "not_started",
+      "verification": [
+        "单测：候选过滤",
+        "E2E：补全流程"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "editor-004",
+      "priority": 8,
+      "area": "editor",
+      "title": "分栏模式左右同步滚动",
+      "user_visible_behavior": "分栏时滚动编辑区，预览跟着滚到对应位置。",
+      "status": "not_started",
+      "verification": [
+        "E2E：长笔记滚动后预览位置对应"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "perf-002",
+      "priority": 9,
+      "area": "perf",
+      "title": "预览渲染防抖",
+      "user_visible_behavior": "长笔记（5000 行）连续输入时不卡顿，预览在停顿后更新。",
+      "status": "not_started",
+      "verification": [
+        "性能脚本：输入延迟对比"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "media-001",
+      "priority": 10,
+      "area": "editor",
+      "title": "图片粘贴与附件",
+      "user_visible_behavior": "粘贴或拖入图片会存到 data/notes 下的附件目录并插入 Markdown 图片语法，预览能显示；![[图片]] 能渲染。",
+      "status": "not_started",
+      "verification": [
+        "api 测试：附件上传与路径安全",
+        "E2E：粘贴图片后预览出现"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "ui-002",
+      "priority": 11,
+      "area": "ui",
+      "title": "应用内确认弹窗替换 window.confirm",
+      "user_visible_behavior": "删除笔记、删除分组用应用内确认弹窗（或可撤销提示条），样式与主题一致。",
+      "status": "not_started",
+      "verification": [
+        "E2E：删除笔记确认流程"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "perf-003",
+      "priority": 12,
+      "area": "perf",
+      "title": "全文搜索查询优化",
+      "user_visible_behavior": "搜索合并为少量查询、先排序截断再生成片段；1 万篇笔记时搜索 < 200ms。",
+      "status": "not_started",
+      "verification": [
+        "search.test.ts 全部通过",
+        "基准脚本：大库搜索耗时"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "perf-004",
+      "priority": 13,
+      "area": "perf",
+      "title": "列表分页与准确计数",
+      "user_visible_behavior": "超过 2000 篇时列表可继续加载，「全部笔记」计数准确；created 列有索引。",
+      "status": "not_started",
+      "verification": [
+        "api 测试：分页与计数"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "perf-005",
+      "priority": 14,
+      "area": "perf",
+      "title": "前端按需加载",
+      "user_visible_behavior": "AI 对话、备份面板、服务商设置在首次打开时才加载，首屏 JS 明显变小。",
+      "status": "not_started",
+      "verification": [
+        "pnpm build 输出的主包体积对比",
+        "pnpm e2e 通过"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "backup-001",
+      "priority": 15,
+      "area": "backup",
+      "title": "备份请求批量化（先调研）",
+      "user_visible_behavior": "首次全量备份在请求额度内完成，不会因为 600 次 / 30 分钟限制中断。",
+      "status": "not_started",
+      "verification": [
+        "backup 测试：请求计数"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "refactor-001",
+      "priority": 16,
+      "area": "refactor",
+      "title": "拆分 App.tsx（保存 / 导航 / 分组 / 提示拆成 hooks）",
+      "user_visible_behavior": "行为不变，App.tsx 降到 500 行以内。",
+      "status": "not_started",
+      "verification": [
+        "pnpm test、pnpm e2e 全绿",
+        "行为无变化"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "refactor-002",
+      "priority": 17,
+      "area": "refactor",
+      "title": "拆分 server/api.ts 为按资源的路由文件",
+      "user_visible_behavior": "行为不变，单文件不超过 400 行。",
+      "status": "not_started",
+      "verification": [
+        "pnpm test 全绿（接口测试全覆盖）"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "style-001",
+      "priority": 18,
+      "area": "ui",
+      "title": "统一旧样式并清理未用类名",
+      "user_visible_behavior": "AI 面板、弹窗、计划卡等的间距圆角与新风格一致；app.css 中无未使用的类名。",
+      "status": "not_started",
+      "verification": [
+        "截图核对浅色/深色",
+        "脚本检查未使用类名"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "test-001",
+      "priority": 19,
+      "area": "harness",
+      "title": "扩充 E2E：冲突处理、分组、回收站、快速捕获",
+      "user_visible_behavior": "这些流程都有自动化端到端用例。",
+      "status": "not_started",
+      "verification": [
+        "pnpm e2e 新增步骤通过；故意改坏时失败"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "repo-001",
+      "priority": 20,
+      "area": "repo",
+      "title": "mcp.patch.yml 去掉本机绝对路径",
+      "user_visible_behavior": "仓库里不再出现 D:\\work\\study-notes 等个人路径，改为占位符示例。",
+      "status": "not_started",
+      "verification": [
+        "grep 仓库无个人路径"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "repo-002",
+      "priority": 21,
+      "area": "repo",
+      "title": "增加 .nvmrc / engine 约束",
+      "user_visible_behavior": "nvm use 自动切到 Node 24；版本不对时安装或测试给出明确提示。",
+      "status": "not_started",
+      "verification": [
+        "在 Node 22 下运行给出提示"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "sec-001",
+      "priority": 22,
+      "area": "security",
+      "title": "API Key 与 WebDAV 密码不再明文存储（先调研）",
+      "user_visible_behavior": "密钥存进系统凭据管理器或至少加密存储，文档写明风险。",
+      "status": "not_started",
+      "verification": [
+        "config 测试：读写不落明文"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "a11y-001",
+      "priority": 23,
+      "area": "ui",
+      "title": "无障碍：弹窗焦点陷阱、AI 流式输出播报",
+      "user_visible_behavior": "键盘用户打开弹窗时焦点不跑到背景；读屏能播报 AI 回复。",
+      "status": "not_started",
+      "verification": [
+        "E2E：Tab 循环停留在弹窗内"
+      ],
+      "evidence": [],
+      "notes": ""
+    },
+    {
+      "id": "hist-002",
+      "priority": 24,
+      "area": "history",
+      "title": "历史版本收尾：启动时整理旧历史；Firefox 快捷键冲突",
+      "user_visible_behavior": "旧版本按新规则在启动时整理一次；Firefox 下有可用的替代快捷键。",
+      "status": "not_started",
+      "verification": [
+        "store 测试：启动整理",
+        "手动：Firefox 快捷键"
+      ],
+      "evidence": [],
+      "notes": ""
+    }
+  ]
+}

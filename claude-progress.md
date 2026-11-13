@@ -1,0 +1,44 @@
+# 进度日志
+
+<!-- 文件名沿用课程约定（claude-progress.md），任何编码代理都可使用：开工时读，收工前更新。 -->
+
+## 当前已验证状态
+
+- 仓库根目录：`Study-Note/`
+- 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
+- 最近一次全绿：2026-11-13，315 个单元/接口测试 + E2E 8 步
+- 优先级最高的未完成功能：`sync-001` 外部编辑后界面自动同步
+- 当前阻塞：无
+
+## 会话记录
+
+### 会话 001 · 2026-11-12 · 界面重建与问题排查
+
+- 目标：重做前端界面；排查现有问题。
+- 完成：双主题 + 图标 + 全部主要界面重做 + 窄屏抽屉（ui-001）；修复双链二次转义、最近更新排序、Windows 路径越界、非法 URL 编码 500（fix-001）。
+- 验证：pnpm typecheck / test（294）/ build；Playwright 截图核对浅色、深色、手机。
+- 提交：24e2793
+- 遗留：mcp.patch.yml 含本机路径（repo-001）；默认 Node 22 跑不了测试（已由 init.sh 处理，repo-002）。
+
+### 会话 002 · 2026-11-12 · 可优化项梳理
+
+- 目标：整理全部可优化点。
+- 完成：23 条优化项，现已全部录入 `feature_list.json`。
+- 验证：无代码改动。
+
+### 会话 003 · 2026-11-12 · 历史版本
+
+- 目标：hist-001。
+- 完成：设计方案（用户批准，采用默认值）→ 实现：合并存档、分层稀疏、列表/读取/恢复接口、历史抽屉（对比、预览、恢复、撤销恢复）。
+- 验证：pnpm test 315/315；Playwright 走完编辑 → 历史 → 恢复 → 撤销恢复（当时脚本在临时目录，未入库）。
+- 提交：15802a5（方案）、ca85184（实现）
+- 遗留：旧历史只在下次保存时整理；Firefox 的 Ctrl+Shift+H 被浏览器占用（hist-002）。
+
+### 会话 004 · 2026-11-13 · 建立 harness（项目管理框架）
+
+- 目标：按 Learn Harness Engineering 课程管理项目（harness-001）。只做初始化，不写业务功能。
+- 完成：`AGENTS.md`（入口，路由式）+ `CLAUDE.md`（导入 AGENTS.md）、`feature_list.json`（28 条，4 条已通过）、本日志、`init.sh`、`session-handoff.md`、`docs/harness/`（收工清单、验收评分、质量等级）、`server/README.md` 与 `web/README.md` 模块地图；把浏览器测试正式入库为 `scripts/e2e.mjs`（`pnpm e2e`）。
+- 验证：`./init.sh` 在默认 Node 22 环境下自动切到 Node 24 并全绿（typecheck、315 测试、build、E2E 8/8）；变异检查：故意改坏 E2E 断言，退出码 1；恢复后 0。
+- 证据：E2E 截图在 `e2e-artifacts/`（不入库，每次重新生成）。
+- 遗留风险：init.sh 是 bash，Windows 本机需用 Git Bash 运行（或 `SKIP_E2E=1`）；E2E 依赖全局 Playwright。
+- 下一步：sync-001（外部编辑后界面自动同步），先写设计方案。

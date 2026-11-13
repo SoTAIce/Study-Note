@@ -13,7 +13,9 @@
     "build": "vite build",
     "start": "node server/main.ts",
     "test": "node --test --test-isolation=none \"server/tests/*.test.ts\" \"web/src/lib/*.test.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "e2e": "node scripts/e2e.mjs",
+    "verify": "pnpm typecheck && pnpm test && pnpm build && pnpm e2e"
   },
   "dependencies": {
     "marked": "^18.1.2",
