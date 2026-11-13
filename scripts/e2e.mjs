@@ -6,7 +6,8 @@
  *   E2E_KEEP=1      结束后不删临时数据目录（排查用）
  *   E2E_HEADED=1    有界面运行
  *
- * 覆盖：首页 → 新建笔记 → 编辑自动保存 → 搜索 → 历史版本（对比 / 恢复 / 撤销恢复）
+ * 覆盖：首页（含加载占位）→ 新建笔记 → 编辑自动保存 → 搜索 → 历史版本（对比 / 恢复 / 撤销恢复）
+ *      → 外部编辑同步（改标题、自动载入、冲突、外部删除进回收站）
  *      → 主题切换并记住 → 窄屏抽屉不横向溢出；全程不允许出现页面报错。
  * 截图写到 e2e-artifacts/（已 gitignore），作为验证证据。
  *
@@ -200,6 +201,78 @@ try {
     expect((await ta.inputValue()).includes("追加一行 E2E"), "撤销恢复后追加的那行应回来");
   });
 
+  // —— 外部编辑同步（sync-001）：模拟 VS Code / Obsidian 直接改 data/notes 里的文件 ——
+  const alphaPath = path.join(notesDir, "alpha.md");
+  const betaPath = path.join(notesDir, "beta.md");
+  const editExternally = (file, from, to) => {
+    const raw = fs.readFileSync(file, "utf8");
+    expect(raw.includes(from), `${path.basename(file)} 里应有「${from}」`);
+    fs.writeFileSync(file, raw.replace(from, to), "utf8");
+  };
+
+  await step("外部改了另一篇的标题：左栏几秒内更新", async () => {
+    editExternally(betaPath, "title: 贝塔笔记", "title: 贝塔（外部改过）");
+    await page.locator(".note-row__text", { hasText: /^贝塔（外部改过）$/ }).waitFor({ timeout: 5000 });
+  });
+
+  await step("当前这篇没有未保存修改：外部修改自动载入", async () => {
+    await page.locator(".save-state--saved").waitFor({ timeout: 5000 });
+    editExternally(alphaPath, "第一段内容", "第一段内容（外部编辑器写的）");
+    await page.waitForFunction(
+      () => document.querySelector(".editor__textarea")?.value.includes("外部编辑器写的"),
+      null,
+      { timeout: 5000 },
+    );
+    await page.getByText("已载入外部修改").waitFor({ timeout: 3000 });
+    expect((await page.locator(".conflict").count()) === 0, "干净时不应出冲突提示");
+  });
+
+  await step("有未保存修改时：出冲突提示，磁盘上的外部版本不被覆盖", async () => {
+    const ta = page.locator(".editor__textarea");
+    await ta.click();
+    await page.keyboard.press("Control+End");
+    await page.keyboard.type("\n本地还没保存");
+    editExternally(alphaPath, "第一段内容（外部编辑器写的）", "第一段内容（外部又改了一次）");
+    await page.locator(".conflict").waitFor({ timeout: 5000 });
+    await page.screenshot({ path: path.join(artifacts, "04-sync-conflict.png") });
+    await page.waitForTimeout(1500); // 冲突期间自动保存必须停住
+    const disk = fs.readFileSync(alphaPath, "utf8");
+    expect(disk.includes("外部又改了一次"), "磁盘上应保留外部版本");
+    expect(!disk.includes("本地还没保存"), "冲突期间不能把本地修改写到磁盘");
+    await page.locator(".conflict").getByRole("button", { name: "重新加载" }).click();
+    await page.locator(".conflict").waitFor({ state: "detached" });
+    const value = await ta.inputValue();
+    expect(value.includes("外部又改了一次") && !value.includes("本地还没保存"), "重新加载后应是外部版本");
+  });
+
+  await step("正打开的笔记在外部被删：内容存进回收站并关闭", async () => {
+    await page.locator(".note-row__text", { hasText: /^贝塔（外部改过）$/ }).click();
+    await page.waitForFunction(
+      () => document.querySelector(".editor__title")?.value === "贝塔（外部改过）",
+      null,
+      { timeout: 5000 },
+    );
+    const errorsBefore = pageErrors.length;
+    fs.rmSync(betaPath);
+    await page.getByText("已在外部删除，编辑器里的内容已存进回收站").waitFor({ timeout: 8000 });
+    // 判断「被删了」靠的就是 GET /api/notes/:id 返回 404，浏览器会把它记成一条资源加载错误。
+    // 只在这一步、只放过这一种；其他任何报错照样让最后一步失败。
+    const during = pageErrors.splice(errorsBefore);
+    const unexpected = during.filter((e) => !/status of 404 \(Not Found\)/.test(e));
+    pageErrors.push(...unexpected);
+    expect((await page.locator(".note-tab", { hasText: "贝塔（外部改过）" }).count()) === 0, "贝塔的标签页应已关闭");
+    const trash = await api("/api/trash");
+    expect(trash.items.some((item) => item.origPath === "beta.md"), "回收站里应有 beta.md");
+    // 放回去，后面的窄屏步骤还要用它
+    const name = trash.items.find((item) => item.origPath === "beta.md").name;
+    const restored = await page.evaluate(
+      async (n) => (await fetch(`/api/trash/${encodeURIComponent(n)}/restore`, { method: "POST" })).status,
+      name,
+    );
+    expect(restored === 200, `从回收站恢复应成功，实际 ${restored}`);
+    await page.locator(".note-row__text", { hasText: /^贝塔（外部改过）$/ }).waitFor({ timeout: 5000 });
+  });
+
   await step("主题切换并在刷新后保持", async () => {
     const toggle = page.getByLabel(/切换主题/);
     await toggle.click(); // system → light
@@ -208,7 +281,7 @@ try {
     await page.locator(".sidebar").waitFor();
     const theme = await page.evaluate(() => document.documentElement.dataset.theme);
     expect(theme === "dark", `刷新后主题应为 dark，实际 ${theme}`);
-    await page.screenshot({ path: path.join(artifacts, "04-dark.png") });
+    await page.screenshot({ path: path.join(artifacts, "05-dark.png") });
   });
 
   await step("窄屏：抽屉导航可用，页面不横向溢出", async () => {
@@ -217,11 +290,11 @@ try {
     await mobile.goto(base);
     await mobile.getByLabel("打开导航").click();
     await mobile.locator(".sidebar.is-open").waitFor();
-    await mobile.locator(".note-row__text", { hasText: /^贝塔笔记$/ }).click();
+    await mobile.locator(".note-row__text", { hasText: /^贝塔（外部改过）$/ }).click();
     await mobile.locator(".editor__title").waitFor();
     const width = await mobile.evaluate(() => document.documentElement.scrollWidth);
     expect(width <= 390, `页面宽度 ${width} 超过视口 390`);
-    await mobile.screenshot({ path: path.join(artifacts, "05-mobile.png") });
+    await mobile.screenshot({ path: path.join(artifacts, "06-mobile.png") });
   });
 
   await step("全程没有页面报错", async () => {

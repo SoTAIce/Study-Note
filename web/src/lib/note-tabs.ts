@@ -28,3 +28,16 @@ export function closeNoteTab(
   const next = tabs[index + 1] ?? tabs[index - 1] ?? null;
   return { tabs: remaining, nextActiveId: next?.id ?? null };
 }
+
+/** 列表刷新后，用最新标题更新已打开的标签页（外部改了标题时）；没变化就返回原数组，避免多余渲染。 */
+export function syncNoteTabTitles(tabs: NoteTab[], items: Array<{ id: string; title: string }>): NoteTab[] {
+  const titles = new Map(items.map((item) => [item.id, item.title]));
+  let changed = false;
+  const next = tabs.map((tab) => {
+    const title = titles.get(tab.id);
+    if (title === undefined || title === tab.title) return tab;
+    changed = true;
+    return { ...tab, title };
+  });
+  return changed ? next : tabs;
+}

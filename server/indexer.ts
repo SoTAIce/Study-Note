@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import type { ChangeEvent } from "./events.ts";
 import { contentHash, excerpt, extractLinks, extractTags } from "./parse.ts";
 import { toLocalIso, type NoteStore, type StoredNote } from "./store.ts";
 
@@ -13,11 +14,34 @@ export class Indexer {
   private readonly store: NoteStore;
   private readonly now: () => Date;
   private readonly ignored = new Map<string, number>();
+  private readonly listeners = new Set<(event: ChangeEvent) => void>();
+  /** reindexAll 期间不逐篇发事件，结束时发一次 resync */
+  private muted = 0;
 
   constructor(deps: { db: DatabaseSync; store: NoteStore; now?: () => Date }) {
     this.db = deps.db;
     this.store = deps.store;
     this.now = deps.now ?? (() => new Date());
+  }
+
+  /** 订阅索引变化（外部编辑、应用自己的写入、整体重建都会发）。返回取消订阅函数。 */
+  onChange(listener: (event: ChangeEvent) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  private emit(event: ChangeEvent): void {
+    if (this.muted > 0) return;
+    for (const listener of this.listeners) {
+      try {
+        listener(event);
+      } catch (err) {
+        // 某个订阅者出错不能影响索引本身
+        console.warn(`[index] 变化通知失败：${(err as Error).message}`);
+      }
+    }
   }
 
   /** 自己写入文件时先登记，watcher 在时间窗内看到该路径就跳过，避免自触发重索引。 */
@@ -106,6 +130,8 @@ export class Indexer {
     this.db
       .prepare("UPDATE links SET target_id = ? WHERE target_title = ? AND target_id IS NULL")
       .run(id, note.parsed.meta.title);
+
+    this.emit({ kind: "changed", id, path: relPath, hash: note.hash });
   }
 
   removeFile(relPath: string): void {
@@ -114,6 +140,7 @@ export class Indexer {
       | undefined;
     if (!row) return;
     this.deleteById(row.id);
+    this.emit({ kind: "removed", id: row.id, path: relPath });
   }
 
   private deleteById(id: string): void {
@@ -139,21 +166,27 @@ export class Indexer {
     let indexed = 0;
     let removed = 0;
     let failed = 0;
-    for (const relPath of files) {
-      try {
-        this.indexFile(relPath);
-        indexed += 1;
-      } catch (err) {
-        // 单个文件坏掉（编码异常、被别的程序锁住、同名目录）不该拖垮整次启动
-        failed += 1;
-        console.warn(`[index] 跳过无法索引的文件 ${relPath}：${(err as Error).message}`);
+    this.muted += 1;
+    try {
+      for (const relPath of files) {
+        try {
+          this.indexFile(relPath);
+          indexed += 1;
+        } catch (err) {
+          // 单个文件坏掉（编码异常、被别的程序锁住、同名目录）不该拖垮整次启动
+          failed += 1;
+          console.warn(`[index] 跳过无法索引的文件 ${relPath}：${(err as Error).message}`);
+        }
+        known.delete(relPath);
       }
-      known.delete(relPath);
+      for (const stale of known) {
+        this.removeFile(stale);
+        removed += 1;
+      }
+    } finally {
+      this.muted -= 1;
     }
-    for (const stale of known) {
-      this.removeFile(stale);
-      removed += 1;
-    }
+    this.emit({ kind: "resync" });
     return { indexed, removed, failed };
   }
 

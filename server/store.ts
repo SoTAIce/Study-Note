@@ -452,9 +452,8 @@ export class NoteStore {
     return this.read(relPath);
   }
 
-  moveToTrash(relPath: string): { name: string } {
-    const abs = this.abs(relPath);
-    const at = toLocalIso(this.now());
+  /** 回收站里给这篇起一个不重名的文件名：`时间戳-原文件名`，撞名就加序号前缀。 */
+  private trashSlot(relPath: string, at: string): string {
     const base = `${at.replace(/[-:T+]/g, "").slice(0, 14)}-${path.basename(relPath)}`;
     fs.mkdirSync(this.trashDir, { recursive: true });
     let name = base;
@@ -463,13 +462,50 @@ export class NoteStore {
       name = `${n}-${base}`;
       n += 1;
     }
-    fs.renameSync(abs, path.join(this.trashDir, name));
+    return name;
+  }
+
+  private writeTrashSidecar(name: string, relPath: string, at: string): void {
     fs.writeFileSync(
       path.join(this.trashDir, `${name}.json`),
       JSON.stringify({ origPath: relPath, deletedAt: at }),
       "utf8",
     );
+  }
+
+  moveToTrash(relPath: string): { name: string } {
+    const abs = this.abs(relPath);
+    const at = toLocalIso(this.now());
+    const name = this.trashSlot(relPath, at);
+    fs.renameSync(abs, path.join(this.trashDir, name));
+    this.writeTrashSidecar(name, relPath, at);
     return { name };
+  }
+
+  /**
+   * 笔记在外部被删掉时，把编辑器里还开着的内容（可能含未保存修改）存进回收站，
+   * 格式与 moveToTrash 相同，能走现有的恢复流程。
+   * 回收站里已有同一路径、标题和正文都相同的条目（例如是在另一个标签页里删的）就不重复存。
+   */
+  salvageToTrash(relPath: string, meta: NoteMeta, body: string): { name: string; skipped: boolean } {
+    this.abs(relPath); // 只做越界校验：文件本来就已经不在了
+    if (!relPath.toLowerCase().endsWith(".md")) throw new Error(`只能存 .md 笔记：${relPath}`);
+    for (const entry of this.listTrash()) {
+      if (entry.origPath !== relPath) continue;
+      try {
+        const raw = fs.readFileSync(path.join(this.trashDir, entry.name), "utf8");
+        const parsed = parseNote(raw, { path: relPath, mtime: entry.deletedAt });
+        if (parsed.body === body && parsed.meta.title === meta.title) return { name: entry.name, skipped: true };
+      } catch {
+        // 读不了的条目不影响这次存
+      }
+    }
+    const at = toLocalIso(this.now());
+    const name = this.trashSlot(relPath, at);
+    const content = serializeNote({ ...meta, updated: at }, body);
+    fs.writeFileSync(path.join(this.trashDir, name), content, "utf8");
+    this.writeTrashSidecar(name, relPath, at);
+    return { name, skipped: false };
   }
 
   listTrash(): TrashedNote[] {

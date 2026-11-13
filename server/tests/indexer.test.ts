@@ -248,3 +248,83 @@ test("旧版本库（schema_version=1）打开后整库重建并带上 group_nam
   assert.equal(version.value, "2");
   second.close();
 });
+
+// ---- 变化通知（外部编辑同步，sync-001） ----
+
+test("indexFile / removeFile 发出 changed / removed，取消订阅后不再收到", () => {
+  const { store, db, indexer } = mk();
+  const events: unknown[] = [];
+  const off = indexer.onChange((e) => events.push(e));
+  const note = store.create({ title: "通知测试", body: "正文" });
+  indexer.indexFile(note.relPath);
+  indexer.removeFile(note.relPath);
+  indexer.removeFile("不存在.md"); // 索引里没有的路径：不发
+  off();
+  indexer.indexFile(note.relPath);
+  assert.deepEqual(events, [
+    { kind: "changed", id: note.id, path: note.relPath, hash: note.hash },
+    { kind: "removed", id: note.id, path: note.relPath },
+  ]);
+  db.close();
+});
+
+test("reindexAll 不逐篇通知，只在结束时发一次 resync", () => {
+  const { store, db, indexer } = mk();
+  store.create({ title: "甲", body: "1" });
+  store.create({ title: "乙", body: "2" });
+  const events: Array<{ kind: string }> = [];
+  indexer.onChange((e) => events.push(e));
+  indexer.reindexAll();
+  assert.deepEqual(events, [{ kind: "resync" }]);
+  db.close();
+});
+
+test("订阅者抛错不影响索引和其他订阅者", () => {
+  const { store, db, indexer } = mk();
+  const seen: string[] = [];
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    indexer.onChange(() => {
+      throw new Error("坏订阅者");
+    });
+    indexer.onChange((e) => seen.push(e.kind));
+    const note = store.create({ title: "丙", body: "3" });
+    indexer.indexFile(note.relPath);
+    assert.ok(db.prepare("SELECT 1 FROM notes WHERE id = ?").get(note.id));
+    assert.deepEqual(seen, ["changed"]);
+  } finally {
+    console.warn = warn;
+    db.close();
+  }
+});
+
+test("真实 fs.watch：外部改写文件后 2 秒内收到 changed，删除后收到 removed", async () => {
+  const { notesRoot, store, db, indexer } = mk();
+  const note = store.create({ title: "外部编辑", body: "原文" });
+  indexer.indexFile(note.relPath);
+  const events: Array<{ kind: string; id?: string; hash?: string }> = [];
+  indexer.onChange((e) => events.push(e));
+  const stop = indexer.watch();
+  const until = async (pred: () => boolean, ms = 2000) => {
+    const end = Date.now() + ms;
+    while (!pred() && Date.now() < end) await new Promise((r) => setTimeout(r, 25));
+    return pred();
+  };
+  try {
+    const abs = path.join(notesRoot, note.relPath);
+    fs.writeFileSync(abs, fs.readFileSync(abs, "utf8").replace("原文", "别的编辑器改过"), "utf8");
+    assert.ok(
+      await until(() => events.some((e) => e.kind === "changed" && e.id === note.id && e.hash !== note.hash)),
+      `2 秒内应收到 changed，实际：${JSON.stringify(events)}`,
+    );
+    fs.rmSync(abs);
+    assert.ok(
+      await until(() => events.some((e) => e.kind === "removed" && e.id === note.id)),
+      `2 秒内应收到 removed，实际：${JSON.stringify(events)}`,
+    );
+  } finally {
+    stop();
+    db.close();
+  }
+});

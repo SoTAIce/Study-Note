@@ -24,6 +24,7 @@ data/notes/*.md  ──(唯一真源)──►  store.ts  ──►  indexer.ts 
 | `ai.ts` / `agent*.ts` / `providers/` | 右栏 AI 动作、AI 对话代理（计划 → 人审批 → 执行 → 可撤销） | 改笔记必须走计划审批；执行前快照到 `.history/batches/` |
 | `backup.ts` / `webdav.ts` | WebDAV 单向备份与快照恢复 | 免费额度每 30 分钟 600 次请求 |
 | `config.ts` / `net.ts` / `sse.ts` | 配置读写、网络错误翻译、SSE | |
+| `events.ts` | 笔记变化推送（`GET /api/events`）的合并：300ms 一批、同一路径留最后一次、超过 100 条改发 resync | 事件由 `Indexer.onChange` 发出（外部编辑和应用自己的写入都走这里），只说哪篇变了，不带正文 |
 
 ## 测试
 

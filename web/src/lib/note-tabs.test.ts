@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { closeNoteTab, renameNoteTab, upsertNoteTab, type NoteTab } from "./note-tabs.ts";
+import { closeNoteTab, renameNoteTab, syncNoteTabTitles, upsertNoteTab, type NoteTab } from "./note-tabs.ts";
 
 const tabs: NoteTab[] = [
   { id: "a", title: "Alpha" },
@@ -40,4 +40,20 @@ test("关闭非当前标签保持当前标签不变", () => {
     tabs: [tabs[1], tabs[2]],
     nextActiveId: "c",
   });
+});
+
+test("外部改了标题后同步到标签页；没变化时返回同一个数组", () => {
+  const tabs = [
+    { id: "a", title: "旧标题" },
+    { id: "b", title: "乙" },
+  ];
+  const next = syncNoteTabTitles(tabs, [
+    { id: "a", title: "新标题" },
+    { id: "b", title: "乙" },
+  ]);
+  assert.deepEqual(next, [
+    { id: "a", title: "新标题" },
+    { id: "b", title: "乙" },
+  ]);
+  assert.equal(syncNoteTabTitles(next, [{ id: "a", title: "新标题" }]), next);
 });

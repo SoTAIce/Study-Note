@@ -105,14 +105,22 @@
       "priority": 1,
       "area": "sync",
       "title": "外部编辑后界面自动同步",
-      "user_visible_behavior": "用 VS Code / Obsidian 改了笔记后，几秒内左栏列表、标签更新；正在打开且无未保存修改的那篇自动重载；有未保存修改时提示冲突而不是静默覆盖。",
-      "status": "not_started",
+      "user_visible_behavior": "用 VS Code / Obsidian 改了笔记后，几秒内左栏列表、标签更新；正在打开且无未保存修改的那篇自动重载；有未保存修改时立刻提示冲突而不是静默覆盖；正打开的那篇在外部被删除时，编辑器内容存进回收站后关闭。",
+      "status": "passing",
       "verification": [
-        "server：文件变化事件推送的接口测试",
-        "pnpm e2e：外部改文件后界面更新、有未保存修改时出冲突提示"
+        "server：事件合并（events.test.ts）、索引层发事件 + 真实 fs.watch（indexer.test.ts）、GET /api/events 与 POST /api/trash/salvage（api.test.ts）",
+        "web：外部变化的处理决策纯函数（live.test.ts）",
+        "pnpm e2e：外部改标题 → 左栏更新；干净时自动重载；有未保存修改时出冲突提示且磁盘不被覆盖；外部删除 → 内容进回收站",
+        "变异检查：关掉前端订阅，E2E 应失败"
       ],
-      "evidence": [],
-      "notes": "设计方案已写：docs/superpowers/specs/2026-11-13-external-edit-sync-design.md，待用户批准后实现（会话 006 用户插入了 ui-003，本条暂停）。"
+      "evidence": [
+        "2026-11-13 server：events.test.ts 6/6、indexer 新增 4 个（含真实 fs.watch：外部改写 / 删除 2 秒内收到 changed / removed）、api 新增 5 个（SSE hello + 推送、Host 闸门、salvage 存入 / 去重 / 可恢复、参数与越界 400、文件已删时读写回 404）",
+        "2026-11-13 web：live.test.ts 11/11（决策、连接、重连、可见性）；note-tabs 新增标题同步 1 个",
+        "2026-11-13 pnpm e2e 13/13（新增 4 步：外部改标题→左栏更新；干净时自动载入；有未保存修改时出冲突且磁盘保留外部版本；外部删除→内容进回收站并关闭），连跑 3 次通过",
+        "2026-11-13 变异检查：关掉前端订阅 → E2E 失败于「外部改了另一篇的标题」；有未保存修改时也重载 → live.test 失败 1 个、E2E 失败于冲突步骤；复原后全绿",
+        "2026-11-13 ./init.sh 全绿（347 + E2E 13 步）"
+      ],
+      "notes": "方案：docs/superpowers/specs/2026-11-13-external-edit-sync-design.md（第八节为用户决定）。支撑性修复：文件已被外部删除但索引还在时，接口原来回 500，现在回 404。E2E 删除那一步只放过 404 的资源加载日志（判断被删就靠它）。多标签页共用连接未做，见 sync-002。"
     },
     {
       "id": "perf-001",
@@ -445,6 +453,19 @@
         "2026-11-13 变异检查：statsReady 初值改 true 后 E2E 失败于该步，「实际 0,0,0,0」；复原后通过"
       ],
       "notes": "同时修了加载中闪现「还没有笔记」的问题（同一份数据）。"
+    },
+    {
+      "id": "sync-002",
+      "priority": 20,
+      "area": "sync",
+      "title": "多个浏览器标签页共用一条推送连接",
+      "user_visible_behavior": "同时开很多个 Study Notes 标签页时，AI 对话等请求不会因为浏览器连接数上限而排队。",
+      "status": "not_started",
+      "verification": [
+        "E2E：开 7 个标签页，AI 流式请求与保存都不排队"
+      ],
+      "evidence": [],
+      "notes": "sync-001 每个标签页常驻 1 条 SSE；HTTP/1.1 下浏览器对同一站点最多 6 条连接。可用 BroadcastChannel 选一个标签页当「主」，由它持有连接并转发给其他标签页。用户决定后再做。"
     }
   ]
 }

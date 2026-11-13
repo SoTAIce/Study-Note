@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
@@ -30,6 +31,7 @@ import { createGroup, deleteGroup, GroupsHttpError, groupsOverview, renameGroup 
 import { upsertGroup, validateGroupName } from "./groups.ts";
 import { loadProviders, maskProviders, runtimeOf, saveProviders, streamTurn } from "./providers/index.ts";
 import { sseStart } from "./sse.ts";
+import { ChangeBatcher } from "./events.ts";
 import {
   describeWebdavError,
   loadBackupConfig,
@@ -38,7 +40,7 @@ import {
   type BackupService,
 } from "./backup.ts";
 import type { Indexer } from "./indexer.ts";
-import type { NoteType } from "./parse.ts";
+import type { NoteMeta, NoteType } from "./parse.ts";
 import { search } from "./search.ts";
 import { ConflictError, HistoryNotFoundError, toLocalIso, type HistoryReason, type NoteStore } from "./store.ts";
 import { isValidVersionId } from "./history.ts";
@@ -169,6 +171,8 @@ export function createApi(deps: ApiDeps) {
   }
 
   const groupsDeps = { db, store, dataDir, reindex };
+  /** 每次进程启动不同：前端重连后发现它变了，就知道服务重启过，整体刷新一次 */
+  const bootId = randomUUID();
 
   return async function api(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
     const method = (req.method ?? "GET").toUpperCase();
@@ -503,6 +507,53 @@ export function createApi(deps: ApiDeps) {
           .prepare("SELECT tag, COUNT(*) AS count FROM tags GROUP BY tag ORDER BY count DESC, tag")
           .all() as Array<{ tag: string; count: number }>;
         sendJson(res, 200, { items: rows });
+        return true;
+      }
+
+      // 笔记变化推送（SSE）：只说哪篇变了，不带正文
+      if (route[0] === "events" && route.length === 1 && method === "GET") {
+        const session = sseStart(res);
+        session.send("hello", { bootId });
+        const batcher = new ChangeBatcher({ send: (message) => session.send("notes", message) });
+        const unsubscribe = indexer.onChange((event) => batcher.push(event));
+        await new Promise<void>((resolve) => {
+          if (session.signal.aborted) resolve();
+          else session.signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+        unsubscribe();
+        batcher.close();
+        await session.close();
+        return true;
+      }
+
+      // 外部删除了正打开的笔记：把编辑器里的内容存进回收站
+      if (route[0] === "trash" && route[1] === "salvage" && route.length === 2 && method === "POST") {
+        const payload = await readJson(req);
+        const relPath = typeof payload.relPath === "string" ? payload.relPath : "";
+        const body = typeof payload.body === "string" ? payload.body : null;
+        const raw = (payload.meta ?? {}) as Record<string, unknown>;
+        if (!relPath || body === null || typeof raw !== "object") throw new HttpError(400, "需要 relPath、meta、body");
+        const str = (v: unknown, fallback = ""): string => (typeof v === "string" ? v : fallback);
+        const type = raw.type === "idea" || raw.type === "source" ? (raw.type as NoteType) : "note";
+        const meta: NoteMeta = {
+          id: str(raw.id),
+          title: str(raw.title, "未命名"),
+          created: str(raw.created),
+          updated: str(raw.updated),
+          type,
+          tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
+        };
+        const group = str(raw.group);
+        if (group) meta.group = group;
+        const source = str(raw.source);
+        if (source) meta.source = source;
+        let result: { name: string; skipped: boolean };
+        try {
+          result = store.salvageToTrash(relPath, meta, body);
+        } catch (err) {
+          throw new HttpError(400, (err as Error).message);
+        }
+        sendJson(res, 200, { ok: true, ...result });
         return true;
       }
 
@@ -1053,6 +1104,11 @@ export function createApi(deps: ApiDeps) {
       }
       if (err instanceof HttpError) {
         sendJson(res, err.status, { error: err.message });
+        return true;
+      }
+      // 索引里还有、磁盘上已经没了（外部刚删，watcher 还没跟上）：按「不存在」回，前端据此判断被删
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        sendJson(res, 404, { error: "笔记文件已不存在" });
         return true;
       }
       sendJson(res, 500, { error: (err as Error).message });

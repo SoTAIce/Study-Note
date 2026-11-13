@@ -27,7 +27,8 @@ import * as groupsApi from "./groups-api.ts";
 import type { GroupView } from "./groups-api.ts";
 import { resolveKey } from "./lib/keyboard.ts";
 import { filterLabel, type Filter } from "./lib/nav.ts";
-import { closeNoteTab, renameNoteTab, upsertNoteTab, type NoteTab } from "./lib/note-tabs.ts";
+import { closeNoteTab, renameNoteTab, syncNoteTabTitles, upsertNoteTab, type NoteTab } from "./lib/note-tabs.ts";
+import { connectLive, decideExternalChange, DELETE_CONFIRM_MS, touchesNote, type NoteChange } from "./lib/live.ts";
 import { isScreenVisible } from "./lib/screen-visibility.ts";
 import { relativeTime } from "./lib/time.ts";
 import {
@@ -124,12 +125,38 @@ export default function App() {
   /** 下一次保存要不要强制存一份历史版本：打开笔记后第一次保存 = edit，AI 改写后 = ai */
   const checkpointRef = useRef<"edit" | "ai" | null>(null);
   const listSeq = useRef(0);
+  // —— 外部编辑同步（sync-001）：订阅只建一次，处理函数每次渲染更新，避免闭包拿到旧状态 ——
+  const currentRef = useRef<NoteDetail | null>(null);
+  const noteTabsRef = useRef<NoteTab[]>([]);
+  const filterRef = useRef(filter);
+  const liveRefreshTimer = useRef<number | null>(null);
+  const externalCheckRef = useRef<Promise<void>>(Promise.resolve());
+  const liveHandlersRef = useRef<{ onChanges: (changes: NoteChange[]) => void; onResync: () => void } | null>(null);
   const navigateSeq = useRef(0);
   const toastTimer = useRef<number | null>(null);
 
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+  useEffect(() => {
+    currentRef.current = current;
+  }, [current]);
+  useEffect(() => {
+    noteTabsRef.current = noteTabs;
+  }, [noteTabs]);
+  useEffect(() => {
+    filterRef.current = filter;
+  }, [filter]);
+  useEffect(() => {
+    const stop = connectLive({
+      onChanges: (changes) => liveHandlersRef.current?.onChanges(changes),
+      onResync: () => liveHandlersRef.current?.onResync(),
+    });
+    return () => {
+      stop();
+      if (liveRefreshTimer.current !== null) window.clearTimeout(liveRefreshTimer.current);
+    };
+  }, []);
   useEffect(() => {
     conflictRef.current = conflict !== null;
   }, [conflict]);
@@ -206,7 +233,7 @@ export default function App() {
     }
   }
 
-  async function refreshSidebar(): Promise<void> {
+  async function refreshSidebar(): Promise<TimelineItem[] | null> {
     try {
       const [tagRes, timelineRes, groupRes] = await Promise.all([
         api.getTags(),
@@ -218,8 +245,10 @@ export default function App() {
       setGroups(groupRes.items);
       setUngroupedCount(groupRes.ungrouped);
       setStatsReady(true);
+      return timelineRes.items;
     } catch (err) {
       setListsError(api.errorMessage(err));
+      return null;
     }
   }
 
@@ -707,6 +736,159 @@ export default function App() {
       if (seq === navigateSeq.current) setLoadingNote(false);
     }
   }
+
+
+  // —— 外部编辑同步（sync-001，见 docs/superpowers/specs/2026-11-13-external-edit-sync-design.md） ——
+
+  /** 左栏、统计、标签页标题：300ms 防抖后整体刷新一次 */
+  function scheduleLiveRefresh(): void {
+    if (liveRefreshTimer.current !== null) window.clearTimeout(liveRefreshTimer.current);
+    liveRefreshTimer.current = window.setTimeout(() => {
+      liveRefreshTimer.current = null;
+      void loadList(filterRef.current);
+      void refreshSidebar().then((items) => {
+        if (items) setNoteTabs((tabs) => syncNoteTabTitles(tabs, items));
+      });
+    }, 300);
+  }
+
+  /** 当前这篇在外面可能变了：排队执行，前一次检查没完不开始下一次 */
+  function queueExternalCheck(): void {
+    externalCheckRef.current = externalCheckRef.current.then(checkCurrentNoteExternally).catch(() => {});
+  }
+
+  async function fetchIfExists(id: string): Promise<NoteDetail | null> {
+    try {
+      return await api.getNote(id);
+    } catch (err) {
+      if (api.isNotFound(err)) return null;
+      throw err;
+    }
+  }
+
+  async function checkCurrentNoteExternally(): Promise<void> {
+    const id = noteIdRef.current;
+    if (!id) return;
+    // 自己的保存还在路上：等它落地，hashRef 更新后再比，免得把回声当成外部修改
+    if (savePromiseRef.current) await savePromiseRef.current.catch(() => false);
+    if (noteIdRef.current !== id) return;
+
+    let detail: NoteDetail | null;
+    try {
+      detail = await fetchIfExists(id);
+      if (!detail) {
+        await new Promise((resolve) => window.setTimeout(resolve, DELETE_CONFIRM_MS));
+        if (noteIdRef.current !== id) return;
+        detail = await fetchIfExists(id);
+      }
+    } catch {
+      return; // 读不到（网络等）就不动编辑器，下一次变化或重连会再查
+    }
+    if (noteIdRef.current !== id) return;
+
+    const decision = decideExternalChange({
+      found: detail !== null,
+      diskHash: detail?.hash ?? "",
+      localHash: hashRef.current,
+      dirty: dirtyRef.current,
+      inConflict: conflictRef.current,
+    });
+    if (decision === "ignore") {
+      // 内容没变但可能被移动了：只更新路径
+      if (detail && currentRef.current && detail.relPath !== currentRef.current.relPath) {
+        setCurrent((prev) => (prev && prev.id === detail!.id ? { ...prev, relPath: detail!.relPath } : prev));
+      }
+      return;
+    }
+    if (decision === "reload" && detail) {
+      applyExternalReload(detail);
+      return;
+    }
+    if ((decision === "conflict" || decision === "refresh-conflict") && detail) {
+      if (saveTimer.current !== null) {
+        window.clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      conflictRef.current = true;
+      setConflict({
+        error: "这篇笔记在别处被改了，你的修改还没保存",
+        currentHash: detail.hash,
+        diskUpdated: detail.meta.updated,
+      });
+      setSaveStatus("conflict");
+      return;
+    }
+    if (decision === "deleted") await salvageDeletedNote(id);
+  }
+
+  /** 没有未保存修改：载入磁盘版本，尽量保持光标和滚动位置 */
+  function applyExternalReload(detail: NoteDetail): void {
+    const ta = textareaRef.current;
+    const keep = ta ? { start: ta.selectionStart, end: ta.selectionEnd, top: ta.scrollTop } : null;
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    hashRef.current = detail.hash;
+    dirtyRef.current = false;
+    setCurrent(detail);
+    setDraft({ title: detail.meta.title, body: detail.body });
+    setNoteTabs((tabs) => renameNoteTab(tabs, detail.id, detail.meta.title));
+    setSaveError(null);
+    setSaveStatus("saved");
+    void loadBacklinks(detail.id);
+    window.requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el || !keep) return;
+      const max = el.value.length;
+      el.setSelectionRange(Math.min(keep.start, max), Math.min(keep.end, max));
+      el.scrollTop = keep.top;
+    });
+    showToast("已载入外部修改", "ok");
+  }
+
+  /** 外部删除了正打开的这篇：编辑器里的内容存进回收站，再关闭它 */
+  async function salvageDeletedNote(id: string): Promise<void> {
+    const note = currentRef.current;
+    if (!note || note.id !== id) return;
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    const title = draftRef.current.title || note.meta.title;
+    try {
+      await api.salvageToTrash({
+        relPath: note.relPath,
+        meta: { ...note.meta, title },
+        body: draftRef.current.body,
+      });
+    } catch (err) {
+      // 存不进回收站就不关：内容还在编辑器里，让用户自己复制
+      dirtyRef.current = false;
+      setSaveStatus("error");
+      setSaveError(`这篇笔记已在外部删除，存进回收站失败：${api.errorMessage(err)}。请先复制内容。`);
+      showToast("这篇笔记已在外部删除，存进回收站失败", "error");
+      return;
+    }
+    if (noteIdRef.current !== id) return;
+    dirtyRef.current = false;
+    const result = closeNoteTab(noteTabsRef.current, id, id);
+    setNoteTabs(result.tabs);
+    clearEditor();
+    if (result.nextActiveId) await openNote(result.nextActiveId);
+    showToast(`「${title}」已在外部删除，编辑器里的内容已存进回收站`, "ok");
+  }
+
+  liveHandlersRef.current = {
+    onChanges: (changes) => {
+      scheduleLiveRefresh();
+      if (touchesNote(changes, noteIdRef.current, currentRef.current?.relPath ?? null)) queueExternalCheck();
+    },
+    onResync: () => {
+      scheduleLiveRefresh();
+      if (noteIdRef.current) queueExternalCheck();
+    },
+  };
 
   // —— 历史版本 ——
   function openHistory(): void {

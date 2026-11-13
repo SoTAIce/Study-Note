@@ -389,6 +389,19 @@ export function restoreTrash(name: string): Promise<{ ok: true; relPath: string 
   return request(`/trash/${encodeURIComponent(name)}/restore`, { method: "POST" });
 }
 
+/** 笔记在外部被删时，把编辑器里的内容（含未保存修改）存进回收站；内容相同的已在回收站时 skipped = true。 */
+export function salvageToTrash(input: {
+  relPath: string;
+  meta: NoteMeta;
+  body: string;
+}): Promise<{ ok: true; name: string; skipped: boolean }> {
+  return request("/trash/salvage", { method: "POST", body: jsonBody(input) });
+}
+
+export function isNotFound(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 404;
+}
+
 export function capture(text: string, tags?: string[]): Promise<CaptureResult> {
   return request("/capture", {
     method: "POST",
