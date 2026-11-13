@@ -127,14 +127,20 @@
       "priority": 2,
       "area": "perf",
       "title": "自动保存后不再每次刷新侧栏与反链",
-      "user_visible_behavior": "连续打字时每次自动保存只发 1 个保存请求；只有标题/标签/链接变了才刷新侧栏和反链。",
-      "status": "not_started",
+      "user_visible_behavior": "连续打字时每次自动保存只发 1 个保存请求；只有标题/标签/链接变了才刷新侧栏和反链；自己保存的回声不再触发刷新。自动保存改为停手 5 秒后保存（连续输入最多 30 秒保存一次，页面切走时立即保存），Ctrl+S 立即保存。",
+      "status": "passing",
       "verification": [
-        "单测：判断是否需要刷新的纯函数",
-        "E2E 或手动：记录网络请求数"
+        "单测：判断是否需要刷新的纯函数（web/src/lib/save-plan.test.ts、server/tests/index-diff.test.ts）",
+        "接口测试：保存接口返回 changes（server/tests/api.test.ts）",
+        "E2E：记录网络请求数；停手 2 秒仍未自动保存；切走窗口立即保存"
       ],
-      "evidence": [],
-      "notes": "sync-001 之后：自己的每次保存也会经 /api/events 回声，触发一次左栏防抖刷新（scheduleLiveRefresh）。做本条时一并处理：changes 全是「当前这篇且 hash 等于 hashRef」的回声时跳过刷新，标题 / 标签变化除外。"
+      "evidence": [
+        "pnpm test：358 通过（新增 save-plan 6 条、index-diff 4 条、api 1 条）",
+        "pnpm e2e：14 步通过；新步骤「只改正文时一次保存只发 1 个请求；加了标签才刷新左栏」实测只改正文时请求仅 PUT /api/notes/e2ealpha，加 #性能 后出现 GET /api/tags 且没有 GET /api/backlinks",
+        "变异检查：refreshAfterSave 恒为刷新 → 单测 2 条失败 + E2E 请求数步骤失败；去掉回声过滤 → E2E 请求数步骤失败；自动保存间隔改回 800ms → 单测 1 条失败 + E2E「停手 2 秒不应已保存」失败；去掉 blur 立即保存 → E2E 失败。恢复后全绿",
+        "./init.sh 全绿（2026-11-13）"
+      ],
+      "notes": "自动保存：停手 5 秒保存，连续输入最多 30 秒保存一次，窗口失焦 / 页面隐藏立即保存，Ctrl+S 立即保存；AI 改写、插入片段等一次性动作 0.8 秒后保存（web/src/lib/save-plan.ts）。保存接口按索引前后对比返回 changes（server/index-diff.ts）。回声判断：自己保存过的 id:hash（最近 20 个）或编辑器正显示的版本。"
     },
     {
       "id": "ci-001",

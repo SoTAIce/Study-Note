@@ -399,13 +399,17 @@ export function createApi(deps: ApiDeps) {
           try {
             indexer.ignoreNext(row.path);
             const saved = store.save(row.path, body, baseHash, patch, { checkpoint });
-            indexer.indexFile(row.path);
+            const indexed = indexer.indexFile(row.path);
             sendJson(res, 200, {
               id: saved.id,
               relPath: saved.relPath,
               hash: saved.hash,
               meta: saved.parsed.meta,
               body: saved.parsed.body,
+              // perf-001：前端据此决定要不要刷新左栏 / 反链，并就地更新列表里的摘要和标签
+              excerpt: indexed?.excerpt ?? "",
+              indexTags: indexed?.tags ?? saved.parsed.meta.tags,
+              changes: indexed?.changes ?? { title: true, tags: true, meta: true, links: true },
             });
           } catch (err) {
             if (err instanceof ConflictError) {

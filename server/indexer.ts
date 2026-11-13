@@ -2,12 +2,23 @@ import fs from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import type { ChangeEvent } from "./events.ts";
+import { diffIndexed, type IndexChanges, type IndexedShape } from "./index-diff.ts";
 import { contentHash, excerpt, extractLinks, extractTags } from "./parse.ts";
 import { toLocalIso, type NoteStore, type StoredNote } from "./store.ts";
 
 const DEBOUNCE_MS = 250;
 /** 自己的写入事件通常几毫秒内就到；超过这个窗口的事件当外部修改，正常索引。 */
 const SELF_WRITE_WINDOW_MS = 800;
+
+/** indexFile 的结果：保存接口据此告诉前端要不要刷新左栏 / 反链 */
+export type IndexResult = {
+  id: string;
+  hash: string;
+  excerpt: string;
+  /** 索引里的标签（frontmatter + 正文 #标签），与列表接口一致 */
+  tags: string[];
+  changes: IndexChanges;
+};
 
 export class Indexer {
   private readonly db: DatabaseSync;
@@ -75,10 +86,11 @@ export class Indexer {
     return derived;
   }
 
-  indexFile(relPath: string): void {
+  /** 索引一个文件；文件已不存在时从索引移除并返回 null */
+  indexFile(relPath: string): IndexResult | null {
     if (!fs.existsSync(this.store.absPath(relPath))) {
       this.removeFile(relPath);
-      return;
+      return null;
     }
     const note = this.store.read(relPath);
     const at = toLocalIso(this.now());
@@ -86,11 +98,13 @@ export class Indexer {
     const previous = this.db.prepare("SELECT id FROM notes WHERE path = ?").get(relPath) as
       | { id: string }
       | undefined;
+    const before = previous ? this.indexedShape(previous.id) : null;
     if (previous) this.deleteById(previous.id);
     const id = this.uniqueId(note.id, relPath);
 
     const tags = new Set<string>([...note.parsed.meta.tags, ...extractTags(note.parsed.body)]);
     const links = extractLinks(note.parsed.body);
+    const summary = excerpt(note.parsed.body, 160);
 
     this.db
       .prepare(
@@ -101,7 +115,7 @@ export class Indexer {
         id,
         relPath,
         note.parsed.meta.title,
-        excerpt(note.parsed.body, 160),
+        summary,
         note.parsed.meta.type,
         note.parsed.meta.created,
         note.parsed.meta.updated,
@@ -132,6 +146,29 @@ export class Indexer {
       .run(id, note.parsed.meta.title);
 
     this.emit({ kind: "changed", id, path: relPath, hash: note.hash });
+
+    const after: IndexedShape = {
+      title: note.parsed.meta.title,
+      type: note.parsed.meta.type,
+      group: note.parsed.meta.group ?? null,
+      tags: [...tags],
+      links: links.map((link) => link.title),
+    };
+    return { id, hash: note.hash, excerpt: summary, tags: [...tags], changes: diffIndexed(before, after) };
+  }
+
+  private indexedShape(id: string): IndexedShape | null {
+    const row = this.db.prepare("SELECT title, type, group_name FROM notes WHERE id = ?").get(id) as
+      | { title: string; type: string; group_name: string | null }
+      | undefined;
+    if (!row) return null;
+    const tags = (this.db.prepare("SELECT tag FROM tags WHERE note_id = ?").all(id) as Array<{ tag: string }>).map(
+      (r) => r.tag,
+    );
+    const links = (
+      this.db.prepare("SELECT target_title FROM links WHERE src_id = ?").all(id) as Array<{ target_title: string }>
+    ).map((r) => r.target_title);
+    return { title: row.title, type: row.type, group: row.group_name, tags, links };
   }
 
   removeFile(relPath: string): void {

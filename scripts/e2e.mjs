@@ -165,7 +165,10 @@ try {
     await ta.click();
     await page.keyboard.press("Control+End");
     await page.keyboard.type("\n追加一行 E2E");
-    await page.locator(".save-state--saved").waitFor({ timeout: 5000 });
+    // perf-001：停手 5 秒才自动保存，2 秒时应还没存
+    await page.waitForTimeout(2000);
+    expect((await page.locator(".save-state--dirty").count()) === 1, "停手 2 秒时不应已经自动保存");
+    await page.locator(".save-state--saved").waitFor({ timeout: 8000 });
     const raw = fs.readFileSync(path.join(notesDir, "alpha.md"), "utf8");
     expect(raw.includes("追加一行 E2E"), "alpha.md 应包含刚输入的内容");
     await page.screenshot({ path: path.join(artifacts, "02-editor.png") });
@@ -199,6 +202,44 @@ try {
     await page.getByRole("button", { name: "确认恢复" }).click();
     await page.locator(".history").waitFor({ state: "detached" });
     expect((await ta.inputValue()).includes("追加一行 E2E"), "撤销恢复后追加的那行应回来");
+  });
+
+  await step("只改正文时一次保存只发 1 个请求；加了标签才刷新左栏", async () => {
+    const seen = [];
+    const record = (req) => {
+      const url = new URL(req.url());
+      if (url.pathname.startsWith("/api/") && url.pathname !== "/api/events") seen.push(`${req.method()} ${url.pathname}`);
+    };
+    const ta = page.locator(".editor__textarea");
+    await ta.click();
+    await page.keyboard.press("Control+End");
+    page.on("request", record);
+    await page.keyboard.type("\n只改正文");
+    await page.keyboard.press("Control+s");
+    await page.locator(".save-state--saved").waitFor({ timeout: 3000 });
+    await page.waitForTimeout(1200); // 等推送通道的回声（300ms 合并窗口）到达并被忽略
+    expect(
+      seen.length === 1 && seen[0] === "PUT /api/notes/e2ealpha",
+      `只改正文应只有 1 个保存请求，实际：${seen.join(", ") || "无"}`,
+    );
+
+    seen.length = 0;
+    await page.keyboard.type(" #性能");
+    const tagsRefreshed = page.waitForResponse((res) => new URL(res.url()).pathname === "/api/tags", { timeout: 3000 });
+    await page.keyboard.press("Control+s");
+    await page.locator(".save-state--saved").waitFor({ timeout: 3000 });
+    const tags = await (await tagsRefreshed).json();
+    expect(tags.items.some((t) => t.tag === "性能"), "左栏标签应出现「性能」");
+    await page.waitForTimeout(800);
+    page.off("request", record);
+    expect(seen.includes("GET /api/tags"), `加了标签应刷新左栏标签，实际：${seen.join(", ")}`);
+    expect(!seen.includes("GET /api/backlinks/e2ealpha"), `链接没变不应刷新反链，实际：${seen.join(", ")}`);
+
+    // 自动保存间隔变长了：切走窗口时要立刻存
+    await page.keyboard.type(" 切走前");
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await page.locator(".save-state--saved").waitFor({ timeout: 1500 });
+    expect(fs.readFileSync(path.join(notesDir, "alpha.md"), "utf8").includes("切走前"), "切走窗口后应已落盘");
   });
 
   // —— 外部编辑同步（sync-001）：模拟 VS Code / Obsidian 直接改 data/notes 里的文件 ——

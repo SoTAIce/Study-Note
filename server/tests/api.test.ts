@@ -353,3 +353,29 @@ test("索引还在但文件已被外部删掉：读取和保存都回 404（不�
   assert.equal(saved.status, 404);
   assert.equal(fs.existsSync(path.join(store.notesRoot, created.json.relPath)), false);
 });
+
+test("保存接口报告哪些会影响左栏 / 反链的东西变了（perf-001）", async () => {
+  const created = await call("POST", "/api/notes", { title: "变化报告", body: "正文 #甲 [[某篇]]" });
+  const id = created.json.id as string;
+  let hash = (await call("GET", `/api/notes/${id}`)).json.hash as string;
+  const none = { title: false, tags: false, meta: false, links: false };
+
+  async function save(input: { body: string; title?: string }) {
+    const res = await call("PUT", `/api/notes/${id}`, { ...input, baseHash: hash });
+    assert.equal(res.status, 200);
+    hash = res.json.hash;
+    return res.json;
+  }
+
+  const bodyOnly = await save({ body: "改了正文 #甲 [[某篇]] 多写几个字" });
+  assert.deepEqual(bodyOnly.changes, none);
+  assert.match(bodyOnly.excerpt, /多写几个字/);
+  assert.deepEqual(bodyOnly.indexTags, ["甲"]);
+
+  assert.deepEqual((await save({ body: "改了正文 #甲 #乙 [[某篇]]" })).changes, { ...none, tags: true });
+  assert.deepEqual((await save({ body: "改了正文 #甲 #乙 [[另一篇]]" })).changes, { ...none, links: true });
+  assert.deepEqual((await save({ body: "改了正文 #甲 #乙 [[另一篇]]", title: "变化报告2" })).changes, {
+    ...none,
+    title: true,
+  });
+});

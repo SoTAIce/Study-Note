@@ -29,6 +29,14 @@ import { resolveKey } from "./lib/keyboard.ts";
 import { filterLabel, type Filter } from "./lib/nav.ts";
 import { closeNoteTab, renameNoteTab, syncNoteTabTitles, upsertNoteTab, type NoteTab } from "./lib/note-tabs.ts";
 import { connectLive, decideExternalChange, DELETE_CONFIRM_MS, touchesNote, type NoteChange } from "./lib/live.ts";
+import {
+  autosaveDelay,
+  dropOwnEchoes,
+  echoKey,
+  patchTimeline,
+  QUICK_SAVE_MS,
+  refreshAfterSave,
+} from "./lib/save-plan.ts";
 import { isScreenVisible } from "./lib/screen-visibility.ts";
 import { relativeTime } from "./lib/time.ts";
 import {
@@ -48,7 +56,6 @@ type Screen = "notes" | "trash" | "compose" | "ai";
 type ToastKind = "info" | "ok" | "error";
 type Toast = { id: number; text: string; kind: ToastKind };
 
-const SAVE_DEBOUNCE_MS = 800;
 
 export default function App() {
   // —— 左栏数据 ——
@@ -130,6 +137,12 @@ export default function App() {
   const noteTabsRef = useRef<NoteTab[]>([]);
   const filterRef = useRef(filter);
   const liveRefreshTimer = useRef<number | null>(null);
+  /** 自己保存过的版本（id:hash），推送通道里再看到就是回声，不刷新（perf-001） */
+  const ownSavesRef = useRef<string[]>([]);
+  /** 上次保存之后第一次改动的时间，用来算「连续输入最多 30 秒存一次」 */
+  const firstDirtyAtRef = useRef<number | null>(null);
+  /** 只挂一次的事件监听里调用最新的 doSave */
+  const doSaveRef = useRef<() => Promise<boolean>>(async () => true);
   const externalCheckRef = useRef<Promise<void>>(Promise.resolve());
   const liveHandlersRef = useRef<{ onChanges: (changes: NoteChange[]) => void; onResync: () => void } | null>(null);
   const navigateSeq = useRef(0);
@@ -271,8 +284,14 @@ export default function App() {
   }, []);
 
   // —— 自动保存 ——
-  function scheduleSave(delay = SAVE_DEBOUNCE_MS): void {
+  /** delay 不给时按自动保存节奏：停手 5 秒，连续输入最多 30 秒（perf-001）；Ctrl+S 直接 doSave */
+  function scheduleSave(delay?: number): void {
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    if (delay === undefined) {
+      const now = Date.now();
+      if (firstDirtyAtRef.current === null) firstDirtyAtRef.current = now;
+      delay = autosaveDelay(now, firstDirtyAtRef.current);
+    }
     saveTimer.current = window.setTimeout(() => {
       saveTimer.current = null;
       void doSave();
@@ -301,6 +320,7 @@ export default function App() {
       checkpoint: checkpointRef.current,
     };
     checkpointRef.current = null;
+    firstDirtyAtRef.current = null;
     setSaveStatus("saving");
     setSaveError(null);
 
@@ -314,6 +334,7 @@ export default function App() {
         });
 
         // 期间已经切换了笔记：这次结果只更新列表，不碰当前草稿。
+        rememberOwnSave(saved.id, saved.hash);
         if (noteIdRef.current === snapshot.id) {
           hashRef.current = saved.hash;
           const stillDirty =
@@ -332,13 +353,29 @@ export default function App() {
           setNotes((prev) =>
             prev.map((note) =>
               note.id === saved.id
-                ? { ...note, title: saved.meta.title, updated: saved.meta.updated, tags: saved.meta.tags }
+                ? {
+                    ...note,
+                    title: saved.meta.title,
+                    updated: saved.meta.updated,
+                    tags: saved.indexTags ?? saved.meta.tags,
+                    excerpt: saved.excerpt ?? note.excerpt,
+                  }
                 : note,
             ),
           );
-          void refreshSidebar();
-          void loadBacklinks(saved.id);
-          if (stillDirty) scheduleSave(0);
+          // 只改正文时不重新拉左栏和反链；时间线就地更新 updated（首页「最近」靠它排序）
+          setTimeline((items) =>
+            patchTimeline(items, {
+              id: saved.id,
+              title: saved.meta.title,
+              updated: saved.meta.updated,
+              relPath: saved.relPath,
+            }),
+          );
+          const refresh = refreshAfterSave(saved.changes);
+          if (refresh.sidebar) void refreshSidebar();
+          if (refresh.backlinks) void loadBacklinks(saved.id);
+          if (stillDirty) scheduleSave();
         }
         return true;
       } catch (err) {
@@ -637,7 +674,7 @@ export default function App() {
     setSaveError(null);
     if (!conflictRef.current) {
       setSaveStatus((prevStatus) => (prevStatus === "saving" ? prevStatus : "dirty"));
-      scheduleSave();
+      scheduleSave(QUICK_SAVE_MS);
     }
     showToast("已整篇替换，可用「撤销 AI 改写」还原", "ok");
   }
@@ -653,7 +690,7 @@ export default function App() {
     setSaveError(null);
     if (!conflictRef.current) {
       setSaveStatus((prevStatus) => (prevStatus === "saving" ? prevStatus : "dirty"));
-      scheduleSave();
+      scheduleSave(QUICK_SAVE_MS);
     }
     showToast("已还原到 AI 改写前", "ok");
   }
@@ -879,8 +916,19 @@ export default function App() {
     showToast(`「${title}」已在外部删除，编辑器里的内容已存进回收站`, "ok");
   }
 
+  doSaveRef.current = doSave;
+
+  function rememberOwnSave(id: string, hash: string): void {
+    ownSavesRef.current = [...ownSavesRef.current, echoKey(id, hash)].slice(-20);
+  }
+
   liveHandlersRef.current = {
-    onChanges: (changes) => {
+    onChanges: (incoming) => {
+      // 回声：自己保存过的版本，或编辑器里正显示的这一版（恢复历史版本等自己的写入）
+      const own = new Set(ownSavesRef.current);
+      if (noteIdRef.current && hashRef.current) own.add(echoKey(noteIdRef.current, hashRef.current));
+      const changes = dropOwnEchoes(incoming, own);
+      if (changes.length === 0) return;
       scheduleLiveRefresh();
       if (touchesNote(changes, noteIdRef.current, currentRef.current?.relPath ?? null)) queueExternalCheck();
     },
@@ -998,7 +1046,7 @@ export default function App() {
     setSaveError(null);
     if (!conflictRef.current) {
       setSaveStatus((prev) => (prev === "saving" ? prev : "dirty"));
-      scheduleSave();
+      scheduleSave(QUICK_SAVE_MS);
     }
 
     const caret = insertAt + payload.length;
@@ -1086,6 +1134,22 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [navOpen]);
+
+  // 自动保存间隔变长后（perf-001），切走窗口或标签页时立刻把没存的存掉
+  useEffect(() => {
+    function flush(): void {
+      if (dirtyRef.current && !conflictRef.current) void doSaveRef.current();
+    }
+    function onVisibility(): void {
+      if (document.visibilityState === "hidden") flush();
+    }
+    window.addEventListener("blur", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("blur", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
 
   useEffect(() => {
     function onBeforeUnload(event: BeforeUnloadEvent): void {

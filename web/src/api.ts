@@ -3,6 +3,8 @@
  * 所有错误统一抛 ApiError（带 HTTP status 与原始 payload），409 冲突可识别。
  */
 
+import type { IndexChanges } from "./lib/save-plan.ts";
+
 export type NoteType = "note" | "idea" | "source";
 
 export type NoteSummary = {
@@ -46,6 +48,12 @@ export type SaveResult = {
   hash: string;
   meta: NoteMeta;
   body: string;
+  /** 列表摘要（与 /notes 列表一致） */
+  excerpt?: string;
+  /** 索引里的标签：frontmatter + 正文 #标签 */
+  indexTags?: string[];
+  /** 这次保存让标题 / 标签 / 类型分组 / 链接变了没有（perf-001） */
+  changes?: IndexChanges;
 };
 
 export type CreateInput = {

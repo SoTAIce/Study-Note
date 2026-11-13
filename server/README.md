@@ -19,7 +19,7 @@ data/notes/*.md  ──(唯一真源)──►  store.ts  ──►  indexer.ts 
 | `store.ts` | 笔记读写、原子写、冲突检测（baseHash）、回收站、历史版本 | 所有写入都带 baseHash；整理动作（setGroup）不改 updated、不写历史 |
 | `history.ts` | 历史版本命名 / 解析 / 分层稀疏（纯函数） | 设计：`docs/superpowers/specs/2026-11-12-note-history-design.md` |
 | `parse.ts` | frontmatter 解析与序列化、标签/双链提取 | 与前端 `web/src/lib/markdown.ts` 的标签规则保持一致 |
-| `indexer.ts` / `db.ts` / `search.ts` | SQLite 索引、FTS5 trigram 全文检索 | 索引是派生数据：schema 变了就重建，不做迁移 |
+| `indexer.ts` / `db.ts` / `search.ts` / `index-diff.ts` | SQLite 索引、FTS5 trigram 全文检索；`indexFile` 返回索引前后对比（保存接口据此告诉前端要不要刷新左栏 / 反链） | 索引是派生数据：schema 变了就重建，不做迁移 |
 | `groups.ts` / `groups-api.ts` / `migrate-groups.ts` | 分组（frontmatter 的 `group:`） | 设计：`docs/superpowers/specs/2026-11-02-note-groups-design.md` |
 | `ai.ts` / `agent*.ts` / `providers/` | 右栏 AI 动作、AI 对话代理（计划 → 人审批 → 执行 → 可撤销） | 改笔记必须走计划审批；执行前快照到 `.history/batches/` |
 | `backup.ts` / `webdav.ts` | WebDAV 单向备份与快照恢复 | 免费额度每 30 分钟 600 次请求 |
