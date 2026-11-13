@@ -337,13 +337,18 @@
       "area": "ui",
       "title": "统一旧样式并清理未用类名",
       "user_visible_behavior": "AI 面板、弹窗、计划卡等的间距圆角与新风格一致；app.css 中无未使用的类名。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
-        "截图核对浅色/深色",
-        "脚本检查未使用类名"
+        "pnpm test：design-rules.test.ts「样式表里没有用不到的类名」（支持 foo--${x} / is-${x} 动态类名）",
+        "变异检查：加一个没人用的类，测试应失败",
+        "截图核对浅色 / 深色：新建页、快速捕获、AI 对话、回收站、时间流、备份面板、右栏 AI、AI 设置弹窗"
       ],
-      "evidence": [],
-      "notes": ""
+      "evidence": [
+        "2026-11-13 删除 9 条无用样式（boot*、editor__group-label、overlay--top、welcome__foot、agent__model）；.ai-settings 是改名遗留，改回 .settings，AI 设置弹窗恢复弹出动画",
+        "2026-11-13 设计规则测试 5/5；变异检查：插入 .zz-nobody-uses-me 后失败，删除后通过",
+        "2026-11-13 ./init.sh 全绿（320 + E2E 9 步）；两套主题 8 个界面截图核对，无页面报错"
+      ],
+      "notes": "表单控件外观统一到 app.css「表单控件」一处；回收站改分组卡片列表；备份面板标签改分段控件；新建页标题去掉粗下划线；AI 对话列表栏与侧栏同色、用户消息改浅灰气泡。AI 计划卡需要配置 AI 才能出现，没有截图核对，只随 token 变化。"
     },
     {
       "id": "test-001",
@@ -430,12 +435,16 @@
       "area": "ui",
       "title": "首页统计在加载中显示占位而不是 0",
       "user_visible_behavior": "打开首页的一瞬间，统计卡片显示占位（如 —）而不是 0，数据到达后再显示真实数字。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
-        "E2E 或组件测试：加载中不出现 0"
+        "pnpm e2e「首页加载中显示占位」：扣住 /api/timeline，断言 4 个统计都是「—」且不出现「还没有笔记」",
+        "变异检查：statsReady 初值改成 true，该步应失败"
       ],
-      "evidence": [],
-      "notes": "会话 006 在修 E2E 竞态时发现。"
+      "evidence": [
+        "2026-11-13 E2E 9/9 通过（连跑 3 次）",
+        "2026-11-13 变异检查：statsReady 初值改 true 后 E2E 失败于该步，「实际 0,0,0,0」；复原后通过"
+      ],
+      "notes": "同时修了加载中闪现「还没有笔记」的问题（同一份数据）。"
     }
   ]
 }

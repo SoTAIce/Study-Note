@@ -122,10 +122,23 @@ try {
   watch(page);
   const api = (u) => page.evaluate(async (url) => (await fetch(url)).json(), u);
 
-  await step("首页加载，显示统计与最近更新", async () => {
+  await step("首页加载中显示占位，不显示 0 或「还没有笔记」", async () => {
+    // 把时间流接口扣住，模拟数据还没到的那一刻
+    let release;
+    const held = new Promise((r) => (release = r));
+    await page.route("**/api/timeline*", async (route) => {
+      await held;
+      await route.continue();
+    });
     await page.goto(base);
     await page.locator(".welcome").waitFor();
-    // 统计数字在列表加载完之前是 0（见 feature_list 的 ui-004），等最近更新出现再读
+    const values = await page.locator(".stat-card__value").allTextContents();
+    expect(values.every((v) => v === "—"), `加载中统计应为占位，实际 ${values.join(",")}`);
+    expect((await page.locator(".welcome__empty").count()) === 0, "加载中不应显示「还没有笔记」");
+    release(); // 之后的请求直接放行（路由保留，但不再等待）
+  });
+
+  await step("首页加载，显示统计与最近更新", async () => {
     await page.locator(".welcome__recentitem").nth(1).waitFor();
     const total = await page.locator(".stat-card__value").first().textContent();
     expect(total === "2", `全部笔记计数应为 2，实际 ${total}`);

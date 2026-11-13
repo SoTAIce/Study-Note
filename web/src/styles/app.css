@@ -347,6 +347,43 @@ kbd {
   cursor: default;
 }
 
+/* 表单控件：白底、细线、8px 圆角；聚焦时蓝边 + 浅蓝光圈（DESIGN.md 第六节）。
+   各组件只管尺寸和字号，外观统一在这里。 */
+.field input,
+.field select,
+.capture__textarea,
+.compose__group-input,
+.agent__composer textarea,
+.agent-roots textarea,
+.agent__select,
+.ai__ask,
+.group-edit__input {
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  outline: none;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.field input:focus,
+.field select:focus,
+.capture__textarea:focus,
+.compose__group-input:focus,
+.agent__composer textarea:focus,
+.agent-roots textarea:focus,
+.agent__select:focus,
+.ai__ask:focus,
+.group-edit__input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.2);
+}
+.field input::placeholder,
+.capture__textarea::placeholder,
+.compose__group-input::placeholder,
+.agent__composer textarea::placeholder,
+.ai__ask::placeholder {
+  color: var(--text-faint);
+}
+
 /* 分段切换（编辑 / 分栏 / 预览） */
 .segmented {
   display: inline-flex;
@@ -721,15 +758,7 @@ kbd {
   height: 28px;
   font-size: 12.5px;
   color: var(--text);
-  background: var(--bg-raised);
-  border: 1px solid rgba(var(--accent-rgb), 0.5);
-  border-radius: var(--radius);
   padding: 0 8px;
-  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.12);
-}
-.group-edit__input:focus {
-  outline: none;
-  border-color: var(--accent);
 }
 .group-edit .icon-btn {
   width: 26px;
@@ -1087,9 +1116,6 @@ kbd {
 .editor__group:focus-within {
   border-color: rgba(var(--accent-rgb), 0.5);
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.12);
-}
-.editor__group-label {
-  font-size: 11px;
 }
 .editor__group-input {
   width: 96px;
@@ -1744,13 +1770,6 @@ kbd {
   font-family: inherit;
   font-size: 12px;
   color: var(--text);
-  background: var(--bg-sunken);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  outline: none;
-}
-.ai__ask:focus {
-  border-color: rgba(var(--accent-rgb), 0.5);
 }
 .ai__ask::placeholder {
   color: var(--text-faint);
@@ -1812,10 +1831,6 @@ kbd {
   justify-content: center;
   padding: 0 16px;
   background: var(--overlay);
-}
-.overlay--top {
-  align-items: flex-start;
-  padding-top: 12vh;
 }
 .overlay--center {
   align-items: center;
@@ -1970,13 +1985,6 @@ kbd {
   font-size: 13.5px;
   line-height: 1.65;
   color: var(--text);
-  background: var(--bg-sunken);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  outline: none;
-}
-.capture__textarea:focus {
-  border-color: rgba(var(--accent-rgb), 0.5);
 }
 .capture__textarea::placeholder {
   color: var(--text-faint);
@@ -2075,13 +2083,6 @@ kbd {
   font-family: inherit;
   font-size: 12.5px;
   color: var(--text);
-  background: var(--bg-sunken);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  outline: none;
-}
-.field input:focus {
-  border-color: rgba(var(--accent-rgb), 0.5);
 }
 
 .settings__row {
@@ -2123,8 +2124,7 @@ kbd {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
+  padding-bottom: 4px;
 }
 .trash__head h1 {
   margin: 0;
@@ -2147,18 +2147,23 @@ kbd {
 .trash__list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin: 0;
-  padding: 8px 0;
+  margin: 16px 0 0;
+  padding: 0;
   list-style: none;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 .trash__item {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 9px 4px;
-  border-bottom: 1px solid var(--line);
+  padding: 12px 16px;
+}
+.trash__item + .trash__item {
+  border-top: 1px solid var(--line);
 }
 .trash__info {
   display: flex;
@@ -2450,12 +2455,6 @@ button.stat-card:hover {
   border: 1px solid rgba(var(--danger-rgb), 0.3);
   border-radius: var(--radius);
 }
-.welcome__foot {
-  margin-top: 28px;
-  font-size: 11.5px;
-  color: var(--text-faint);
-}
-
 /* ---------------- Toast ---------------- */
 
 .toast {
@@ -2716,7 +2715,7 @@ button.stat-card:hover {
 }
 .palette,
 .capture,
-.ai-settings {
+.settings {
   animation: pop-in 0.18s var(--ease);
 }
 .welcome__inner {
@@ -2730,6 +2729,9 @@ button.stat-card:hover {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+  :root {
+    --press: none;
   }
 }
 
@@ -2783,18 +2785,20 @@ button.stat-card:hover {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  gap: 10px;
+  gap: 12px;
   background: var(--bg-raised);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 14px 16px;
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
 }
 
 .compose__title {
   width: 100%;
-  padding: 6px 2px 10px;
-  font-size: 20px;
+  padding: 4px 0 12px;
+  font-family: var(--font-display);
+  font-size: 26px;
   font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--text);
   background: transparent;
   border: none;
@@ -2806,7 +2810,6 @@ button.stat-card:hover {
 }
 .compose__title:focus {
   outline: none;
-  border-bottom-color: var(--accent);
 }
 
 .compose__group {
@@ -2825,15 +2828,10 @@ button.stat-card:hover {
   min-width: 0;
   font-size: 12px;
   color: var(--text-dim);
-  background: var(--bg-sunken);
-  border: 1px solid var(--line);
-  border-radius: 5px;
   padding: 4px 8px;
 }
 .compose__group-input:focus {
-  outline: none;
   color: var(--text);
-  border-color: rgba(var(--accent-rgb), 0.5);
 }
 .compose__group-input::placeholder {
   color: var(--text-faint);
@@ -3046,23 +3044,27 @@ button.stat-card:hover {
 .backup-tabs {
   display: flex;
   gap: 2px;
-  padding: 8px 10px 0;
-  border-bottom: 1px solid var(--line);
+  margin: 12px 16px 4px;
+  padding: 2px;
+  background: var(--bg-sunken);
+  border-radius: var(--radius-ctl);
 }
 .backup-tab {
-  padding: 6px 10px;
-  border-radius: 6px 6px 0 0;
-  font-size: 12px;
+  flex: 1;
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  font-size: 12.5px;
   color: var(--text-dim);
+  transition: background-color 150ms ease, color 150ms ease;
 }
 .backup-tab:hover {
   color: var(--text);
-  background: var(--bg-hover);
 }
 .backup-tab.is-active {
   color: var(--text);
-  background: var(--accent-soft);
-  box-shadow: inset 0 -2px 0 var(--accent);
+  font-weight: 600;
+  background: var(--bg-raised);
+  box-shadow: var(--shadow-sm);
 }
 
 .backup-panel__body {
@@ -3150,13 +3152,6 @@ button.stat-card:hover {
   font-family: inherit;
   font-size: 12.5px;
   color: var(--text);
-  background: var(--bg-sunken);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  outline: none;
-}
-.backup-panel .field select:focus {
-  border-color: rgba(var(--accent-rgb), 0.5);
 }
 
 /* 快照日期列表 */
@@ -3349,7 +3344,7 @@ button.stat-card:hover {
   flex-direction: column;
   min-height: 0;
   border-right: 1px solid var(--line);
-  background: var(--bg-sunken);
+  background: var(--bg-side);
 }
 
 .agent__chats-head {
@@ -3398,8 +3393,11 @@ button.stat-card:hover {
 }
 
 .agent__chat-item.is-active {
-  background: var(--accent-soft, rgba(var(--accent-rgb), 0.14));
+  background: var(--bg-hover-strong);
   color: var(--text);
+}
+.agent__chat-item.is-active .agent__chat-title {
+  font-weight: 600;
 }
 
 .agent__chat-title {
@@ -3462,7 +3460,10 @@ button.stat-card:hover {
 
 .agent__hello h2 {
   margin: 0 0 8px;
-  font-size: 20px;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
   color: var(--text);
 }
 
@@ -3497,10 +3498,9 @@ button.stat-card:hover {
 }
 
 .agent-msg--user .agent-msg__body {
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-raised);
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-side);
   white-space: pre-wrap;
 }
 
@@ -3581,17 +3581,11 @@ button.stat-card:hover {
   width: 100%;
   resize: vertical;
   padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--bg-raised);
   color: var(--text);
   font-size: 14px;
   line-height: 1.6;
 }
 
-.agent__composer textarea:focus {
-  border-color: var(--accent);
-}
 
 .agent__composer-bar {
   display: flex;
@@ -3599,11 +3593,6 @@ button.stat-card:hover {
   justify-content: space-between;
   gap: 12px;
   margin-top: 8px;
-}
-
-.agent__model {
-  font-size: 12px;
-  color: var(--text-faint);
 }
 
 /* —— 计划卡 —— */
@@ -3850,9 +3839,6 @@ button.stat-card:hover {
 .agent-provider input,
 .agent-roots textarea {
   padding: 6px 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--bg-sunken);
   color: var(--text);
   font-size: 13px;
 }
@@ -3906,9 +3892,6 @@ button.stat-card:hover {
 .agent__select {
   max-width: 180px;
   padding: 5px 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--bg-sunken);
   color: var(--text);
   font-size: 12px;
 }
@@ -4283,19 +4266,5 @@ button.stat-card:hover {
   }
   .diff__line {
     padding: 0 12px;
-  }
-}
-
-/* 尊重「减少动态效果」：去掉缩放和位移，只保留颜色变化 */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-  :root {
-    --press: none;
   }
 }

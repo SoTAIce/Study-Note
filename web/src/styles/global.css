@@ -164,33 +164,3 @@ button {
   flex: none;
   display: block;
 }
-
-.boot {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.boot h1 {
-  margin: 0;
-  font-size: 20px;
-  letter-spacing: 0.04em;
-  font-weight: 600;
-}
-
-.boot-status {
-  margin: 0;
-  color: var(--text-dim);
-  font-size: 13px;
-}
-
-.boot-status--ok {
-  color: var(--accent);
-}
-
-.boot-status--down {
-  color: var(--danger);
-}

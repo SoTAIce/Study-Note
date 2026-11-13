@@ -60,6 +60,8 @@ export default function App() {
   const [groups, setGroups] = useState<GroupView[]>([]);
   const [ungroupedCount, setUngroupedCount] = useState(0);
   const [listsLoading, setListsLoading] = useState(true);
+  /** 侧栏统计（时间流 / 标签 / 分组）是否至少成功加载过一次；之前首页显示占位，而不是 0 或「还没有笔记」 */
+  const [statsReady, setStatsReady] = useState(false);
   const [listsError, setListsError] = useState<string | null>(null);
   const [reindexing, setReindexing] = useState(false);
 
@@ -215,6 +217,7 @@ export default function App() {
       setTimeline(timelineRes.items);
       setGroups(groupRes.items);
       setUngroupedCount(groupRes.ungrouped);
+      setStatsReady(true);
     } catch (err) {
       setListsError(api.errorMessage(err));
     }
@@ -1098,13 +1101,13 @@ export default function App() {
                   .md 文件中，随时能用别的编辑器打开。
                 </p>
 
-                <div className="welcome__stats">
+                <div className="welcome__stats" aria-busy={!statsReady}>
                   <button type="button" className="stat-card" onClick={() => setFilter({ kind: "all" })}>
                     <span className="stat-card__label">
                       <Icon name="notes" size={14} />
                       全部笔记
                     </span>
-                    <span className="stat-card__value">{timeline.length}</span>
+                    <span className="stat-card__value">{statsReady ? timeline.length : "—"}</span>
                   </button>
                   <button
                     type="button"
@@ -1116,7 +1119,7 @@ export default function App() {
                       <Icon name="lightbulb" size={14} />
                       收件箱想法
                     </span>
-                    <span className="stat-card__value">{ideaCount}</span>
+                    <span className="stat-card__value">{statsReady ? ideaCount : "—"}</span>
                   </button>
                   <div
                     className="stat-card"
@@ -1126,7 +1129,7 @@ export default function App() {
                       <Icon name="hash" size={14} />
                       标签
                     </span>
-                    <span className="stat-card__value">{tags.length}</span>
+                    <span className="stat-card__value">{statsReady ? tags.length : "—"}</span>
                   </div>
                   <div
                     className="stat-card"
@@ -1136,7 +1139,7 @@ export default function App() {
                       <Icon name="folder" size={14} />
                       分组
                     </span>
-                    <span className="stat-card__value">{groups.length}</span>
+                    <span className="stat-card__value">{statsReady ? groups.length : "—"}</span>
                   </div>
                 </div>
 
@@ -1171,7 +1174,7 @@ export default function App() {
                   </button>
                 </div>
 
-                {recent.length > 0 ? (
+                {!statsReady ? null : recent.length > 0 ? (
                   <div className="welcome__recent">
                     <h2>
                       最近更新

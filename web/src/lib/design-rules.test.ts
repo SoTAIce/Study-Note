@@ -67,3 +67,26 @@ test("字重只用 400 / 600 / 700", () => {
   const bad = [...css.matchAll(/font-weight:\s*(\d+)/g)].map((m) => m[1]).filter((w) => !["400", "600", "700"].includes(w));
   assert.deepEqual(bad, [], `出现了不允许的字重：${bad.join(", ")}`);
 });
+
+test("样式表里没有用不到的类名", () => {
+  const srcDir = path.resolve(stylesDir, "..");
+  const files: string[] = [path.resolve(srcDir, "..", "index.html")];
+  const walk = (dir: string): void => {
+    for (const name of fs.readdirSync(dir)) {
+      const full = path.join(dir, name);
+      if (fs.statSync(full).isDirectory()) walk(full);
+      else if (/\.tsx?$/.test(name) && !name.endsWith(".test.ts")) files.push(full);
+    }
+  };
+  walk(srcDir);
+  const source = files.map((f) => fs.readFileSync(f, "utf8")).join("\n");
+  const css = stripComments(globalCss + appCss).replace(/url\([^)]*\)/g, "");
+  const classes = new Set([...css.matchAll(/\.([a-zA-Z_][\w-]*)/g)].map((m) => m[1]));
+  /** 动态拼出来的类名：`foo--${x}`、`is-${x}` 这类只要前缀出现就算用到 */
+  const usedDynamically = (name: string): boolean => {
+    const cut = name.startsWith("is-") ? 3 : name.lastIndexOf("--") + 2;
+    return cut > 2 && source.includes(`${name.slice(0, cut)}\${`);
+  };
+  const unused = [...classes].filter((name) => !source.includes(name) && !usedDynamically(name)).sort();
+  assert.deepEqual(unused, [], `这些类名在 web/src 里没有用到，删掉对应样式或检查拼写：${unused.join(", ")}`);
+});
