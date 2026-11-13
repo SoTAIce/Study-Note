@@ -134,7 +134,7 @@
         "E2E 或手动：记录网络请求数"
       ],
       "evidence": [],
-      "notes": ""
+      "notes": "sync-001 之后：自己的每次保存也会经 /api/events 回声，触发一次左栏防抖刷新（scheduleLiveRefresh）。做本条时一并处理：changes 全是「当前这篇且 hash 等于 hashRef」的回声时跳过刷新，标题 / 标签变化除外。"
     },
     {
       "id": "ci-001",
