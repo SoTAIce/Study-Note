@@ -163,6 +163,9 @@
   accent-color: var(--accent);
   margin-right: 6px;
 }
+.preview input[type="checkbox"]:not(:disabled) {
+  cursor: pointer;
+}
 .preview--empty {
   display: flex;
   flex-direction: column;

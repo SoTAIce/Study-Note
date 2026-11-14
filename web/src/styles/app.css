@@ -1281,6 +1281,44 @@ kbd {
   display: none;
 }
 
+/* 输入 [[ 时的标题补全（editor-003） */
+.wikisuggest {
+  position: fixed;
+  z-index: 60;
+  width: 280px;
+  max-height: 260px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+}
+.wikisuggest__item {
+  overflow: hidden;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.wikisuggest__item:hover {
+  background: var(--bg-hover);
+}
+.wikisuggest__item.is-active {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+.wikisuggest__hint {
+  padding: 4px 10px 2px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
 .split__pane {
   min-width: 0;
   min-height: 0;

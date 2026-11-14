@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import * as api from "./api.ts";
 import type {
   BacklinksResult,
@@ -117,6 +117,8 @@ export default function App() {
   const aiUndoRef = useRef<string | null>(null);
   const composeReturnRef = useRef<Screen>("notes");
   const composeGroupRef = useRef("");
+  /** 每篇笔记离开时的光标、选区、滚动位置（editor-005，只在本次打开期间记） */
+  const viewStateRef = useRef(new Map<string, { start: number; end: number; top: number }>());
 
   // —— 全屏预览 ——
   const [previewFull, setPreviewFull] = useState(false);
@@ -441,7 +443,16 @@ export default function App() {
     }
   }
 
+  /** 记下当前这篇的光标和滚动位置，切回来时恢复 */
+  function rememberView(): void {
+    const id = noteIdRef.current;
+    const ta = textareaRef.current;
+    if (!id || !ta) return;
+    viewStateRef.current.set(id, { start: ta.selectionStart, end: ta.selectionEnd, top: ta.scrollTop });
+  }
+
   function clearEditor(): void {
+    rememberView();
     noteIdRef.current = null;
     hashRef.current = "";
     dirtyRef.current = false;
@@ -469,6 +480,7 @@ export default function App() {
       showToast("当前笔记还没保存成功，先处理冲突再切换", "error");
       return;
     }
+    rememberView();
     const seq = ++navigateSeq.current;
     setLoadingNote(true);
     setNoteError(null);
@@ -889,6 +901,22 @@ export default function App() {
     }
     if (decision === "deleted") await salvageDeletedNote(id);
   }
+
+  // 换了一篇：恢复这篇上次离开时的光标和滚动位置；没记过就从头开始
+  const currentId = current?.id ?? null;
+  useLayoutEffect(() => {
+    const ta = textareaRef.current;
+    if (!currentId || !ta) return;
+    const saved = viewStateRef.current.get(currentId);
+    const length = ta.value.length;
+    if (saved) {
+      ta.setSelectionRange(Math.min(saved.start, length), Math.min(saved.end, length));
+      ta.scrollTop = saved.top;
+    } else {
+      ta.setSelectionRange(0, 0);
+      ta.scrollTop = 0;
+    }
+  }, [currentId]);
 
   /** 没有未保存修改：载入磁盘版本，尽量保持光标和滚动位置 */
   function applyExternalReload(detail: NoteDetail): void {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyEditToText, continueList, indent, makeLink, toggleWrap, type Edit, type TextState } from "./edit-ops.ts";
+import { applyEditToText, continueList, indent, makeLink, pasteLink, toggleWrap, type Edit, type TextState } from "./edit-ops.ts";
 
 /** 「|」表示光标；「‹ ›」表示选区 */
 function parse(text: string): TextState {
@@ -123,4 +123,27 @@ test("Ctrl+K：文字变链接并选中 url；网址变 [](网址)；没选中�
   assert.equal(run(makeLink, "‹https://example.com/a›"), "[|](https://example.com/a)");
   assert.equal(run(makeLink, "a|b"), null);
   assert.equal(run(makeLink, "‹  ›"), null);
+});
+
+test("回车：有缩进的普通行保持缩进；光标在缩进里不管", () => {
+  assert.equal(run(continueList, "    const a = 1;|"), "    const a = 1;\n    |");
+  assert.equal(run(continueList, "\tx|"), "\tx\n\t|");
+  assert.equal(run(continueList, "  |x"), "  \n  |x");
+  assert.equal(run(continueList, " | x"), null);
+});
+
+test("回车：代码块里只保持缩进，不续列表 / 引用标记", () => {
+  assert.equal(run(continueList, "```\n- 不是列表|"), null);
+  assert.equal(run(continueList, "```\n  - x|"), "```\n  - x\n  |");
+  assert.equal(run(continueList, "```\na\n```\n- 是列表|"), "```\na\n```\n- 是列表\n- |");
+});
+
+test("粘贴网址：选中文字变链接；其他情况照常粘贴", () => {
+  assert.equal(run((s) => pasteLink(s, "https://example.com/a"), "看‹这篇›"), "看[这篇](https://example.com/a)|");
+  assert.equal(run((s) => pasteLink(s, " https://x.io \n"), "‹词 ›"), "[词](https://x.io)| ");
+  assert.equal(run((s) => pasteLink(s, "https://x.io"), "a|b"), null);
+  assert.equal(run((s) => pasteLink(s, "不是网址"), "‹词›"), null);
+  assert.equal(run((s) => pasteLink(s, "https://a.io https://b.io"), "‹词›"), null);
+  assert.equal(run((s) => pasteLink(s, "https://x.io"), "‹a\nb›"), null);
+  assert.equal(run((s) => pasteLink(s, "https://x.io"), "‹https://old.io›"), null);
 });

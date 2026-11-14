@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { renderInline, renderMarkdown } from "./markdown.ts";
+import { renderInline, renderMarkdown, toggleTask } from "./markdown.ts";
 
 test("renderMarkdown: [[笔记]] 渲染成 wikilink 链接", () => {
   const html = renderMarkdown("看 [[位置编码]] 那篇");
@@ -81,4 +81,60 @@ test("双链里的 & 与引号只转义一次（点击目标要和标题一致�
   assert.match(html, /data-target="C\+\+ &amp; Rust">C\+\+ &amp; Rust<\/a>/);
   assert.match(html, /data-target="&quot;引号&quot;">&quot;引号&quot;<\/a>/);
   assert.ok(!html.includes("&amp;amp;"), `实际：${html}`);
+});
+
+test("任务框：默认禁用；interactiveTasks 时可点", () => {
+  const md = "- [ ] 未完成\n- [x] 完成";
+  const html = renderMarkdown(md);
+  assert.equal((html.match(/class="task-check"/g) ?? []).length, 2);
+  assert.equal((html.match(/ disabled>/g) ?? []).length, 2);
+  const live = renderMarkdown(md, { interactiveTasks: true });
+  assert.equal((live.match(/ disabled>/g) ?? []).length, 0);
+  assert.equal((live.match(/ checked>/g) ?? []).length, 1);
+});
+
+test("任务框：笔记里手写的 input 标签不会被当成任务框放开", () => {
+  const live = renderMarkdown('<input class="task-check" type="checkbox" disabled>', { interactiveTasks: true });
+  assert.ok(!live.includes("<input"));
+});
+
+test("toggleTask：第 N 个框的序号和预览里一致（代码块里的不算）", () => {
+  const samples = [
+    "- [ ] a\n- [x] b\n- [ ] c",
+    "1. [ ] 一\n2. [X] 二\n\n> - [ ] 引用里的",
+    "```\n- [ ] 代码里\n```\n- [ ] 外面\n  - [x] 子项",
+    "~~~md\n- [ ] x\n```\n- [ ] 还在代码里\n~~~\n* [ ] 出来了",
+    "- [ ]\n- [ ] 有字\n-[ ] 不是任务\n- [ ]x 也不是",
+  ];
+  for (const md of samples) {
+    const states = (html: string) => [...html.matchAll(/class="task-check" type="checkbox"( checked)?/g)].map((m) => Boolean(m[1]));
+    const before = states(renderMarkdown(md));
+    assert.ok(before.length > 0, md);
+    for (let i = 0; i < before.length; i += 1) {
+      const next = toggleTask(md, i);
+      assert.ok(next !== null, `${md} #${i}`);
+      const after = states(renderMarkdown(next));
+      assert.deepEqual(after, before.map((v, k) => (k === i ? !v : v)), `${md} #${i}`);
+    }
+    assert.equal(toggleTask(md, before.length), null);
+  }
+});
+
+test("toggleTask：只改框，不动别的文字", () => {
+  assert.equal(toggleTask("- [ ] 买 [x] 牛奶", 0), "- [x] 买 [x] 牛奶");
+  assert.equal(toggleTask("- [X] 好", 0), "- [ ] 好");
+});
+
+test("sourceLines：顶层块带源码行号，渲染结果其余部分不变", () => {
+  const md = "# 标题\n\n第一段\n第一段续\n\n- a\n- b\n\n```\ncode\n```\n\n> 引用\n\n[链接][r]\n\n[r]: https://example.com";
+  const plain = renderMarkdown(md);
+  const lined = renderMarkdown(md, { sourceLines: true });
+  assert.equal(lined.replace(/ data-line="\d+"/g, ""), plain);
+  const lines = [...lined.matchAll(/<(\w+) data-line="(\d+)"/g)].map((m) => `${m[1]}:${m[2]}`);
+  assert.deepEqual(lines, ["h1:0", "p:2", "ul:5", "pre:8", "blockquote:12", "p:14"]);
+});
+
+test("sourceLines：被转义的 HTML 块包一层 div 带行号", () => {
+  const lined = renderMarkdown("段落\n\n<div>x</div>\n", { sourceLines: true });
+  assert.match(lined, /<div data-line="2">&lt;div&gt;/);
 });

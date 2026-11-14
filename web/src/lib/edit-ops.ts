@@ -126,8 +126,18 @@ export function indent(state: TextState, outdent: boolean): Edit | null {
   return { from: blockStart, to: blockEnd, insert: next.join("\n"), selStart: map(start), selEnd: map(end) };
 }
 
+/** 这一行是否在 ``` / ~~~ 代码块里（数一下前面的围栏行） */
+function insideFence(value: string, lineStart: number): boolean {
+  let open = false;
+  for (const line of value.slice(0, lineStart).split("\n")) {
+    if (/^ {0,3}(```|~~~)/.test(line)) open = !open;
+  }
+  return open;
+}
+
 /**
- * 回车：在列表项 / 引用里自动续上标记。
+ * 回车：在列表项 / 引用里自动续上标记；有缩进的普通行（代码块里）保持缩进（editor-008）。
+ * 代码块里只保持缩进，不续列表标记。
  * - 有序列表编号 +1，任务列表续上「[ ] 」
  * - 空的列表项再按回车：子项退一级，顶层项清掉标记（结束列表）；空引用行同理清掉
  * - 光标在标记前面、或选中了文字：不管，交给浏览器
@@ -138,8 +148,9 @@ export function continueList(state: TextState): Edit | null {
   const lineStart = lineStartAt(value, start);
   const lineEnd = lineEndAt(value, start);
   const line = value.slice(lineStart, lineEnd);
+  const fenced = insideFence(value, lineStart);
 
-  const m = LIST_RE.exec(line);
+  const m = fenced ? null : LIST_RE.exec(line);
   if (m) {
     const markerEnd = lineStart + m[0].length;
     if (start < markerEnd) return null;
@@ -154,7 +165,7 @@ export function continueList(state: TextState): Edit | null {
     return { from: start, to: start, insert, selStart: start + insert.length, selEnd: start + insert.length };
   }
 
-  const q = QUOTE_RE.exec(line);
+  const q = fenced ? null : QUOTE_RE.exec(line);
   if (q) {
     const prefixEnd = lineStart + q[1].length;
     if (start < prefixEnd) return null;
@@ -163,6 +174,11 @@ export function continueList(state: TextState): Edit | null {
     }
     const prefix = q[1].endsWith(" ") ? q[1] : `${q[1]} `;
     const insert = `\n${prefix}`;
+    return { from: start, to: start, insert, selStart: start + insert.length, selEnd: start + insert.length };
+  }
+  const ws = /^[ \t]*/.exec(line)?.[0] ?? "";
+  if (ws && start >= lineStart + ws.length) {
+    const insert = `\n${ws}`;
     return { from: start, to: start, insert, selStart: start + insert.length, selEnd: start + insert.length };
   }
   return null;
@@ -229,6 +245,21 @@ export function makeLink(state: TextState): Edit | null {
   const insert = `[${selected}](url)`;
   const urlAt = start + selected.length + 3;
   return { from: start, to: end, insert, selStart: urlAt, selEnd: urlAt + 3 };
+}
+
+/**
+ * 选中文字后粘贴网址：变成 [文字](网址)（editor-007）。
+ * 没选中、选中的跨行或本身就是网址、粘贴的不是单个网址：返回 null，照常粘贴。
+ */
+export function pasteLink(state: TextState, pasted: string): Edit | null {
+  const url = pasted.trim();
+  if (!/^https?:\/\/\S+$/i.test(url)) return null;
+  if (state.start === state.end) return null;
+  const [start, end] = trimSelection(state.value, state.start, state.end);
+  const selected = state.value.slice(start, end);
+  if (!selected || selected.includes("\n") || /^(https?:\/\/|www\.)\S+$/i.test(selected)) return null;
+  const insert = `[${selected}](${url})`;
+  return { from: start, to: end, insert, selStart: start + insert.length, selEnd: start + insert.length };
 }
 
 /** 应用一次替换后的完整文本（测试用，也方便组件做兜底） */

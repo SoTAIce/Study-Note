@@ -1,4 +1,4 @@
-import { Marked } from "marked";
+import { Marked, type Token, type TokensList } from "marked";
 
 /**
  * Markdown 渲染（纯函数）。
@@ -162,6 +162,10 @@ const md = new Marked({
     html({ text }) {
       return escapeHtml(text);
     },
+    // 任务框带固定类名，方便预览里改成可点（editor-006）；默认禁用
+    checkbox({ checked }) {
+      return `<input class="task-check" type="checkbox"${checked ? " checked" : ""} disabled> `;
+    },
     link({ href, title, tokens }) {
       const safe = safeHref(href);
       if (!safe) return this.parser.parseInline(tokens ?? []);
@@ -171,11 +175,75 @@ const md = new Marked({
   },
 });
 
-/** 完整 Markdown → HTML（用于预览）。 */
-export function renderMarkdown(markdown: string): string {
+/**
+ * 完整 Markdown → HTML（用于预览）。
+ * interactiveTasks：任务框不禁用，预览里点了能勾选（只有可编辑的预览才开）。
+ */
+export function renderMarkdown(
+  markdown: string,
+  options: { interactiveTasks?: boolean; sourceLines?: boolean } = {},
+): string {
   if (!markdown) return "";
-  const html = md.parse(markdown, { async: false });
-  return transformHtml(html);
+  const raw = options.sourceLines ? renderWithLines(markdown) : md.parse(markdown, { async: false });
+  const html = transformHtml(raw);
+  // 笔记里的原始 HTML 已被转义，这里匹配到的只可能是上面 checkbox 渲染出来的
+  return options.interactiveTasks ? html.replace(/(<input class="task-check" type="checkbox"(?: checked)?) disabled>/g, "$1>") : html;
+}
+
+/**
+ * 每个顶层块的第一个标签上加 data-line（从 0 数的源码行号），分栏同步滚动用（editor-004）。
+ * 逐块渲染，结果与整篇渲染一致；块开头不是标签（被转义的 HTML 块）时包一层 div。
+ */
+function renderWithLines(markdown: string): string {
+  const tokens = md.lexer(markdown);
+  let line = 0;
+  let out = "";
+  for (const token of tokens as Token[]) {
+    const single = [token] as unknown as TokensList;
+    single.links = tokens.links;
+    const html = md.parser(single);
+    if (token.type !== "space" && html.trim()) {
+      const tagged = html.replace(/^(\s*<[a-zA-Z][a-zA-Z0-9]*)/, `$1 data-line="${line}"`);
+      out += tagged === html ? `<div data-line="${line}">${html}</div>` : tagged;
+    } else {
+      out += html;
+    }
+    line += (token.raw.match(/\n/g) ?? []).length;
+  }
+  return out;
+}
+
+/** 任务行：可选的引用前缀 + 列表标记 + [ ] / [x] + 空白 + 文字（框后面没文字时 marked 不当任务框） */
+const TASK_RE = /^((?: {0,3}>[ ]?)*\s*(?:[-*+]|\d{1,9}[.)])\s+)\[([ xX])\](?=[ \t]+\S)/;
+
+/**
+ * 切换第 index 个任务框（从 0 数，与预览里任务框出现的顺序一致；代码块里的不算）。
+ * 找不到返回 null。
+ */
+export function toggleTask(markdown: string, index: number): string | null {
+  const lines = markdown.split("\n");
+  let fence: string | null = null;
+  let seen = 0;
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    const fenceMatch = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (fenceMatch) {
+      const mark = fenceMatch[1];
+      if (fence === null) fence = mark[0];
+      else if (mark[0] === fence) fence = null;
+      continue;
+    }
+    if (fence !== null) continue;
+    const m = TASK_RE.exec(line);
+    if (!m) continue;
+    if (seen === index) {
+      const box = m[2] === " " ? "x" : " ";
+      lines[i] = `${m[1]}[${box}]${line.slice(m[0].length)}`;
+      return lines.join("\n");
+    }
+    seen += 1;
+  }
+  return null;
 }
 
 /** 单行文本 → HTML（用于标题、检索片段等）：转义后只处理双链与标签。 */

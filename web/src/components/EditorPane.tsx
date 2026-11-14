@@ -1,11 +1,17 @@
-import { useEffect, useState } from "react";
-import type { KeyboardEvent, RefObject, SyntheticEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ClipboardEvent, KeyboardEvent, RefObject, SyntheticEvent } from "react";
 import Preview from "./Preview.tsx";
+import { toggleTask } from "../lib/markdown.ts";
+import { previewDelay } from "../lib/preview-delay.ts";
 import type { ConflictInfo, NoteDetail } from "../api.ts";
+import { listNotes } from "../api.ts";
+import { caretCoords, textTops } from "../lib/caret-coords.ts";
+import { lineStarts, mapScroll } from "../lib/scroll-sync.ts";
+import { completeWikilink, rankTitles, wikilinkQuery, type WikilinkQuery } from "../lib/wikilink-complete.ts";
 import { relativeTime } from "../lib/time.ts";
 import type { ViewMode } from "../lib/theme.ts";
 import Icon, { type IconName } from "./Icon.tsx";
-import { continueList, indent, makeLink, toggleWrap, type Edit } from "../lib/edit-ops.ts";
+import { continueList, indent, makeLink, pasteLink, toggleWrap, type Edit } from "../lib/edit-ops.ts";
 import { applyEditUndoable } from "../lib/textarea-edit.ts";
 
 /** 正文框里的编辑键（editor-001）：Tab 缩进、回车续列表、Ctrl+B / I / K */
@@ -100,6 +106,35 @@ type Props = {
   onOpenHistory: () => void;
 };
 
+type Suggest = {
+  query: WikilinkQuery;
+  items: string[];
+  active: number;
+  left: number;
+  top: number;
+  /** 下面放不下就显示在光标上方 */
+  flip: boolean;
+  anchorTop: number;
+};
+
+/** 预览用的正文：长笔记等停手再更新（perf-002）；不显示预览时不跟着更新 */
+function usePreviewBody(noteId: string, body: string, visible: boolean): string {
+  const [shown, setShown] = useState({ noteId, body });
+  useEffect(() => {
+    if (!visible) return;
+    const delay = previewDelay(body.length);
+    if (delay === 0) {
+      setShown({ noteId, body });
+      return;
+    }
+    const timer = window.setTimeout(() => setShown({ noteId, body }), delay);
+    return () => window.clearTimeout(timer);
+  }, [noteId, body, visible]);
+  // 短笔记、刚换了一篇：直接用最新正文，不显示旧内容
+  if (shown.noteId !== noteId || previewDelay(body.length) === 0) return body;
+  return shown.body;
+}
+
 export default function EditorPane({
   note,
   title,
@@ -134,6 +169,133 @@ export default function EditorPane({
 }: Props) {
   const lines = body ? body.split("\n").length : 0;
   const [groupDraft, setGroupDraft] = useState(note.meta.group ?? "");
+  const previewBody = usePreviewBody(note.id, body, viewMode !== "write");
+
+  // —— 输入 [[ 补全标题（editor-003）——
+  const [suggest, setSuggest] = useState<Suggest | null>(null);
+  const titlesRef = useRef<{ at: number; titles: string[] } | null>(null);
+  const loadingTitles = useRef(false);
+  /** 按了 Esc 的那个 [[ 不再弹 */
+  const dismissedAt = useRef<number | null>(null);
+
+  // —— 分栏同步滚动（editor-004）：编辑区滚动时预览跟着走 ——
+  const previewPaneRef = useRef<HTMLDivElement | null>(null);
+  const editorTopsCache = useRef<{ body: string; width: number; lines: string; tops: number[] } | null>(null);
+  const syncFrame = useRef<number | null>(null);
+
+  function syncPreview(): void {
+    syncFrame.current = null;
+    const textarea = textareaRef.current;
+    const pane = previewPaneRef.current;
+    if (!textarea || !pane || viewMode !== "split") return;
+    const blocks = Array.from(pane.querySelectorAll<HTMLElement>(".preview > [data-line]"));
+    const lines = blocks.map((el) => Number(el.dataset.line));
+    const key = lines.join(",");
+    let cache = editorTopsCache.current;
+    if (!cache || cache.body !== textarea.value || cache.width !== textarea.clientWidth || cache.lines !== key) {
+      const starts = lineStarts(textarea.value);
+      const offsets = lines.map((line) => starts[Math.min(line, starts.length - 1)]);
+      cache = { body: textarea.value, width: textarea.clientWidth, lines: key, tops: textTops(textarea, offsets) };
+      editorTopsCache.current = cache;
+    }
+    const paneTop = pane.getBoundingClientRect().top - pane.scrollTop;
+    const previewTops = blocks.map((el) => el.getBoundingClientRect().top - paneTop);
+    pane.scrollTop = mapScroll(
+      cache.tops,
+      previewTops,
+      textarea.scrollTop,
+      textarea.scrollHeight - textarea.clientHeight,
+      pane.scrollHeight - pane.clientHeight,
+    );
+  }
+
+  function scheduleSync(): void {
+    if (viewMode !== "split" || syncFrame.current !== null) return;
+    syncFrame.current = window.requestAnimationFrame(syncPreview);
+  }
+
+  useEffect(
+    () => () => {
+      if (syncFrame.current !== null) window.cancelAnimationFrame(syncFrame.current);
+    },
+    [],
+  );
+
+  function closeSuggest(): void {
+    setSuggest(null);
+  }
+
+  function updateSuggest(textarea: HTMLTextAreaElement): void {
+    const caret = textarea.selectionStart;
+    const query = textarea.selectionEnd === caret ? wikilinkQuery(textarea.value, caret) : null;
+    if (!query || query.start === dismissedAt.current) {
+      if (!query) dismissedAt.current = null;
+      setSuggest(null);
+      return;
+    }
+    const cache = titlesRef.current;
+    if (!cache || Date.now() - cache.at > 15_000) {
+      if (!loadingTitles.current) {
+        loadingTitles.current = true;
+        listNotes()
+          .then((res) => {
+            titlesRef.current = { at: Date.now(), titles: res.items.map((item) => item.title) };
+            if (document.activeElement === textarea) updateSuggest(textarea);
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            loadingTitles.current = false;
+          });
+      }
+      if (!cache) return;
+    }
+    const items = rankTitles(cache.titles, query.query, title.trim() || null);
+    if (items.length === 0) {
+      setSuggest(null);
+      return;
+    }
+    const box = textarea.getBoundingClientRect();
+    const at = caretCoords(textarea, query.start);
+    const below = box.top + at.top + at.height + 4;
+    const room = window.innerHeight - below;
+    setSuggest((previous) => ({
+      query,
+      items,
+      active: previous && previous.query.start === query.start && previous.query.query === query.query ? Math.min(previous.active, items.length - 1) : 0,
+      left: Math.max(8, Math.min(box.left + at.left, window.innerWidth - 288)),
+      top: below,
+      flip: room < 220,
+      anchorTop: box.top + at.top - 4,
+    }));
+  }
+
+  function acceptSuggest(textarea: HTMLTextAreaElement, picked: string): void {
+    if (!suggest) return;
+    const edit = completeWikilink(textarea.value, suggest.query, textarea.selectionStart, picked);
+    setSuggest(null);
+    applyEditUndoable(textarea, edit);
+  }
+
+  /** 补全列表开着时的按键：↑ ↓ 选，回车 / Tab 补全，Esc 关掉。处理了返回 true */
+  function handleSuggestKey(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
+    if (!suggest || event.ctrlKey || event.metaKey || event.altKey) return false;
+    const count = suggest.items.length;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      setSuggest({ ...suggest, active: (suggest.active + step + count) % count });
+      return true;
+    }
+    if (event.key === "Enter" || event.key === "Tab") {
+      acceptSuggest(event.currentTarget, suggest.items[suggest.active]);
+      return true;
+    }
+    if (event.key === "Escape") {
+      dismissedAt.current = suggest.query.start;
+      setSuggest(null);
+      return true;
+    }
+    return false;
+  }
 
   // 切到别的笔记 / 外部改了分组时，输入框要跟着变（否则会显示上一篇的组名）
   useEffect(() => {
@@ -162,11 +324,28 @@ export default function EditorPane({
   function handleBodyKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
     // 输入法正在组字（中文输入时回车是上屏）：一律不管
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (handleSuggestKey(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     const { edit, handled } = editForKey(event);
     if (!handled) return;
     event.preventDefault();
     event.stopPropagation();
     if (edit) applyEditUndoable(event.currentTarget, edit);
+  }
+
+  /** 选中文字后粘贴网址：变成链接（editor-007） */
+  function handleBodyPaste(event: ClipboardEvent<HTMLTextAreaElement>): void {
+    const target = event.currentTarget;
+    const edit = pasteLink(
+      { value: target.value, start: target.selectionStart, end: target.selectionEnd },
+      event.clipboardData.getData("text/plain"),
+    );
+    if (!edit) return;
+    event.preventDefault();
+    applyEditUndoable(target, edit);
   }
 
   function reportSelection(event: SyntheticEvent<HTMLTextAreaElement>): void {
@@ -358,19 +537,74 @@ export default function EditorPane({
             ref={textareaRef}
             className="editor__textarea"
             value={body}
-            onChange={(event) => onChangeBody(event.target.value)}
+            onChange={(event) => {
+              onChangeBody(event.target.value);
+              updateSuggest(event.target);
+            }}
             onKeyDown={handleBodyKeyDown}
+            onPaste={handleBodyPaste}
             onSelect={reportSelection}
-            onKeyUp={reportSelection}
-            onMouseUp={reportSelection}
+            onKeyUp={(event) => {
+              reportSelection(event);
+              if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) updateSuggest(event.currentTarget);
+            }}
+            onMouseUp={(event) => {
+              reportSelection(event);
+              updateSuggest(event.currentTarget);
+            }}
+            onScroll={() => {
+              if (suggest) closeSuggest();
+              scheduleSync();
+            }}
+            onBlur={closeSuggest}
             placeholder={"在这里记。Markdown、[[双链]]、#标签 都支持。\nCtrl+S 立即保存，离开会自动保存。"}
             aria-label="笔记正文"
             spellCheck={false}
             autoComplete="off"
           />
+          {suggest ? (
+            <ul
+              className="wikisuggest"
+              role="listbox"
+              aria-label="链接到笔记"
+              style={
+                suggest.flip
+                  ? { left: suggest.left, bottom: window.innerHeight - suggest.anchorTop }
+                  : { left: suggest.left, top: suggest.top }
+              }
+            >
+              {suggest.items.map((item, index) => (
+                <li
+                  key={item}
+                  role="option"
+                  aria-selected={index === suggest.active}
+                  className={`wikisuggest__item${index === suggest.active ? " is-active" : ""}`}
+                  // 按下时不让正文框失焦，否则列表先被 onBlur 关掉
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    if (textareaRef.current) acceptSuggest(textareaRef.current, item);
+                  }}
+                >
+                  {item}
+                </li>
+              ))}
+              <li className="wikisuggest__hint" aria-hidden="true">
+                ↑ ↓ 选择 · 回车补全 · Esc 关闭
+              </li>
+            </ul>
+          ) : null}
         </div>
-        <div className="split__pane split__pane--preview">
-          <Preview markdown={body} onOpenWikilink={onOpenWikilink} onFilterTag={onFilterTag} />
+        <div className="split__pane split__pane--preview" ref={previewPaneRef}>
+          <Preview
+            markdown={previewBody}
+            sourceLines={viewMode === "split"}
+            onOpenWikilink={onOpenWikilink}
+            onFilterTag={onFilterTag}
+            onToggleTask={(index) => {
+              const next = toggleTask(body, index);
+              if (next !== null) onChangeBody(next);
+            }}
+          />
         </div>
       </div>
 

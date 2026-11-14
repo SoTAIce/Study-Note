@@ -232,17 +232,88 @@
       "notes": "正文框隐藏（只看预览）时退回直接改状态，这时只能用「撤销 AI 改写」按钮还原。"
     },
     {
+      "id": "editor-005",
+      "priority": 7,
+      "area": "editor",
+      "title": "切换笔记后回来，光标和滚动位置还在",
+      "user_visible_behavior": "在标签页 / 列表之间切换笔记再切回来，正文框的光标、选区和滚动位置恢复到离开时的样子（本次打开期间有效）。",
+      "status": "passing",
+      "verification": [
+        "E2E：滚动并放好光标 → 切到别的笔记 → 切回来位置一致"
+      ],
+      "evidence": [
+        "pnpm e2e「编辑器第二批」：选区 500–510、滚动 900 → 切到阿尔法笔记（从头开始）→ 切回来选区与滚动一致",
+        "./init.sh 全绿：417 个测试 + E2E 21 步（2026-11-14）"
+      ],
+      "notes": "2026-11-14 梳理编辑器时提出，用户同意与 editor-003 / editor-004 / perf-002 合成一批做。"
+    },
+    {
+      "id": "editor-006",
+      "priority": 7,
+      "area": "editor",
+      "title": "预览里的任务框可以点着勾选",
+      "user_visible_behavior": "预览（分栏 / 只看预览）里点 - [ ] 的框，正文里对应那一行变成 - [x]（再点取消），照常自动保存。",
+      "status": "passing",
+      "verification": [
+        "单测：按序号切换第 N 个任务框；E2E：点框后正文变化"
+      ],
+      "evidence": [
+        "node --test web/src/lib/markdown.test.ts：任务框默认禁用 / 可点、手写 input 不被放开、toggleTask 序号与预览一致（含代码块、引用、有序列表）",
+        "pnpm e2e「编辑器第二批」：分栏预览里点第 1、2 个框，正文对应行切换，预览跟着变",
+        "./init.sh 全绿：417 个测试 + E2E 21 步（2026-11-14）"
+      ],
+      "notes": "2026-11-14 梳理编辑器时提出，用户同意与 editor-003 / editor-004 / perf-002 合成一批做。"
+    },
+    {
+      "id": "editor-007",
+      "priority": 7,
+      "area": "editor",
+      "title": "选中文字后粘贴网址自动变成链接",
+      "user_visible_behavior": "正文里选中一段文字再粘贴一个网址，变成 [文字](网址)；没选中或粘贴的不是网址时照常粘贴；Ctrl+Z 能撤回。",
+      "status": "passing",
+      "verification": [
+        "单测：判断网址与生成链接；E2E：选中后粘贴"
+      ],
+      "evidence": [
+        "node --test web/src/lib/edit-ops.test.ts「粘贴网址」通过",
+        "pnpm e2e「编辑器第二批」：选中「这篇」粘贴网址 → 看[这篇](https://example.com/post)文章",
+        "./init.sh 全绿：417 个测试 + E2E 21 步（2026-11-14）"
+      ],
+      "notes": "2026-11-14 梳理编辑器时提出，用户同意与 editor-003 / editor-004 / perf-002 合成一批做。"
+    },
+    {
+      "id": "editor-008",
+      "priority": 7,
+      "area": "editor",
+      "title": "回车保持缩进",
+      "user_visible_behavior": "在有缩进的普通行（例如代码块里）按回车，新行自动带上同样的缩进；列表 / 引用的续行规则不变。",
+      "status": "passing",
+      "verification": [
+        "单测：continueList 对缩进行的处理；E2E 包含在编辑器步骤里"
+      ],
+      "evidence": [
+        "node --test web/src/lib/edit-ops.test.ts「保持缩进」「代码块里只保持缩进」通过",
+        "pnpm e2e「编辑器第二批」：代码块里回车保持 4 格缩进且不续 - 列表",
+        "./init.sh 全绿：417 个测试 + E2E 21 步（2026-11-14）"
+      ],
+      "notes": "2026-11-14 梳理编辑器时提出，用户同意与 editor-003 / editor-004 / perf-002 合成一批做。"
+    },
+    {
       "id": "editor-003",
       "priority": 7,
       "area": "editor",
       "title": "输入 [[ 时补全笔记标题",
       "user_visible_behavior": "输入 [[ 弹出标题候选，方向键选择、回车补全为 [[标题]]。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "单测：候选过滤",
         "E2E：补全流程"
       ],
-      "evidence": [],
+      "evidence": [
+        "node --test web/src/lib/wikilink-complete.test.ts 5 条通过（识别没写完的 [[、排序、补全不重复 ]]）",
+        "pnpm e2e「编辑器第二批」：打 [[阿尔 弹出「阿尔法笔记」、回车补全为 [[阿尔法笔记]]；Esc 关掉后同一个 [[ 不再弹；截图 e2e-artifacts/13-wikilink-suggest.png",
+        "./init.sh 全绿：417 个测试 + E2E 21 步（2026-11-14）"
+      ],
       "notes": ""
     },
     {
@@ -251,11 +322,15 @@
       "area": "editor",
       "title": "分栏模式左右同步滚动",
       "user_visible_behavior": "分栏时滚动编辑区，预览跟着滚到对应位置。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "E2E：长笔记滚动后预览位置对应"
       ],
-      "evidence": [],
+      "evidence": [
+        "node --test web/src/lib/scroll-sync.test.ts 4 条、markdown.test.ts「sourceLines」2 条通过",
+        "pnpm e2e「编辑器第二批」：分栏里编辑区滚到「## 第 12 节」，预览里该标题离顶部 < 40px（本机实测约 4px）；截图 e2e-artifacts/14-split-sync.png",
+        "./init.sh 全绿：417 个测试 + E2E 21 步（2026-11-14）"
+      ],
       "notes": ""
     },
     {
@@ -264,11 +339,15 @@
       "area": "perf",
       "title": "预览渲染防抖",
       "user_visible_behavior": "长笔记（5000 行）连续输入时不卡顿，预览在停顿后更新。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "性能脚本：输入延迟对比"
       ],
-      "evidence": [],
+      "evidence": [
+        "node --test web/src/lib/preview-delay.test.ts 通过；渲染实测：500 行 12ms、2000 行 47ms、5000 行 / 21 万字 84ms",
+        "pnpm e2e「编辑器第二批」：4 万字以上的笔记打字后预览不立即变、停手后更新；只写模式不渲染新预览",
+        "./init.sh 全绿：417 个测试 + E2E 21 步（2026-11-14）"
+      ],
       "notes": ""
     },
     {

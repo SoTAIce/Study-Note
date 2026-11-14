@@ -9,7 +9,7 @@
  *
  * 覆盖：首页（含加载占位）→ 新建笔记 → 编辑自动保存 → 搜索 → 历史版本（对比 / 恢复 / 撤销恢复）
  *      → 外部编辑同步（改标题、自动载入、冲突、外部删除进回收站）
- *      → 阅览模式 → 导出 PDF → 回收站（自动清理过期、清空二次确认）→ 分组里新建 → 编辑器快捷操作 → AI 改动可撤回
+ *      → 阅览模式 → 导出 PDF → 回收站（自动清理过期、清空二次确认）→ 分组里新建 → 编辑器快捷操作 → AI 改动可撤回 → 编辑器第二批
  *      → 主题切换并记住 → 窄屏抽屉不横向溢出；全程不允许出现页面报错。
  * 截图写到 e2e-artifacts/（已 gitignore），作为验证证据。
  *
@@ -702,6 +702,134 @@ try {
     await page.unroute("**/api/config");
     await page.unroute("**/api/ai/continue");
     await page.unroute("**/api/ai/polish");
+  });
+
+  await step("编辑器第二批：保持缩进、粘贴网址成链接、预览勾任务、[[ 补全、切回位置、长笔记预览防抖、分栏同步滚动", async () => {
+    await page.locator(".note-row__text", { hasText: /^改了分组$/ }).click();
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "改了分组", null, { timeout: 5000 });
+    const ta = page.locator(".editor__textarea");
+    const kb = page.keyboard;
+    const value = () => ta.inputValue();
+
+    // editor-008：代码块里回车保持缩进，不续列表
+    await ta.fill("");
+    await ta.focus();
+    await kb.type("```");
+    await kb.press("Enter");
+    await kb.type("    a = 1");
+    await kb.press("Enter");
+    await kb.type("- b");
+    await kb.press("Enter");
+    await kb.type("c");
+    expect((await value()) === "```\n    a = 1\n    - b\nc" || (await value()) === "```\n    a = 1\n    - b\n    c", `缩进行回车应保持缩进：${JSON.stringify(await value())}`);
+    expect((await value()).endsWith("\n    c"), `代码块里不续列表、保持缩进：${JSON.stringify(await value())}`);
+
+    // editor-007：选中文字粘贴网址
+    await ta.fill("看这篇文章");
+    await ta.evaluate((el) => {
+      el.focus();
+      el.setSelectionRange(1, 3);
+      const data = new DataTransfer();
+      data.setData("text/plain", "https://example.com/post");
+      el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    });
+    expect((await value()) === "看[这篇](https://example.com/post)文章", `粘贴网址应变链接：${JSON.stringify(await value())}`);
+
+    // 切到分栏
+    const toolbar = page.locator(".segmented").first();
+    const initialMode = await toolbar.locator("[aria-pressed=true]").getAttribute("aria-label");
+    await page.getByRole("button", { name: "分栏", exact: true }).click();
+
+    // editor-006：预览里点任务框
+    await ta.fill("- [ ] 买牛奶\n- [x] 写笔记");
+    const boxes = page.locator(".split__pane--preview input.task-check");
+    await boxes.nth(1).waitFor();
+    await boxes.first().click();
+    await page.waitForFunction(() => document.querySelector(".editor__textarea")?.value === "- [x] 买牛奶\n- [x] 写笔记", null, { timeout: 3000 });
+    await boxes.nth(1).click();
+    await page.waitForFunction(() => document.querySelector(".editor__textarea")?.value === "- [x] 买牛奶\n- [ ] 写笔记", null, { timeout: 3000 });
+    expect(await boxes.first().isChecked(), "预览里的框应跟着正文变成勾选");
+
+    // editor-003：[[ 补全
+    await ta.fill("参见 ");
+    await ta.focus();
+    await kb.press("End");
+    await kb.type("[[阿尔");
+    const menu = page.locator(".wikisuggest");
+    await menu.waitFor({ timeout: 3000 });
+    expect((await menu.locator(".wikisuggest__item").first().textContent()) === "阿尔法笔记", "候选第一项应是阿尔法笔记");
+    await page.screenshot({ path: path.join(artifacts, "13-wikilink-suggest.png") });
+    await kb.press("Enter");
+    await menu.waitFor({ state: "detached" });
+    expect((await value()) === "参见 [[阿尔法笔记]]", `回车应补全：${JSON.stringify(await value())}`);
+    await kb.type(" 和 [[贝");
+    await menu.waitFor();
+    await kb.press("Escape");
+    await menu.waitFor({ state: "detached" });
+    await kb.type("塔");
+    await page.waitForTimeout(300);
+    expect((await menu.count()) === 0, "按过 Esc 的 [[ 不再弹出");
+    expect((await value()).endsWith("[[贝塔"), "Esc 后照常输入");
+
+    // perf-002：长笔记预览等停手再刷新
+    const longBody = Array.from({ length: 120 }, (_, i) =>
+      i % 6 === 0 ? `## 第 ${i / 6} 节` : `第 ${i} 行。`, // 短行：分栏里不折行，好按行高换算滚动位置
+    ).join("\n");
+    const filler = "\n" + "填充段落，用来让正文超过四万字，触发预览防抖。".repeat(1800);
+    await ta.fill(longBody + filler);
+    await page.waitForTimeout(700);
+    // 在第一个标题末尾打一个字
+    await ta.evaluate((el) => {
+      el.focus();
+      const end = el.value.indexOf("\n");
+      el.setSelectionRange(end, end);
+    });
+    await kb.type("新");
+    const firstHeading = page.locator(".split__pane--preview h2").first();
+    const immediately = await firstHeading.textContent();
+    await page.waitForFunction(() => document.querySelector(".split__pane--preview h2")?.textContent === "第 0 节新", null, { timeout: 3000 }).catch(() => undefined);
+    const later = await firstHeading.textContent();
+    expect(immediately === "第 0 节" && later === "第 0 节新", `长笔记预览应停手后再更新（立即=${immediately}，之后=${later}）`);
+    await kb.press("Backspace");
+
+    // editor-004：分栏同步滚动——编辑区滚到「第 12 节」那一行，预览里的该标题应在顶部附近
+    await page.waitForTimeout(700);
+    const delta = await page.evaluate(async () => {
+      const el = document.querySelector(".editor__textarea");
+      const lineHeight = Number.parseFloat(getComputedStyle(el).lineHeight);
+      el.scrollTop = 72 * lineHeight; // 第 72 行 = 第 12 节标题
+      el.dispatchEvent(new Event("scroll"));
+      await new Promise((r) => setTimeout(r, 200));
+      const pane = document.querySelector(".split__pane--preview");
+      const heading = [...pane.querySelectorAll("h2")].find((h) => h.textContent === "第 12 节");
+      return heading.getBoundingClientRect().top - pane.getBoundingClientRect().top;
+    });
+    expect(Math.abs(delta) < 40, `预览里「第 12 节」应在顶部附近，实际偏差 ${delta.toFixed(1)}px`);
+    await page.screenshot({ path: path.join(artifacts, "14-split-sync.png") });
+
+    // editor-005：切到别的笔记再回来，光标和滚动位置还在
+    const before = await ta.evaluate((el) => {
+      el.focus();
+      el.setSelectionRange(500, 510);
+      el.scrollTop = 900;
+      return { start: el.selectionStart, end: el.selectionEnd, top: el.scrollTop };
+    });
+    await page.locator(".note-row__text", { hasText: /^阿尔法笔记$/ }).click();
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "阿尔法笔记", null, { timeout: 5000 });
+    expect((await ta.evaluate((el) => el.scrollTop)) === 0, "另一篇应从头开始");
+    await page.locator(".note-row__text", { hasText: /^改了分组$/ }).click();
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "改了分组", null, { timeout: 5000 });
+    const after = await ta.evaluate((el) => ({ start: el.selectionStart, end: el.selectionEnd, top: el.scrollTop }));
+    expect(
+      after.start === before.start && after.end === before.end && Math.abs(after.top - before.top) < 2,
+      `切回来位置应恢复：之前 ${JSON.stringify(before)}，之后 ${JSON.stringify(after)}`,
+    );
+
+    // 收尾：正文改短，视图切回原来的
+    await ta.fill("编辑器第二批测试完成。");
+    await page.getByRole("button", { name: initialMode, exact: true }).click();
+    await page.keyboard.press("Control+s");
+    await page.getByText("已保存").first().waitFor({ timeout: 10000 });
   });
 
   await step("主题切换并在刷新后保持", async () => {
