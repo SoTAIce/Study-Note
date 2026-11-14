@@ -147,11 +147,11 @@
       "priority": 3,
       "area": "harness",
       "title": "GitHub Actions 持续集成",
-      "user_visible_behavior": "每次推送和 PR 自动跑 typecheck、test、build、e2e，失败时 PR 上能看到。",
-      "status": "not_started",
+      "user_visible_behavior": "每次推送和 PR 自动在 Linux、Windows 上各跑一遍 ./init.sh（依赖、typecheck、test、build、e2e），失败时 PR 上能看到；Windows 上导出 PDF 用系统自带的 Edge。",
+      "status": "in_progress",
       "verification": [
-        "推一个提交，Actions 全绿",
-        "故意推一个失败的分支，Actions 变红"
+        "推一个提交，Actions 两个系统都全绿",
+        "失败时能看到红色（不专门推坏分支验证：用户 2026-11-14 要求不做故意改坏的检查）"
       ],
       "evidence": [],
       "notes": ""
