@@ -113,16 +113,45 @@ export function deriveTitle(body: string, fallbackPath: string): string {
   return stripped || "未命名";
 }
 
+/** 表格分隔行：| --- | :---: | */
+const TABLE_RULE = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
+
+/** 一行去掉块级标记：标题 #、引用 >、列表 - / 1.、任务 [x]、表格竖线、分隔线 */
+function stripBlockMarks(line: string): string {
+  if (TABLE_RULE.test(line) || /^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(line)) return "";
+  let out = line
+    .replace(/^\s{0,3}(>\s?)+/, "")
+    .replace(/^\s*([-*+]|\d{1,9}[.)])\s+(\[[ xX]\]\s+)?/, "")
+    .replace(/^\s{0,3}#{1,6}\s+/, "");
+  if (/^\s*\|.*\|\s*$/.test(out)) {
+    out = out
+      .trim()
+      .slice(1, -1)
+      .split("|")
+      .map((cell) => cell.trim())
+      .filter(Boolean)
+      .join(" · ");
+  }
+  return out;
+}
+
 export function excerpt(body: string, max = 120): string {
+  // 行内代码保留文字：先换成占位符，免得里面的 * _ 被当成强调去掉
+  const codes: string[] = [];
   const text = body
     .replace(/```[\s\S]*?```/g, " ")
-    .replace(/`[^`\n]*`/g, " ")
+    .split(/\r?\n/)
+    .map(stripBlockMarks)
+    .join("\n")
+    .replace(/`([^`\n]*)`/g, (_all, code: string) => `\u0000${codes.push(code) - 1}\u0000`)
     .replace(/!\[\[[^\]]*\]\]/g, " ")
     .replace(/\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|([^\]]+))?\]\]/g, (_all, title: string, alias?: string) => alias ?? title)
     .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
-    .replace(/[*_~]{1,3}/g, "")
+    // 强调标记：* / ~ 直接去；_ 只去单词边界上的（snake_case 保留）
+    .replace(/[*~]{1,3}/g, "")
+    .replace(/(^|[^\p{L}\p{N}])_{1,3}(?=\S)|(?<=\S)_{1,3}(?![\p{L}\p{N}])/gu, "$1")
     .replace(/\s+/g, " ")
+    .replace(/\u0000(\d+)\u0000/g, (_all, i: string) => codes[Number(i)] ?? "")
     .trim();
   if (text.length <= max) return text;
   return `${text.slice(0, max).trimEnd()}…`;
@@ -302,12 +331,11 @@ export function parseNote(
   const createdAt = normalizeInstant(data.created, fallback.mtime);
   const updatedAt = normalizeInstant(data.updated, fallback.mtime);
   const titleFromData = data.title ? unquote(data.title).trim() : "";
+  // 没写 type 的笔记：放在 inbox/ 里就算收件箱想法（别的编辑器直接丢进去的文件也能出现在收件箱）
+  const declared = data.type ? unquote(data.type).trim() : "";
+  const inInbox = /^inbox[\\/]/i.test(fallback.path);
   const type: NoteType =
-    data.type && unquote(data.type) === "idea"
-      ? "idea"
-      : data.type && unquote(data.type) === "source"
-        ? "source"
-        : "note";
+    declared === "idea" || (!declared && inInbox) ? "idea" : declared === "source" ? "source" : "note";
   const meta: NoteMeta = {
     id: data.id ? unquote(data.id).trim() : (fallback.id ?? ""),
     title: titleFromData || deriveTitle(body, fallback.path),

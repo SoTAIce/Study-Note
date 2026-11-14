@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as api from "./api.ts";
+import { useConfirm } from "./components/ConfirmDialog.tsx";
 import type {
   BacklinksResult,
   BackupStatus,
@@ -67,6 +68,7 @@ type Toast = { id: number; text: string; kind: ToastKind };
 export default function App() {
   // —— 左栏数据 ——
   const [filter, setFilter] = useState<Filter>({ kind: "all" });
+  const confirm = useConfirm();
   const [screen, setScreen] = useState<Screen>("notes");
   const [aiMounted, setAiMounted] = useState(false);
   const [notes, setNotes] = useState<NoteSummary[]>([]);
@@ -78,6 +80,14 @@ export default function App() {
   /** 侧栏统计（时间流 / 标签 / 分组）是否至少成功加载过一次；之前首页显示占位，而不是 0 或「还没有笔记」 */
   const [statsReady, setStatsReady] = useState(false);
   const [listsError, setListsError] = useState<string | null>(null);
+  /**
+   * 已有笔记的标题，预览用来淡化指向不存在笔记的双链（ui-006）。
+   * 时间流还没加载、或到了接口上限（可能不全）时不判断，宁可不标也不误标。
+   */
+  const knownTitles = useMemo(
+    () => (statsReady && timeline.length < 2000 ? new Set(timeline.map((item) => item.title)) : undefined),
+    [statsReady, timeline],
+  );
   const [reindexing, setReindexing] = useState(false);
 
   // —— 当前笔记与草稿 ——
@@ -760,7 +770,12 @@ export default function App() {
   async function deleteCurrent(): Promise<void> {
     const note = current;
     if (!note) return;
-    const ok = window.confirm(`删除「${note.meta.title}」？会先移入回收站。`);
+    const ok = await confirm({
+      title: `删除「${note.meta.title || "无标题"}」？`,
+      message: "会先移入回收站，需要时可以从回收站恢复。",
+      confirmLabel: "删除",
+      danger: true,
+    });
     if (!ok) return;
     if (saveTimer.current !== null) {
       window.clearTimeout(saveTimer.current);
@@ -1403,6 +1418,7 @@ export default function App() {
             <EditorPane
               note={current}
               onNotify={showToast}
+              knownTitles={knownTitles}
               title={draft.title}
               body={draft.body}
               tags={current.tags}
@@ -1620,6 +1636,7 @@ export default function App() {
         <ReadingMode
           noteId={current.id}
           notePath={current.relPath}
+          knownTitles={knownTitles}
           title={draft.title || current.meta.title}
           body={draft.body}
           meta={{ updated: current.meta.updated, group: current.meta.group ?? null, tags: current.meta.tags }}

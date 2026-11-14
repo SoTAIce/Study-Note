@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useDialogFocus } from "../lib/use-dialog-focus.ts";
 import * as api from "../api.ts";
 import type { CaptureResult } from "../api.ts";
 
@@ -19,6 +20,8 @@ function parseTags(raw: string): string[] {
 }
 
 export default function CaptureModal({ open, onClose, onCaptured }: Props) {
+  const dialogFocusRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogFocusRef, open);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const closeTimer = useRef<number | null>(null);
   const [text, setText] = useState("");
@@ -90,7 +93,7 @@ export default function CaptureModal({ open, onClose, onCaptured }: Props) {
     >
       <div
         className="capture"
-        role="dialog"
+        ref={dialogFocusRef} role="dialog"
         aria-modal="true"
         aria-label="快速捕获"
         onMouseDown={(event) => event.stopPropagation()}

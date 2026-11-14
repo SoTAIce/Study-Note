@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useDialogFocus } from "../lib/use-dialog-focus.ts";
 import * as api from "../api.ts";
 import type { SearchHit } from "../api.ts";
 import Icon from "./Icon.tsx";
@@ -11,6 +12,8 @@ type Props = {
 };
 
 export default function SearchPalette({ open, onClose, onOpenNote }: Props) {
+  const dialogFocusRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogFocusRef, open);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<SearchHit[]>([]);
@@ -97,7 +100,7 @@ export default function SearchPalette({ open, onClose, onOpenNote }: Props) {
     <div className="overlay overlay--center" onMouseDown={onClose} role="presentation">
       <div
         className="palette"
-        role="dialog"
+        ref={dialogFocusRef} role="dialog"
         aria-modal="true"
         aria-label="搜索笔记"
         onMouseDown={(event) => event.stopPropagation()}

@@ -219,9 +219,9 @@ test("索引表有 group_name 列，且把笔记的组写进去", () => {
   assert.equal(byPath.get(plain.relPath), null);
 });
 
-test("改组之后重新索引，group_name 跟着变；SCHEMA_VERSION 升到 2", () => {
+test("改组之后重新索引，group_name 跟着变；SCHEMA_VERSION 升到 3（摘要 / 收件箱规则变了要重建）", () => {
   const { store, db, indexer } = mk();
-  assert.equal(SCHEMA_VERSION, 2);
+  assert.equal(SCHEMA_VERSION, 3);
 
   const note = store.create({ title: "Go 接口", body: "正文" });
   indexer.indexFile(note.relPath);
@@ -245,7 +245,7 @@ test("旧版本库（schema_version=1）打开后整库重建并带上 group_nam
   const cols = second.prepare("PRAGMA table_info(notes)").all() as Array<{ name: string }>;
   assert.ok(cols.some((col) => col.name === "group_name"), JSON.stringify(cols));
   const version = second.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string };
-  assert.equal(version.value, "2");
+  assert.equal(version.value, "3");
   second.close();
 });
 

@@ -107,6 +107,8 @@ type Props = {
   onOpenHistory: () => void;
   /** 底部提示条（上传图片的进度 / 失败原因） */
   onNotify: (text: string, kind: "info" | "ok" | "error") => void;
+  /** 已有笔记的标题：预览里淡化指向不存在笔记的双链（ui-006） */
+  knownTitles?: ReadonlySet<string>;
 };
 
 type Suggest = {
@@ -170,6 +172,7 @@ export default function EditorPane({
   onViewMode,
   onOpenHistory,
   onNotify,
+  knownTitles,
 }: Props) {
   const lines = body ? body.split("\n").length : 0;
   const [groupDraft, setGroupDraft] = useState(note.meta.group ?? "");
@@ -672,6 +675,7 @@ export default function EditorPane({
             markdown={previewBody}
             sourceLines={viewMode === "split"}
             notePath={note.relPath}
+            knownTitles={knownTitles}
             onOpenWikilink={onOpenWikilink}
             onFilterTag={onFilterTag}
             onToggleTask={(index) => {

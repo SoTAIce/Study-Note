@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useDialogFocus } from "../lib/use-dialog-focus.ts";
 import * as api from "../api.ts";
 import type { HistoryEntry, HistoryReason, HistoryVersion } from "../api.ts";
 import { diffLines, diffStats, foldUnchanged } from "../lib/diff.ts";
@@ -32,6 +33,8 @@ function versionLabel(entry: HistoryEntry): string {
 }
 
 export default function HistoryPanel({ open, noteId, noteTitle, currentBody, onClose, onRestore }: Props) {
+  const dialogFocusRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogFocusRef, open);
   const [items, setItems] = useState<HistoryEntry[] | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -269,7 +272,7 @@ export default function HistoryPanel({ open, noteId, noteTitle, currentBody, onC
     <div className="overlay overlay--right" role="presentation" onMouseDown={onClose}>
       <div
         className="history"
-        role="dialog"
+        ref={dialogFocusRef} role="dialog"
         aria-modal="true"
         aria-label="历史版本"
         onMouseDown={(event) => event.stopPropagation()}

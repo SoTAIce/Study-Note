@@ -9,7 +9,7 @@
  *
  * 覆盖：首页（含加载占位）→ 新建笔记 → 编辑自动保存 → 搜索 → 历史版本（对比 / 恢复 / 撤销恢复）
  *      → 外部编辑同步（改标题、自动载入、冲突、外部删除进回收站）
- *      → 阅览模式 → 导出 PDF → 回收站（自动清理过期、清空二次确认）→ 分组里新建 → 编辑器快捷操作 → AI 改动可撤回 → 编辑器第二批 → 粘贴图片
+ *      → 阅览模式 → 导出 PDF → 回收站（自动清理过期、清空二次确认）→ 分组里新建 → 编辑器快捷操作 → AI 改动可撤回 → 编辑器第二批 → 粘贴图片 → 界面一批（确认框、焦点、双链、摘要）
  *      → 主题切换并记住 → 窄屏抽屉不横向溢出；全程不允许出现页面报错。
  * 截图写到 e2e-artifacts/（已 gitignore），作为验证证据。
  *
@@ -918,6 +918,128 @@ try {
     await page.getByRole("button", { name: "只写", exact: true }).click();
     await page.keyboard.press("Control+s");
     await page.getByText("已保存").first().waitFor({ timeout: 10000 });
+  });
+
+  await step("界面一批：任务无圆点、缺失双链淡化、分组框随内容、摘要干净、inbox/ 算收件箱、应用内确认框、弹窗焦点不跑出去", async () => {
+    const body = [
+      "## 清单",
+      "- [x] 已完成的事",
+      "- [ ] 没做的事",
+      "- 普通项",
+      "",
+      "用 `learning_rate` 调参，见 [[分组里新建]] 和 [[还没写的笔记]]。",
+      "",
+      "| 甲 | 乙 |",
+      "|---|---|",
+      "| 1 | 2 |",
+    ].join("\n");
+    await page.evaluate(
+      async (b) =>
+        (
+          await fetch("/api/notes", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ title: "界面巡检", body: b, group: "短" }),
+          })
+        ).json(),
+      body,
+    );
+    await page.locator(".note-row__text", { hasText: /^界面巡检$/ }).click({ timeout: 5000 });
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "界面巡检", null, { timeout: 5000 });
+    await page.getByRole("button", { name: "分栏", exact: true }).click();
+    const preview = page.locator(".split__pane--preview .preview");
+    await preview.locator("li.task-item").first().waitFor({ timeout: 5000 });
+
+    // ui-005：任务项没有圆点，普通项照旧
+    const styles = await preview.evaluate((el) =>
+      Array.from(el.querySelectorAll("li")).map((li) => [li.className, getComputedStyle(li).listStyleType]),
+    );
+    expect(
+      JSON.stringify(styles) === JSON.stringify([["task-item", "none"], ["task-item", "none"], ["", "disc"]]),
+      `任务项应无圆点、普通项有圆点，实际 ${JSON.stringify(styles)}`,
+    );
+
+    // ui-006：不存在的双链带 is-missing，存在的不带
+    const links = await preview.evaluate((el) =>
+      Array.from(el.querySelectorAll("a.wikilink")).map((a) => [a.dataset.target, a.classList.contains("is-missing")]),
+    );
+    expect(
+      JSON.stringify(links) === JSON.stringify([["分组里新建", false], ["还没写的笔记", true]]),
+      `双链存在 / 缺失标记不对：${JSON.stringify(links)}`,
+    );
+
+    // ui-007：分组框宽度跟着组名走（一个字的组名比原来固定的 96px 窄）
+    const groupWidth = await page.locator(".editor__group-input").evaluate((el) => el.getBoundingClientRect().width);
+    expect(groupWidth < 96, `分组框应随内容变窄，实际 ${groupWidth}px`);
+
+    // list-001：摘要保留行内代码文字，没有任务框和表格竖线
+    const excerptText = await page.locator(".note-row", { hasText: "界面巡检" }).locator(".note-row__excerpt").textContent();
+    expect(excerptText.includes("learning_rate"), `摘要应保留行内代码文字，实际「${excerptText}」`);
+    expect(!/\[[ x]\]|\||---/.test(excerptText), `摘要不应有任务框 / 表格竖线，实际「${excerptText}」`);
+    await page.screenshot({ path: path.join(artifacts, "16-ui-batch.png") });
+
+    // ui-008：别的编辑器直接丢进 inbox/ 的文件（没写 type）出现在收件箱
+    fs.writeFileSync(path.join(notesDir, "inbox", "外部丢进来.md"), "# 外部丢进来\n\n随手一记\n");
+    await page.waitForFunction(
+      async () => ((await (await fetch("/api/notes?type=idea")).json()).items ?? []).some((n) => n.title === "外部丢进来"),
+      null,
+      { timeout: 8000, polling: 300 },
+    );
+
+    // a11y-001：导出弹窗里 Tab 一直停在弹窗内，关掉后焦点回到导出按钮
+    const exportBtn = page.getByRole("button", { name: "导出 PDF" }).first();
+    await exportBtn.click();
+    await page.locator(".export-dialog").waitFor();
+    for (let i = 0; i < 12; i += 1) {
+      await page.keyboard.press(i % 4 === 3 ? "Shift+Tab" : "Tab");
+      const inside = await page.evaluate(() => Boolean(document.activeElement?.closest(".export-dialog")));
+      expect(inside, `第 ${i + 1} 次 Tab 后焦点跑出了导出弹窗`);
+    }
+    await page.keyboard.press("Escape");
+    await page.locator(".export-dialog").waitFor({ state: "detached" });
+    expect(
+      await page.evaluate(() => document.activeElement?.getAttribute("aria-label") === "导出 PDF"),
+      "关掉弹窗后焦点应回到导出按钮",
+    );
+
+    // ui-002：删除笔记用应用内确认框；Esc 取消不删，焦点默认在「取消」，Tab 不跑出去
+    let nativeDialog = false;
+    const onDialog = (d) => {
+      nativeDialog = true;
+      void d.dismiss();
+    };
+    page.on("dialog", onDialog);
+    await page.getByRole("button", { name: "删除笔记" }).click();
+    const confirmBox = page.getByRole("alertdialog", { name: "删除「界面巡检」？" });
+    await confirmBox.waitFor();
+    expect(await page.evaluate(() => document.activeElement?.textContent === "取消"), "默认焦点应在「取消」");
+    for (let i = 0; i < 3; i += 1) await page.keyboard.press("Tab");
+    expect(
+      await page.evaluate(() => Boolean(document.activeElement?.closest(".confirm-dialog"))),
+      "Tab 后焦点应仍在确认框里",
+    );
+    await page.screenshot({ path: path.join(artifacts, "17-confirm-delete.png") });
+    await page.keyboard.press("Escape");
+    await confirmBox.waitFor({ state: "detached" });
+    expect((await api("/api/notes")).items.some((n) => n.title === "界面巡检"), "取消后笔记应还在");
+
+    await page.getByRole("button", { name: "删除笔记" }).click();
+    await confirmBox.getByRole("button", { name: "删除" }).click();
+    await confirmBox.waitFor({ state: "detached" });
+    await page.getByText("已移入回收站").first().waitFor({ timeout: 5000 });
+    expect(!(await api("/api/notes")).items.some((n) => n.title === "界面巡检"), "确认后笔记应已删除");
+
+    // 删除分组也走应用内确认框；取消后分组还在
+    const groupRow = page.locator(".group-row", { hasText: "改过的组" });
+    await groupRow.hover();
+    await groupRow.getByRole("button", { name: "删除分组：改过的组" }).click();
+    const groupConfirm = page.getByRole("alertdialog", { name: "删除分组「改过的组」？" });
+    await groupConfirm.waitFor();
+    await groupConfirm.getByRole("button", { name: "取消" }).click();
+    await groupConfirm.waitFor({ state: "detached" });
+    expect((await page.locator(".group-row", { hasText: "改过的组" }).count()) === 1, "取消后分组应还在");
+    page.off("dialog", onDialog);
+    expect(!nativeDialog, "不应再弹浏览器原生确认框");
   });
 
   await step("主题切换并在刷新后保持", async () => {

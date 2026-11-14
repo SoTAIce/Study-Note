@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import * as agent from "../agent-api.ts";
+import { useConfirm } from "./ConfirmDialog.tsx";
+import { aiAnnouncement } from "../lib/announce.ts";
 import Preview from "./Preview.tsx";
 import PlanCard from "./PlanCard.tsx";
 import ProviderSettings from "./ProviderSettings.tsx";
@@ -31,11 +33,15 @@ function relative(iso: string): string {
 }
 
 export default function AiChatPage({ onNotesChanged }: Props) {
+  const confirm = useConfirm();
   const [chats, setChats] = useState<agent.ChatSummary[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [chat, setChat] = useState<agent.ChatDetail | null>(null);
   const [providers, setProviders] = useState<agent.ProvidersView | null>(null);
   const [stream, setStream] = useState<StreamState | null>(null);
+  /** 读屏播报（a11y-001）：开始说一句，结束读完整回复；流式的半截内容不播 */
+  const [announce, setAnnounce] = useState("");
+  const replyRef = useRef("");
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [planBusy, setPlanBusy] = useState(false);
@@ -159,7 +165,13 @@ export default function AiChatPage({ onNotesChanged }: Props) {
   };
 
   const removeChat = async (id: string) => {
-    if (!window.confirm("删除这个对话？（只删聊天记录，不动笔记）")) return;
+    const ok = await confirm({
+      title: "删除这个对话？",
+      message: "只删聊天记录，不动笔记。",
+      confirmLabel: "删除",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await agent.deleteAgentChat(id);
       const list = await loadChats();
@@ -207,6 +219,8 @@ export default function AiChatPage({ onNotesChanged }: Props) {
     setError(null);
     setBusy(true);
     setStream({ text: "", steps: [], plan: null });
+    replyRef.current = "";
+    setAnnounce(aiAnnouncement({ busy: true, text: "" }));
     setChat((prev) => (prev ? { ...prev, messages: [...prev.messages, { role: "user", content: text }] } : prev));
 
     const controller = new AbortController();
@@ -217,6 +231,7 @@ export default function AiChatPage({ onNotesChanged }: Props) {
         onEvent: (event) => {
           if (!mine()) return;
           if (event.type === "text") {
+            replyRef.current += event.delta;
             setStream((prev) => (prev ? { ...prev, text: prev.text + event.delta } : prev));
           } else if (event.type === "step") {
             setStream((prev) => (prev ? { ...prev, steps: [...prev.steps, event] } : prev));
@@ -234,6 +249,7 @@ export default function AiChatPage({ onNotesChanged }: Props) {
         abortRef.current = null;
         setBusy(false);
         setStream(null);
+        setAnnounce(aiAnnouncement({ busy: false, text: replyRef.current }));
         // 以服务端为准重新拉一次：消息、计划、状态都对齐——但只在用户还停在这个会话时才覆盖界面
         try {
           const fresh = await agent.getAgentChat(target.id);
@@ -286,6 +302,9 @@ export default function AiChatPage({ onNotesChanged }: Props) {
 
   return (
     <div className="agent">
+      <p className="sr-only" role="status" aria-live="polite">
+        {announce}
+      </p>
       <aside className="agent__chats" aria-label="对话列表">
         <div className="agent__chats-head">
           <strong>AI 对话</strong>

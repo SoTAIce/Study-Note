@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDialogFocus } from "../lib/use-dialog-focus.ts";
 import * as agent from "../agent-api.ts";
 
 type Props = {
@@ -9,6 +10,8 @@ type Props = {
 
 /** 服务商设置：五张内置卡片 + key + 模型 + 允许读取的目录。 */
 export default function ProviderSettings({ open, onClose, onSaved }: Props) {
+  const dialogFocusRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogFocusRef, open);
   const [providers, setProviders] = useState<agent.ProvidersView | null>(null);
   const [drafts, setDrafts] = useState<Record<string, { baseUrl: string; apiKey: string; model: string }>>({});
   const [roots, setRoots] = useState<string>("");
@@ -97,7 +100,7 @@ export default function ProviderSettings({ open, onClose, onSaved }: Props) {
   };
 
   return (
-    <div className="agent-settings" role="dialog" aria-label="AI 服务商设置">
+    <div className="agent-settings" ref={dialogFocusRef} role="dialog" aria-label="AI 服务商设置">
       <div className="agent-settings__panel">
         <header className="agent-settings__head">
           <h2>AI 服务商</h2>

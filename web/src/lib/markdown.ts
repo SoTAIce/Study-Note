@@ -12,6 +12,8 @@ export type ImageContext = {
   localSrc?: (candidates: string[]) => string | null;
 };
 let imageCtx: ImageContext | null = null;
+/** 已有笔记的标题判断（ui-006）：给了才标出指向不存在笔记的双链 */
+let knownTitle: ((title: string) => boolean) | null = null;
 
 function imageSrc(target: ImageTarget | null): string | null {
   if (!target || !imageCtx) return null;
@@ -94,6 +96,9 @@ function renderWikilink(raw: string): string {
   if (!target) return raw;
 
   const display = alias || (section ? `${target}#${section}` : target);
+  if (knownTitle && !knownTitle(target)) {
+    return `<a class="wikilink is-missing" data-target="${escapeHtml(target)}" title="还没有这篇笔记，点击新建">${escapeHtml(display)}</a>`;
+  }
   return `<a class="wikilink" data-target="${escapeHtml(target)}">${escapeHtml(display)}</a>`;
 }
 
@@ -227,16 +232,25 @@ const md = new Marked({
  */
 export function renderMarkdown(
   markdown: string,
-  options: { interactiveTasks?: boolean; sourceLines?: boolean; images?: ImageContext } = {},
+  options: {
+    interactiveTasks?: boolean;
+    sourceLines?: boolean;
+    images?: ImageContext;
+    /** 给了就把指向不存在笔记的 [[双链]] 标成 is-missing（ui-006） */
+    knownTitle?: (title: string) => boolean;
+  } = {},
 ): string {
   if (!markdown) return "";
   imageCtx = options.images ?? null;
+  knownTitle = options.knownTitle ?? null;
   let html: string;
   try {
     const raw = options.sourceLines ? renderWithLines(markdown) : md.parse(markdown, { async: false });
-    html = transformHtml(raw);
+    // 任务项的 <li> 带上类名，样式里去掉圆点（ui-005）；原始 HTML 已转义，能匹配到的只有 checkbox 渲染出来的框
+    html = transformHtml(raw).replace(/<li>(\s*(?:<p>)?\s*<input class="task-check")/g, '<li class="task-item">$1');
   } finally {
     imageCtx = null;
+    knownTitle = null;
   }
   // 笔记里的原始 HTML 已被转义，这里匹配到的只可能是上面 checkbox 渲染出来的
   return options.interactiveTasks ? html.replace(/(<input class="task-check" type="checkbox"(?: checked)?) disabled>/g, "$1>") : html;

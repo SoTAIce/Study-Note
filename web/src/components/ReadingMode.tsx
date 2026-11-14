@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useDialogFocus } from "../lib/use-dialog-focus.ts";
 import Icon from "./Icon.tsx";
 import Preview from "./Preview.tsx";
 import { relativeTime } from "../lib/time.ts";
@@ -20,6 +21,8 @@ type Props = {
   noteId: string;
   /** 库内路径：换算图片地址用 */
   notePath: string;
+  /** 已有笔记的标题（ui-006） */
+  knownTitles?: ReadonlySet<string>;
   title: string;
   body: string;
   meta: { updated: string; group: string | null; tags: string[] };
@@ -85,7 +88,9 @@ function isTyping(target: EventTarget | null): boolean {
  * - 每篇读到的位置记在本机，下次回到那里
  */
 export default function ReadingMode(props: Props) {
-  const { noteId, notePath, title, body, meta, prev, next, onNavigate, onExit, onOpenWikilink, onFilterTag, onExport, paused } = props;
+  const { noteId, notePath, knownTitles, title, body, meta, prev, next, onNavigate, onExit, onOpenWikilink, onFilterTag, onExport, paused } = props;
+  const dialogFocusRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogFocusRef);
   const [fontSize, setFontSize] = useState(readFont);
   const [width, setWidth] = useState<ReadingWidth>(() => parseWidth(load(WIDTH_KEY)));
   const [outline, setOutline] = useState<OutlineItem[]>([]);
@@ -204,7 +209,7 @@ export default function ReadingMode(props: Props) {
   const metaParts = [`更新于 ${relativeTime(meta.updated)}`, meta.group ? `分组 ${meta.group}` : null].filter(Boolean);
 
   return (
-    <div className="reader" role="dialog" aria-modal="true" aria-label={`阅览：${title || "无标题"}`}>
+    <div className="reader" ref={dialogFocusRef} role="dialog" aria-modal="true" aria-label={`阅览：${title || "无标题"}`}>
       <div className="reader__progress" style={{ transform: `scaleX(${progress})` }} aria-hidden="true" />
       <div className="reader__bar">
         {hasToc ? (
@@ -300,6 +305,7 @@ export default function ReadingMode(props: Props) {
             <Preview
               markdown={body}
               notePath={notePath}
+              knownTitles={knownTitles}
               onOpenWikilink={onOpenWikilink}
               onFilterTag={onFilterTag}
               className="reading"

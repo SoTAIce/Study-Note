@@ -4,6 +4,7 @@ import * as api from "../api.ts";
 import { REWRITE_MODES } from "../api.ts";
 import type { AiConfig, AiMode } from "../api.ts";
 import AiSettingsModal from "./AiSettingsModal.tsx";
+import { aiAnnouncement } from "../lib/announce.ts";
 
 type Props = {
   noteId: string | null;
@@ -203,6 +204,10 @@ export default function AiPanel({
 
   return (
     <section className="ai" ref={panelRef} tabIndex={-1} aria-label="AI 建议">
+      {/* 读屏播报：生成中只说一句，完成后读一遍结果（a11y-001）；错误另有 role=alert */}
+      <p className="sr-only" role="status" aria-live="polite">
+        {aiAnnouncement({ busy: busy !== null, text: output })}
+      </p>
       <div className="ai__head">
         <h2>AI 建议</h2>
         <button
@@ -307,7 +312,7 @@ export default function AiPanel({
       </div>
 
       {busy || output || error ? (
-        <div className="ai__suggestion" aria-live="polite">
+        <div className="ai__suggestion">
           <div className="ai__suggestion-head">
             <span>{outputMode && REWRITE_MODES.has(outputMode) ? "改写结果" : "建议块"}</span>
             {busy ? (

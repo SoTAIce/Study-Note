@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 
-export const SCHEMA_VERSION = 2;
+/** 改了表结构或索引里的派生字段（摘要、类型）就加一，旧库打开时整库重建。3：list-001 摘要规则、ui-008 inbox/ 默认算想法 */
+export const SCHEMA_VERSION = 3;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (

@@ -14,6 +14,8 @@ type Props = {
   sourceLines?: boolean;
   /** 当前笔记的库内路径：用来换算图片地址（media-001） */
   notePath?: string;
+  /** 已有笔记的标题：给了就把指向不存在笔记的双链淡化显示（ui-006） */
+  knownTitles?: ReadonlySet<string>;
 };
 
 /** 实时预览：marked 渲染后交给事件委托处理双链与标签点击。 */
@@ -25,6 +27,7 @@ export default function Preview({
   onToggleTask,
   sourceLines,
   notePath,
+  knownTitles,
 }: Props) {
   const interactive = Boolean(onToggleTask);
   const withLines = Boolean(sourceLines);
@@ -34,8 +37,9 @@ export default function Preview({
         interactiveTasks: interactive,
         sourceLines: withLines,
         images: notePath !== undefined ? { notePath } : undefined,
+        knownTitle: knownTitles ? (title) => knownTitles.has(title) : undefined,
       }),
-    [markdown, interactive, withLines, notePath],
+    [markdown, interactive, withLines, notePath, knownTitles],
   );
 
   function handleClick(event: MouseEvent<HTMLDivElement>): void {

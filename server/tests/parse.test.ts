@@ -116,6 +116,29 @@ test("excerpt 压掉换行并截断", () => {
   assert.ok(got.length <= 7);
 });
 
+test("excerpt：行内代码保留文字、表格只留单元格（list-001）", () => {
+  assert.equal(excerpt("更新参数：`w = w - lr * g`。"), "更新参数：w = w - lr * g。");
+  assert.equal(excerpt("| 函数 | 特点 |\n|---|:---:|\n| ReLU | 简单 |"), "函数 · 特点 ReLU · 简单");
+});
+
+test("excerpt：去掉列表、任务、引用、分隔线标记（list-001）", () => {
+  const body = "## 矩阵乘法\n- [x] 复习定义\n- [ ] 做习题 3.2\n1. 第一步\n* 星号项\n> 引用：[[概率论]]\n\n---\n结尾";
+  assert.equal(excerpt(body), "矩阵乘法 复习定义 做习题 3.2 第一步 星号项 引用：概率论 结尾");
+});
+
+test("excerpt：snake_case 的下划线保留，强调标记去掉（list-001）", () => {
+  assert.equal(excerpt("调用 learning_rate_decay，**重点** 和 _斜体_ ~~删掉~~"), "调用 learning_rate_decay，重点 和 斜体 删掉");
+});
+
+test("parseNote：inbox/ 里没写 type 的笔记算收件箱想法（ui-008）", () => {
+  const mtime = "2026-11-14T00:00:00.000Z";
+  assert.equal(parseNote("# 快速记录\n临时想法", { path: "inbox/quick.md", mtime }).meta.type, "idea");
+  assert.equal(parseNote("# 快速记录", { path: "inbox\\quick.md", mtime }).meta.type, "idea");
+  assert.equal(parseNote("---\ntype: note\n---\n正文", { path: "inbox/x.md", mtime }).meta.type, "note");
+  assert.equal(parseNote("正文", { path: "inboxes/x.md", mtime }).meta.type, "note");
+  assert.equal(parseNote("正文", { path: "x.md", mtime }).meta.type, "note");
+});
+
 test("contentHash 稳定且区分内容", () => {
   assert.equal(contentHash("abc"), contentHash("abc"));
   assert.notEqual(contentHash("abc"), contentHash("abd"));

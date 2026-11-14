@@ -1,6 +1,6 @@
 {
   "project": "study-notes",
-  "last_updated": "2026-11-13",
+  "last_updated": "2026-11-14",
   "rules": {
     "single_active_feature": true,
     "passing_requires_evidence": true,
@@ -377,12 +377,89 @@
       "area": "ui",
       "title": "应用内确认弹窗替换 window.confirm",
       "user_visible_behavior": "删除笔记、删除分组用应用内确认弹窗（或可撤销提示条），样式与主题一致。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "E2E：删除笔记确认流程"
       ],
-      "evidence": [],
+      "evidence": [
+        "web/src/components/ConfirmDialog.tsx（ConfirmProvider + useConfirm，role=alertdialog、默认焦点在「取消」、Esc / 点背景取消）；删笔记、删分组、删 AI 对话三处 window.confirm 全部换掉（grep 已无调用）",
+        "pnpm e2e「界面一批…」通过（截图 e2e-artifacts/16-ui-batch.png、17-confirm-delete.png）：删除笔记弹应用内确认框、默认焦点在取消、Tab 不出框、Esc 取消后笔记还在、确认后进回收站；删除分组取消后分组还在；全程没有浏览器原生对话框",
+        "./init.sh 全绿：452 个测试 + E2E 23 步（2026-11-14）"
+      ],
       "notes": ""
+    },
+    {
+      "id": "ui-005",
+      "priority": 11,
+      "area": "ui",
+      "title": "预览里任务列表不显示圆点",
+      "user_visible_behavior": "任务项只显示复选框、不再同时出现圆点，复选框与文字对齐。",
+      "status": "passing",
+      "verification": [
+        "单测：markdown 输出带 task-item 类",
+        "E2E：任务项 list-style 为 none"
+      ],
+      "evidence": [
+        "web/src/lib/markdown.test.ts「任务项的 <li> 带 task-item 类」：紧凑 / 松散列表都带类，普通项不带，正文里手写的 HTML 不会被当成任务项",
+        "pnpm e2e「界面一批…」通过（截图 e2e-artifacts/16-ui-batch.png、17-confirm-delete.png）：任务项 list-style 为 none、普通项为 disc；导出 PDF 共用 content.css，同样生效",
+        "./init.sh 全绿：452 个测试 + E2E 23 步（2026-11-14）"
+      ],
+      "notes": "2026-11-14 UI 巡检截图发现。"
+    },
+    {
+      "id": "ui-006",
+      "priority": 11,
+      "area": "ui",
+      "title": "不存在的双链在预览里区分显示",
+      "user_visible_behavior": "指向还没创建的笔记的 [[链接]] 显示为虚线淡色，悬停提示「还没有这篇笔记」。",
+      "status": "passing",
+      "verification": [
+        "单测：渲染时传入已有标题，缺失的带 is-missing",
+        "E2E：预览里缺失双链带 is-missing"
+      ],
+      "evidence": [
+        "web/src/lib/markdown.test.ts「不存在的双链标成 is-missing」：存在的照常、缺失的带 is-missing 和提示、不给标题表时都不标、标题表只在当次渲染生效",
+        "pnpm e2e「界面一批…」通过（截图 e2e-artifacts/16-ui-batch.png、17-confirm-delete.png）：预览里 [[分组里新建]] 不带、[[还没写的笔记]] 带 is-missing；标题来自时间流，没加载完或满 2000 条时不判断（宁可不标也不误标）",
+        "./init.sh 全绿：452 个测试 + E2E 23 步（2026-11-14）"
+      ],
+      "notes": "2026-11-14 UI 巡检：右侧出链已标「未创建」，预览却和正常链接一样。"
+    },
+    {
+      "id": "ui-007",
+      "priority": 11,
+      "area": "ui",
+      "title": "笔记头部分组选择框宽度跟随内容",
+      "user_visible_behavior": "分组选择框不再占一大块空白，宽度随分组名变化。",
+      "status": "passing",
+      "verification": [
+        "E2E：分组框宽度小于原固定宽度"
+      ],
+      "evidence": [
+        "app.css：.editor__group-input 用 field-sizing: content（Chromium / Edge），不支持的浏览器退回 96px；最小 3em、最大 14em",
+        "pnpm e2e「界面一批…」通过（截图 e2e-artifacts/16-ui-batch.png、17-confirm-delete.png）：组名「短」时分组框宽度 < 96px",
+        "./init.sh 全绿：452 个测试 + E2E 23 步（2026-11-14）"
+      ],
+      "notes": "2026-11-14 UI 巡检截图发现。Firefox 不支持 field-sizing，仍是固定宽度。"
+    },
+    {
+      "id": "ui-008",
+      "priority": 11,
+      "area": "ui",
+      "title": "首页收件箱计数与实际一致",
+      "user_visible_behavior": "放进 inbox/ 的笔记（包括别的编辑器直接放进去、没写 type 的）都算进收件箱，首页和左栏的数字与实际一致。",
+      "status": "passing",
+      "verification": [
+        "单测：parseNote 对 inbox/ 下无 type 的笔记返回 idea",
+        "E2E：外部放进 inbox/ 的文件出现在收件箱"
+      ],
+      "evidence": [
+        "原因：收件箱按笔记类型 type: idea 统计，别的编辑器直接放进 inbox/ 的文件没写 type，被当成普通笔记",
+        "改法：server/parse.ts 没写 type 且在 inbox/ 下的笔记算 idea（明确写了 type 的照旧）；SCHEMA_VERSION 升到 3，旧索引打开时重建",
+        "node --test server/tests/parse.test.ts「inbox/ 里没写 type 的笔记算收件箱想法」：/ 和 \\ 分隔、显式 type: note、inboxes/ 不误判",
+        "pnpm e2e「界面一批…」通过（截图 e2e-artifacts/16-ui-batch.png、17-confirm-delete.png）：往 inbox/ 写一个没有 frontmatter 的文件，几秒内出现在 /api/notes?type=idea",
+        "./init.sh 全绿：452 个测试 + E2E 23 步（2026-11-14）"
+      ],
+      "notes": "2026-11-14 UI 巡检：inbox/ 里有一篇笔记，首页显示 0。"
     },
     {
       "id": "perf-003",
@@ -542,12 +619,18 @@
       "area": "ui",
       "title": "无障碍：弹窗焦点陷阱、AI 流式输出播报",
       "user_visible_behavior": "键盘用户打开弹窗时焦点不跑到背景；读屏能播报 AI 回复。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "E2E：Tab 循环停留在弹窗内"
       ],
-      "evidence": [],
-      "notes": ""
+      "evidence": [
+        "web/src/lib/focus-trap.ts（nextFocusIndex + 弹窗栈）+ use-dialog-focus.ts：打开时焦点移进弹窗、Tab / Shift+Tab 只在最上层弹窗里转、焦点跑到背景会拉回、关掉后回到打开前的元素；接到导出、历史、备份、快速捕获、搜索、AI 设置、服务商设置、阅览模式和新的确认框",
+        "web/src/lib/announce.ts：AI 输出不再整块 aria-live（流式时会反复重读），改成单独的 role=status 播报区：开始说「正在生成」，结束读一遍完整回复（超过 600 字截断）；右栏 AI 建议和 AI 对话页都接上",
+        "node --test web/src/lib/focus-trap.test.ts、announce.test.ts 共 6 条",
+        "pnpm e2e「界面一批…」通过（截图 e2e-artifacts/16-ui-batch.png、17-confirm-delete.png）：导出弹窗里 Tab / Shift+Tab 12 次焦点都在弹窗内，Esc 关闭后焦点回到导出按钮；确认框同样",
+        "./init.sh 全绿：452 个测试 + E2E 23 步（2026-11-14）"
+      ],
+      "notes": "读屏实际效果（Windows 讲述人 / NVDA）待人工验收，见 docs/验收清单.md。"
     },
     {
       "id": "hist-002",
@@ -597,15 +680,21 @@
       "id": "list-001",
       "priority": 25,
       "area": "ui",
-      "title": "列表摘要：保留行内代码文字、表格不显示竖线",
-      "user_visible_behavior": "中间列表的摘要里，`行内代码` 显示其文字而不是被删掉；表格显示为单元格文字，不出现 | 和 ---。",
-      "status": "not_started",
+      "title": "列表摘要：保留行内代码文字、去掉表格竖线和列表 / 任务 / 引用标记",
+      "user_visible_behavior": "中间列表的摘要里，`行内代码` 显示其文字而不是被删掉；表格显示为单元格文字，不出现 | 和 ---。列表的 - / 1. 、任务的 [x]、引用的 > 不出现在摘要里；snake_case 里的下划线保留。",
+      "status": "passing",
       "verification": [
         "单测：server/parse.ts excerpt()",
         "重建索引后列表显示正确"
       ],
-      "evidence": [],
-      "notes": "2026-11-13 云端演示截图发现：「梯度下降」摘要变成「更新参数：。」（行内代码被整段去掉）；「激活函数」摘要是「| 函数 | 特点 | |---|---|」。"
+      "evidence": [
+        "server/parse.ts excerpt()：行内代码保留文字（先换占位符，里面的 * _ 不被吃掉）；表格分隔行去掉、单元格用 · 连接；去掉列表 / 任务 / 引用 / 分隔线标记；只去单词边界上的 _，snake_case 保留",
+        "node --test server/tests/parse.test.ts 新增 3 条（行内代码与表格、列表任务引用分隔线、下划线）",
+        "SCHEMA_VERSION 升到 3：已有索引打开时整库重建，摘要按新规则重新生成（indexer.test.ts 对应断言改为 3）",
+        "pnpm e2e「界面一批…」通过（截图 e2e-artifacts/16-ui-batch.png、17-confirm-delete.png）：列表摘要含 learning_rate，没有 [x] / | / ---",
+        "./init.sh 全绿：452 个测试 + E2E 23 步（2026-11-14）"
+      ],
+      "notes": "2026-11-13 云端演示截图发现：「梯度下降」摘要变成「更新参数：。」（行内代码被整段去掉）；「激活函数」摘要是「| 函数 | 特点 | |---|---|」。 2026-11-14 巡检补充：摘要里出现「- [x] 复习定义 - [ ] 做习题」。"
     },
     {
       "id": "reading-001",

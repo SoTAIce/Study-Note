@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDialogFocus } from "../lib/use-dialog-focus.ts";
 import * as api from "../api.ts";
 import type { AiConfig } from "../api.ts";
 
@@ -12,6 +13,8 @@ type Props = {
 
 /** AI 网关设置弹层：PUT /api/config，apiKey 只上行不回落。 */
 export default function AiSettingsModal({ open, config, available, onClose, onSaved }: Props) {
+  const dialogFocusRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogFocusRef, open);
   const [baseUrl, setBaseUrl] = useState(config.baseUrl);
   const [model, setModel] = useState(config.model);
   const [apiKey, setApiKey] = useState("");
@@ -70,7 +73,7 @@ export default function AiSettingsModal({ open, config, available, onClose, onSa
     <div className="overlay overlay--center" role="presentation" onMouseDown={onClose}>
       <div
         className="settings"
-        role="dialog"
+        ref={dialogFocusRef} role="dialog"
         aria-modal="true"
         aria-label="AI 设置"
         onMouseDown={(event) => event.stopPropagation()}

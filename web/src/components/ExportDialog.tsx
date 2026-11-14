@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDialogFocus } from "../lib/use-dialog-focus.ts";
 import { parseExportPrefs, type ExportLayout, type ExportPrefs } from "../lib/export.ts";
 
 const PREFS_KEY = "study.exportPrefs";
@@ -34,6 +35,8 @@ type Props = {
 
 /** 导出 PDF 的小面板（export-001）：版式、深色、是否带标题信息；记住上次的选择 */
 export default function ExportDialog({ open, title, onClose, onExport }: Props) {
+  const dialogFocusRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogFocusRef, open);
   const [prefs, setPrefs] = useState<ExportPrefs>(loadPrefs);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +86,7 @@ export default function ExportDialog({ open, title, onClose, onExport }: Props) 
     >
       <div
         className="export-dialog"
-        role="dialog"
+        ref={dialogFocusRef} role="dialog"
         aria-modal="true"
         aria-label="导出 PDF"
         onMouseDown={(event) => event.stopPropagation()}

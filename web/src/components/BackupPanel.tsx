@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useDialogFocus } from "../lib/use-dialog-focus.ts";
 import * as api from "../api.ts";
 import type { BackupConfigView, BackupStatus, SnapshotDay, SnapshotFile } from "../api.ts";
 import Preview from "./Preview.tsx";
@@ -93,6 +94,8 @@ function noop(): void {
  * 右侧铺满高度能少滚动，也不遮住左边的笔记列表。
  */
 export default function BackupPanel({ open, onClose, localPaths, openNote, onRestored }: Props) {
+  const dialogFocusRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogFocusRef, open);
   const [tab, setTab] = useState<Tab>("status");
 
   // —— 状态段 ——
@@ -816,7 +819,7 @@ export default function BackupPanel({ open, onClose, localPaths, openNote, onRes
     <div className="overlay overlay--right" role="presentation" onMouseDown={onClose}>
       <div
         className="backup-panel"
-        role="dialog"
+        ref={dialogFocusRef} role="dialog"
         aria-modal="true"
         aria-label="WebDAV 备份"
         onMouseDown={(event) => event.stopPropagation()}

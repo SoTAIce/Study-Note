@@ -4,6 +4,7 @@ import type { GroupView } from "../groups-api.ts";
 import { dayKey, groupByDay, relativeTime } from "../lib/time.ts";
 import { filterLabel, sameFilter, type Filter } from "../lib/nav.ts";
 import { THEME_LABEL, type ThemePref } from "../lib/theme.ts";
+import { useConfirm } from "./ConfirmDialog.tsx";
 import Icon, { type IconName } from "./Icon.tsx";
 
 const TAG_LIMIT = 18;
@@ -89,6 +90,7 @@ export default function Sidebar({
   themePref,
   onCycleTheme,
 }: Props) {
+  const confirm = useConfirm();
   const [groupsOpen, setGroupsOpen] = useState(true);
   const [showAllTags, setShowAllTags] = useState(false);
   const [editing, setEditing] = useState<{ mode: "create" } | { mode: "rename"; from: string } | null>(null);
@@ -449,10 +451,13 @@ export default function Sidebar({
                           className="icon-btn icon-btn--danger"
                           title="删除分组（笔记退回未分组，不会被删）"
                           aria-label={`删除分组：${group.name}`}
-                          onClick={() => {
-                            const ok = window.confirm(
-                              `删除分组「${group.name}」？组里的 ${group.count} 篇笔记会退回「未分组」，笔记本身不会被删除。`,
-                            );
+                          onClick={async () => {
+                            const ok = await confirm({
+                              title: `删除分组「${group.name}」？`,
+                              message: `组里的 ${group.count} 篇笔记会退回「未分组」，笔记本身不会被删除。`,
+                              confirmLabel: "删除分组",
+                              danger: true,
+                            });
                             if (ok) onDeleteGroup(group.name);
                           }}
                         >

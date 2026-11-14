@@ -53,6 +53,16 @@
 .preview li::marker {
   color: var(--text-faint);
 }
+/* 任务项只留复选框，不再同时显示圆点（ui-005）；框挂到原来圆点的位置，文字和普通项对齐 */
+.preview li.task-item {
+  list-style: none;
+}
+.preview li.task-item > input.task-check:first-child,
+.preview li.task-item > p:first-child > input.task-check:first-child {
+  margin-left: -1.35em;
+  margin-right: 0.35em;
+  vertical-align: -0.1em;
+}
 .preview a {
   color: var(--accent);
   text-decoration: none;
@@ -72,6 +82,15 @@
 .preview a.wikilink:hover {
   text-decoration-color: var(--accent);
   border-radius: 3px;
+}
+/* 指向还没创建的笔记（ui-006）：淡色 + 虚线，点了会新建 */
+.preview a.wikilink.is-missing {
+  color: var(--text-faint);
+  text-decoration-style: dashed;
+  text-decoration-color: var(--text-faint);
+}
+.preview a.wikilink.is-missing:hover {
+  color: var(--text-dim);
 }
 .preview .tag-pill {
   display: inline-block;

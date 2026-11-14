@@ -171,3 +171,24 @@ test("图片：导出可以换成自己的 src（例如 data:）", () => {
   });
   assert.equal((html.match(/src="data:image\/png;base64,/g) ?? []).length, 2);
 });
+
+test("任务项的 <li> 带 task-item 类，普通项不带（ui-005）", () => {
+  const html = renderMarkdown("- [x] 复习定义\n- [ ] 做习题\n- 普通项");
+  assert.equal((html.match(/<li class="task-item">/g) ?? []).length, 2);
+  assert.match(html, /<li>普通项<\/li>/);
+  const loose = renderMarkdown("- [ ] 第一项\n\n- [x] 第二项\n");
+  assert.equal((loose.match(/<li class="task-item">/g) ?? []).length, 2);
+  // 正文里写的 HTML 不会被当成任务项
+  assert.doesNotMatch(renderMarkdown('- <input class="task-check"> 假的'), /task-item/);
+});
+
+test("不存在的双链标成 is-missing，存在的照常；不给标题表时都不标（ui-006）", () => {
+  const known = new Set(["位置编码"]);
+  const html = renderMarkdown("[[位置编码]] 和 [[概率论|那篇]]", { knownTitle: (t) => known.has(t) });
+  assert.match(html, /<a class="wikilink" data-target="位置编码">位置编码<\/a>/);
+  assert.match(html, /<a class="wikilink is-missing" data-target="概率论" title="还没有这篇笔记，点击新建">那篇<\/a>/);
+  assert.doesNotMatch(renderMarkdown("[[概率论]]"), /is-missing/);
+  // 标题表只在这一次渲染里生效
+  renderMarkdown("[[x]]", { knownTitle: () => false });
+  assert.doesNotMatch(renderMarkdown("[[x]]"), /is-missing/);
+});
