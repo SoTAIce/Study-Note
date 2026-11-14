@@ -12,15 +12,30 @@ type Props = {
   onToggleTask?: (index: number) => void;
   /** 顶层块带源码行号（分栏同步滚动用） */
   sourceLines?: boolean;
+  /** 当前笔记的库内路径：用来换算图片地址（media-001） */
+  notePath?: string;
 };
 
 /** 实时预览：marked 渲染后交给事件委托处理双链与标签点击。 */
-export default function Preview({ markdown, onOpenWikilink, onFilterTag, className, onToggleTask, sourceLines }: Props) {
+export default function Preview({
+  markdown,
+  onOpenWikilink,
+  onFilterTag,
+  className,
+  onToggleTask,
+  sourceLines,
+  notePath,
+}: Props) {
   const interactive = Boolean(onToggleTask);
   const withLines = Boolean(sourceLines);
   const html = useMemo(
-    () => renderMarkdown(markdown, { interactiveTasks: interactive, sourceLines: withLines }),
-    [markdown, interactive, withLines],
+    () =>
+      renderMarkdown(markdown, {
+        interactiveTasks: interactive,
+        sourceLines: withLines,
+        images: notePath !== undefined ? { notePath } : undefined,
+      }),
+    [markdown, interactive, withLines, notePath],
   );
 
   function handleClick(event: MouseEvent<HTMLDivElement>): void {

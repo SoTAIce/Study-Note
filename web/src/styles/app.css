@@ -1281,6 +1281,13 @@ kbd {
   display: none;
 }
 
+/* 拖图片进正文框（media-001） */
+.editor__textarea.is-dropping {
+  background: var(--accent-soft);
+  outline: 2px dashed rgba(var(--accent-rgb), 0.5);
+  outline-offset: -8px;
+}
+
 /* 输入 [[ 时的标题补全（editor-003） */
 .wikisuggest {
   position: fixed;

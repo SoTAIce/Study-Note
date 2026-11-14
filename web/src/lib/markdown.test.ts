@@ -138,3 +138,36 @@ test("sourceLines：被转义的 HTML 块包一层 div 带行号", () => {
   const lined = renderMarkdown("段落\n\n<div>x</div>\n", { sourceLines: true });
   assert.match(lined, /<div data-line="2">&lt;div&gt;/);
 });
+
+test("图片：有笔记上下文时相对路径换成读文件接口；越界、危险协议不显示", () => {
+  const ctx = { images: { notePath: "inbox/idea.md" } };
+  const html = renderMarkdown("![板书](../attachments/a%20b.png)", ctx);
+  assert.match(html, /<img src="\/api\/files\/attachments\/a%20b\.png" alt="板书" loading="lazy">/);
+  assert.match(renderMarkdown("![](https://example.com/x.png)", ctx), /src="https:\/\/example\.com\/x\.png"/);
+  assert.match(renderMarkdown("![坏](../../secret.png)", ctx), /<span class="img-missing">\[图片：坏\]<\/span>/);
+  assert.doesNotMatch(renderMarkdown("![x](javascript:alert(1))", ctx), /<img/);
+  assert.match(renderMarkdown('![A & "B"](x.png)', { images: { notePath: "n.md" } }), /alt="A &amp; &quot;B&quot;"/);
+});
+
+test("图片：没有上下文时只放行网络图片", () => {
+  assert.match(renderMarkdown("![](https://example.com/x.png)"), /<img src="https:\/\/example\.com\/x\.png"/);
+  assert.doesNotMatch(renderMarkdown("![](attachments/x.png)"), /<img/);
+});
+
+test("![[图片]]：先笔记目录再 attachments/，|数字当宽度；非图片和没上下文时原样", () => {
+  const html = renderMarkdown("看图 ![[板书.png|300]]", { images: { notePath: "inbox/a.md" } });
+  assert.match(
+    html,
+    /<img src="\/api\/files\/inbox\/%E6%9D%BF%E4%B9%A6\.png\?fallback=attachments%2F%E6%9D%BF%E4%B9%A6\.png" alt="板书\.png" loading="lazy" width="300">/,
+  );
+  assert.match(renderMarkdown("![[某篇笔记]]", { images: { notePath: "a.md" } }), /!\[\[某篇笔记\]\]/);
+  assert.match(renderMarkdown("![[x.png]]"), /!\[\[x\.png\]\]/);
+  assert.match(renderMarkdown("`![[x.png]]`", { images: { notePath: "a.md" } }), /<code>!\[\[x\.png\]\]<\/code>/);
+});
+
+test("图片：导出可以换成自己的 src（例如 data:）", () => {
+  const html = renderMarkdown("![](attachments/x.png) ![[y.png]]", {
+    images: { notePath: "n.md", localSrc: (c) => (c.includes("attachments/y.png") || c[0] === "attachments/x.png" ? `data:image/png;base64,${c[0].length}` : null) },
+  });
+  assert.equal((html.match(/src="data:image\/png;base64,/g) ?? []).length, 2);
+});

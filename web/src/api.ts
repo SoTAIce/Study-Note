@@ -427,6 +427,29 @@ export function reindex(): Promise<{ ok: true; indexed: number; removed: number;
   return request("/reindex", { method: "POST" });
 }
 
+// —— 图片附件（media-001）——
+
+export type UploadedAttachment = { relPath: string; markdown: string; reused: boolean };
+
+/** 读成 base64（不含 data: 前缀） */
+function fileToBase64(file: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const url = String(reader.result ?? "");
+      resolve(url.slice(url.indexOf(",") + 1));
+    };
+    reader.onerror = () => reject(new ApiError(0, "读取图片失败"));
+    reader.readAsDataURL(file);
+  });
+}
+
+/** 上传一张图片到当前笔记；写接口只收 JSON，所以用 base64 */
+export async function uploadAttachment(noteId: string, file: File): Promise<UploadedAttachment> {
+  const dataBase64 = await fileToBase64(file);
+  return request("/attachments", { method: "POST", body: jsonBody({ noteId, name: file.name, dataBase64 }) });
+}
+
 // —— AI 配置 ——
 
 /** GET /api/config；服务端还没上线该接口时返回 available:false 而不是抛错。 */

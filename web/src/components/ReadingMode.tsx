@@ -18,6 +18,8 @@ type Neighbor = { id: string; title: string } | null;
 
 type Props = {
   noteId: string;
+  /** 库内路径：换算图片地址用 */
+  notePath: string;
   title: string;
   body: string;
   meta: { updated: string; group: string | null; tags: string[] };
@@ -83,7 +85,7 @@ function isTyping(target: EventTarget | null): boolean {
  * - 每篇读到的位置记在本机，下次回到那里
  */
 export default function ReadingMode(props: Props) {
-  const { noteId, title, body, meta, prev, next, onNavigate, onExit, onOpenWikilink, onFilterTag, onExport, paused } = props;
+  const { noteId, notePath, title, body, meta, prev, next, onNavigate, onExit, onOpenWikilink, onFilterTag, onExport, paused } = props;
   const [fontSize, setFontSize] = useState(readFont);
   const [width, setWidth] = useState<ReadingWidth>(() => parseWidth(load(WIDTH_KEY)));
   const [outline, setOutline] = useState<OutlineItem[]>([]);
@@ -295,7 +297,13 @@ export default function ReadingMode(props: Props) {
                 </button>
               ))}
             </p>
-            <Preview markdown={body} onOpenWikilink={onOpenWikilink} onFilterTag={onFilterTag} className="reading" />
+            <Preview
+              markdown={body}
+              notePath={notePath}
+              onOpenWikilink={onOpenWikilink}
+              onFilterTag={onFilterTag}
+              className="reading"
+            />
 
             {prev || next ? (
               <nav className="reader__pager" aria-label="上一篇 / 下一篇">

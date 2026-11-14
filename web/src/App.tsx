@@ -1402,6 +1402,7 @@ export default function App() {
           ) : current ? (
             <EditorPane
               note={current}
+              onNotify={showToast}
               title={draft.title}
               body={draft.body}
               tags={current.tags}
@@ -1618,6 +1619,7 @@ export default function App() {
       {previewFull && current ? (
         <ReadingMode
           noteId={current.id}
+          notePath={current.relPath}
           title={draft.title || current.meta.title}
           body={draft.body}
           meta={{ updated: current.meta.updated, group: current.meta.group ?? null, tags: current.meta.tags }}

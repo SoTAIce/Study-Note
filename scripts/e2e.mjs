@@ -9,7 +9,7 @@
  *
  * 覆盖：首页（含加载占位）→ 新建笔记 → 编辑自动保存 → 搜索 → 历史版本（对比 / 恢复 / 撤销恢复）
  *      → 外部编辑同步（改标题、自动载入、冲突、外部删除进回收站）
- *      → 阅览模式 → 导出 PDF → 回收站（自动清理过期、清空二次确认）→ 分组里新建 → 编辑器快捷操作 → AI 改动可撤回 → 编辑器第二批
+ *      → 阅览模式 → 导出 PDF → 回收站（自动清理过期、清空二次确认）→ 分组里新建 → 编辑器快捷操作 → AI 改动可撤回 → 编辑器第二批 → 粘贴图片
  *      → 主题切换并记住 → 窄屏抽屉不横向溢出；全程不允许出现页面报错。
  * 截图写到 e2e-artifacts/（已 gitignore），作为验证证据。
  *
@@ -828,6 +828,94 @@ try {
     // 收尾：正文改短，视图切回原来的
     await ta.fill("编辑器第二批测试完成。");
     await page.getByRole("button", { name: initialMode, exact: true }).click();
+    await page.keyboard.press("Control+s");
+    await page.getByText("已保存").first().waitFor({ timeout: 10000 });
+  });
+
+  await step("粘贴图片：存进 attachments/、插入相对路径、预览显示、Ctrl+Z 撤回；子目录笔记带 ../；不支持的类型给提示；导出里嵌入", async () => {
+    // 在页面里用 canvas 画一张 48×32 的真 PNG，再模拟粘贴
+    const pasteImage = (type = "image/png") =>
+      page.locator(".editor__textarea").evaluate(async (el, mime) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 48;
+        canvas.height = 32;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#3a7bd5";
+        ctx.fillRect(0, 0, 48, 32);
+        const blob = mime === "image/png" ? await new Promise((r) => canvas.toBlob(r, "image/png")) : new Blob(["<svg/>"], { type: mime });
+        // 浏览器给剪贴板截图起的名字就是 image.png
+        const file = new File([blob], mime === "image/png" ? "image.png" : "x.svg", { type: mime });
+        const data = new DataTransfer();
+        data.items.add(file);
+        el.focus();
+        el.setSelectionRange(el.value.length, el.value.length);
+        el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+      }, type);
+
+    await page.locator(".note-row__text", { hasText: /^改了分组$/ }).click();
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "改了分组", null, { timeout: 5000 });
+    const ta = page.locator(".editor__textarea");
+    await ta.fill("看这张图：");
+    await pasteImage();
+    await page.waitForFunction(() => /!\[\]\(attachments\/\d{8}-\d{6}-[0-9a-f]{8}\.png\)$/.test(document.querySelector(".editor__textarea")?.value ?? ""), null, { timeout: 5000 });
+    const value = await ta.inputValue();
+    expect(value.startsWith("看这张图：\n![]("), `图片应另起一行：${JSON.stringify(value)}`);
+    const relPath = /\((attachments\/[^)]+)\)/.exec(value)[1];
+    expect(fs.existsSync(path.join(notesDir, relPath)), `磁盘上应有 ${relPath}`);
+
+    await page.getByRole("button", { name: "分栏", exact: true }).click();
+    const img = page.locator(".split__pane--preview .preview img").first();
+    await img.waitFor({ timeout: 5000 });
+    await page.waitForFunction(() => (document.querySelector(".split__pane--preview .preview img")?.naturalWidth ?? 0) === 48, null, { timeout: 5000 });
+    await page.screenshot({ path: path.join(artifacts, "15-image-paste.png") });
+
+    await ta.focus();
+    await page.keyboard.press("Control+z");
+    expect((await ta.inputValue()) === "看这张图：", `Ctrl+Z 应撤回插入的图片：${JSON.stringify(await ta.inputValue())}`);
+    await page.keyboard.press("Control+Shift+z");
+    expect((await ta.inputValue()) === value, "Ctrl+Shift+Z 应重做");
+
+    // 不支持的类型：提示，正文不动
+    await pasteImage("image/svg+xml");
+    await page.getByText("只支持 PNG、JPG、GIF、WebP 图片").waitFor({ timeout: 3000 });
+    expect((await ta.inputValue()) === value, "不支持的图片不应改正文");
+
+    // 导出：图片嵌成 data:
+    await page.keyboard.press("Control+s");
+    await page.getByText("已保存").first().waitFor({ timeout: 10000 });
+    const noteId = await page.evaluate(async () => {
+      const list = await (await fetch("/api/notes")).json();
+      return list.items.find((n) => n.title === "改了分组").id;
+    });
+    const exported = await page.evaluate(async (id) => {
+      const res = await fetch("/api/export/html", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, layout: "phone" }),
+      });
+      return res.text();
+    }, noteId);
+    expect(/<img src="data:image\/png;base64,/.test(exported), "导出的 HTML 里图片应嵌成 data:");
+
+    // 子目录（收件箱）里的笔记：插入 ../attachments/，同一张图复用同一个文件
+    const captured = await page.evaluate(async () =>
+      (
+        await fetch("/api/capture", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text: "收件箱里贴图" }),
+        })
+      ).json(),
+    );
+    await page.locator(".note-row__text", { hasText: /^收件箱里贴图$/ }).click({ timeout: 5000 });
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "收件箱里贴图", null, { timeout: 5000 });
+    expect(captured.relPath.startsWith("inbox/"), "快速捕获的笔记应在 inbox/");
+    await pasteImage();
+    await page.waitForFunction((rel) => document.querySelector(".editor__textarea")?.value.endsWith(`![](../${rel})`), relPath, { timeout: 5000 });
+    await page.waitForFunction(() => (document.querySelector(".split__pane--preview .preview img")?.naturalWidth ?? 0) === 48, null, { timeout: 5000 });
+    expect(fs.readdirSync(path.join(notesDir, "attachments")).length === 1, "同一张图只存一份");
+
+    await page.getByRole("button", { name: "只写", exact: true }).click();
     await page.keyboard.press("Control+s");
     await page.getByText("已保存").first().waitFor({ timeout: 10000 });
   });

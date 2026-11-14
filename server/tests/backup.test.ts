@@ -35,6 +35,8 @@ type Call = { method: string; path: string; body?: string };
 /** 内存版 WebDAV：够用来验证请求序列、增量与恢复。 */
 function fakeWebdav() {
   const files = new Map<string, string>();
+  /** 原样记下上传的内容（图片是二进制） */
+  const raw = new Map<string, string | Uint8Array>();
   const dirs = new Set<string>();
   const calls: Call[] = [];
   let authHeader = "";
@@ -57,6 +59,7 @@ function fakeWebdav() {
       const parent = relPath.includes("/") ? relPath.slice(0, relPath.lastIndexOf("/")) : "";
       if (parent && !dirs.has(parent)) return new Response(null, { status: 409 });
       files.set(relPath, String(init.body ?? ""));
+      raw.set(relPath, init.body instanceof Uint8Array ? init.body : String(init.body ?? ""));
       return new Response(null, { status: 201 });
     }
     if (method === "GET") {
@@ -70,7 +73,7 @@ function fakeWebdav() {
     return new Response(null, { status: 500 });
   }) as typeof fetch;
 
-  return { fetchImpl, calls, files, dirs, authHeader: () => authHeader };
+  return { fetchImpl, calls, files, raw, dirs, authHeader: () => authHeader };
 }
 
 function configure(dataDir: string): void {
@@ -328,4 +331,34 @@ test("路径校验：拒绝穿越、绝对路径、反斜杠", () => {
   assert.equal(isSafeRelPath("C:\\Windows\\x.md"), false);
   assert.equal(isSafeRelPath("a//b.md"), false);
   assert.equal(isSafeRelPath(""), false);
+});
+
+test("图片附件：二进制原样传到 latest/，不进每日快照和月度归档；没变化不重传", async () => {
+  const { dataDir, notesRoot } = makeDataDir();
+  configure(dataDir);
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  fs.mkdirSync(path.join(notesRoot, "attachments"), { recursive: true });
+  fs.writeFileSync(path.join(notesRoot, "attachments", "20261114-153012-a1b2c3d4.png"), png);
+  fs.writeFileSync(path.join(notesRoot, "attachments", "readme.txt"), "不是图片，不备份");
+  const dav = fakeWebdav();
+  const service = createBackupService({ dataDir, notesRoot, fetchImpl: dav.fetchImpl });
+
+  const first = await service.run();
+  assert.equal(first.uploaded, 3);
+  const sent = dav.raw.get("latest/attachments/20261114-153012-a1b2c3d4.png");
+  assert.ok(sent instanceof Uint8Array, "图片应按二进制上传");
+  assert.deepEqual(Buffer.from(sent as Uint8Array), png);
+  assert.equal(dav.files.has("latest/attachments/readme.txt"), false);
+  const day = first.snapshotDay!;
+  assert.equal(dav.files.has(`snapshots/${day}/attachments/20261114-153012-a1b2c3d4.png`), false);
+  assert.equal(dav.files.has(`monthly/${day.slice(0, 7)}/attachments/20261114-153012-a1b2c3d4.png`), false);
+  assert.ok(dav.files.has(`snapshots/${day}/a.md`));
+
+  const before = dav.calls.length;
+  const second = await service.run();
+  assert.equal(second.skipped, true);
+  assert.equal(dav.calls.length, before, "图片没变化时不应再上传");
 });

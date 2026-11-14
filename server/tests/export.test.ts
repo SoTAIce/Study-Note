@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { buildExportHtml, exportFileName, findBrowser, loadExportCss, tokenValue, type ExportNote } from "../export.ts";
+import { buildExportHtml, exportFileName, findBrowser, inlineImages, loadExportCss, tokenValue, type ExportNote } from "../export.ts";
+import { NoteStore } from "../store.ts";
 
 const css = loadExportCss();
 const note: ExportNote = {
@@ -93,4 +96,33 @@ test("找浏览器：环境变量优先；Windows 先 Edge 后 Chrome；Linux �
     }),
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
   );
+});
+
+test("导出：笔记库里的图片嵌成 data:，读不到的显示缺失，超出总量的不再嵌", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "sn-export-img-"));
+  try {
+    const store = new NoteStore({
+      notesRoot: path.join(root, "notes"),
+      historyDir: path.join(root, "history"),
+      trashDir: path.join(root, "trash"),
+    });
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    fs.mkdirSync(path.join(store.notesRoot, "attachments"), { recursive: true });
+    fs.writeFileSync(path.join(store.notesRoot, "attachments", "a.png"), png);
+    const note = { title: "有图", body: "![](../attachments/a.png)\n\n![[a.png]]\n\n![丢了](../attachments/none.png)", updated: "", group: null, tags: [] };
+    const css = { global: "", content: "", reading: "" };
+    const html = buildExportHtml(note, { layout: "phone", dark: false, meta: false }, css, inlineImages(store, "inbox/x.md"));
+    assert.equal((html.match(/src="data:image\/png;base64,/g) ?? []).length, 2);
+    assert.match(html, /\[图片：丢了\]/);
+    assert.doesNotMatch(html, /\/api\/files\//);
+    const tight = buildExportHtml(note, { layout: "phone", dark: false, meta: false }, css, inlineImages(store, "inbox/x.md", png.length));
+    assert.equal((tight.match(/src="data:image\/png;base64,/g) ?? []).length, 2, "同一张图只算一次总量");
+    const tiny = buildExportHtml(note, { layout: "phone", dark: false, meta: false }, css, inlineImages(store, "inbox/x.md", 10));
+    assert.equal((tiny.match(/src="data:/g) ?? []).length, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

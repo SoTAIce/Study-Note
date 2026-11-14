@@ -356,13 +356,20 @@
       "area": "editor",
       "title": "图片粘贴与附件",
       "user_visible_behavior": "粘贴或拖入图片会存到 data/notes 下的附件目录并插入 Markdown 图片语法，预览能显示；![[图片]] 能渲染。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "api 测试：附件上传与路径安全",
         "E2E：粘贴图片后预览出现"
       ],
-      "evidence": [],
-      "notes": ""
+      "evidence": [
+        "设计方案 docs/superpowers/specs/2026-11-14-image-attachments-design.md（用户 2026-11-14 批准，第九节全部按推荐）",
+        "node --test server/tests/attachments.test.ts 10 条通过：文件头识别（SVG / 文字冒充 PNG 被拒）、文件名清洗与通用名、相对路径、去重、415 / 400 / 404 / 413（其他写接口仍 5MB）、读文件接口 nosniff + ETag/304、越界 / .md / 隐藏目录 / junction 一律 404、SVG 带 sandbox、fallback",
+        "node --test web/src/lib/image-src.test.ts、markdown.test.ts（图片 4 条）、attachments.test.ts：地址换算、危险协议与越界不显示、![[图片|300]]、导出自定义 src",
+        "node --test server/tests/backup.test.ts「图片附件」：二进制原样传到 latest/，不进快照和归档，没变化不重传；export.test.ts「导出：图片嵌成 data:」含缺失与总量上限",
+        "pnpm e2e「粘贴图片…」通过：canvas 生成的 PNG 以 image.png 粘贴 → 插入 ![](attachments/日期-时间-指纹.png)、磁盘有文件、预览 naturalWidth=48、Ctrl+Z 撤回 / Ctrl+Shift+Z 重做、SVG 提示不支持、导出 HTML 含 data:image/png、收件箱笔记插入 ../attachments/ 且复用同一文件；截图 e2e-artifacts/15-image-paste.png",
+        "./init.sh 全绿：440 个测试 + E2E 22 步（2026-11-14）"
+      ],
+      "notes": "真实剪贴板（Win+Shift+S）与拖入、坚果云上的图片备份待 Windows 人工验收（docs/验收清单.md）。不自动清理没被引用的图片（非目标）。"
     },
     {
       "id": "ui-002",

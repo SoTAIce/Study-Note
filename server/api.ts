@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import fs from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import {
@@ -36,6 +37,7 @@ import {
   buildExportHtml,
   defaultBrowser,
   exportFileName,
+  inlineImages,
   loadExportCss,
   printPdf,
   type ExportLayout,
@@ -53,6 +55,7 @@ import type { NoteMeta, NoteType } from "./parse.ts";
 import { search } from "./search.ts";
 import { ConflictError, HistoryNotFoundError, toLocalIso, TRASH_RETENTION_DAYS, type HistoryReason, type NoteStore } from "./store.ts";
 import { isValidVersionId } from "./history.ts";
+import { AttachmentError, MAX_UPLOAD_BODY, saveAttachment, servedFile } from "./attachments.ts";
 
 const MAX_BODY = 5 * 1024 * 1024;
 
@@ -117,15 +120,17 @@ function summarize(row: NoteRow, tags: string[]) {
   };
 }
 
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJson(req: IncomingMessage, maxBytes = MAX_BODY): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     const buf = chunk as Buffer;
     size += buf.length;
-    if (size > MAX_BODY) throw new HttpError(413, "请求体过大（上限 5MB）");
-    chunks.push(buf);
+    // 超了也把请求体读完（丢弃，不占内存）再回 413：提前回应会让连接被重置，
+    // 浏览器只看到「连不上」而不是超限的原因
+    if (size <= maxBytes) chunks.push(buf);
   }
+  if (size > maxBytes) throw new HttpError(413, `请求体过大（上限 ${Math.round(maxBytes / 1024 / 1024)}MB）`);
   if (chunks.length === 0) return {};
   const text = Buffer.concat(chunks).toString("utf8").trim();
   if (!text) return {};
@@ -472,6 +477,7 @@ export function createApi(deps: ApiDeps) {
           { title: meta.title, body: note.parsed.body, updated: meta.updated, group: meta.group ?? null, tags: meta.tags },
           options,
           loadExportCss(),
+          inlineImages(store, row.path),
         );
         if (route[1] === "html") {
           res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
@@ -641,6 +647,63 @@ export function createApi(deps: ApiDeps) {
         const restored = store.restore(route[1]);
         reindex(restored.relPath);
         sendJson(res, 200, { ok: true, relPath: restored.relPath });
+        return true;
+      }
+
+      // 图片附件（media-001）：上传。JSON + base64（写接口只收 JSON），单独放宽请求体上限
+      if (route[0] === "attachments" && route.length === 1 && method === "POST") {
+        const payload = await readJson(req, MAX_UPLOAD_BODY);
+        const noteId = typeof payload.noteId === "string" ? payload.noteId : "";
+        const data = typeof payload.dataBase64 === "string" ? payload.dataBase64 : "";
+        if (!noteId || !data) throw new HttpError(400, "需要 noteId 和 dataBase64");
+        const row = findNote(noteId);
+        try {
+          const saved = saveAttachment(store, {
+            noteRelPath: row.path,
+            name: typeof payload.name === "string" ? payload.name : undefined,
+            data: Buffer.from(data, "base64"),
+            now: deps.now?.(),
+          });
+          sendJson(res, 201, saved);
+        } catch (err) {
+          if (err instanceof AttachmentError) throw new HttpError(err.status, err.message);
+          throw err;
+        }
+        return true;
+      }
+
+      // 图片附件：读笔记库里的图片（只限图片、只限库内）
+      if (route[0] === "files" && route.length >= 2 && (method === "GET" || method === "HEAD")) {
+        // ![[图片]] 会给一个备选位置（先笔记目录、再 attachments/）
+        const tryServe = (rel: string): { abs: string; type: string } | null => {
+          try {
+            return servedFile(store, rel);
+          } catch {
+            return null; // 越界：和不存在一样回 404，不透露原因
+          }
+        };
+        const fallback = url.searchParams.get("fallback");
+        const file = tryServe(route.slice(1).join("/")) ?? (fallback ? tryServe(fallback) : null);
+        if (!file) throw new HttpError(404, "文件不存在");
+        const stat = fs.statSync(file.abs);
+        const etag = `"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
+        const headers: Record<string, string> = {
+          "content-type": file.type,
+          "x-content-type-options": "nosniff",
+          "cache-control": "no-cache",
+          etag,
+        };
+        // SVG 可能带脚本：直接在标签页打开也不让它执行
+        if (file.type === "image/svg+xml") headers["content-security-policy"] = "sandbox; default-src 'none'; style-src 'unsafe-inline'";
+        if (req.headers["if-none-match"] === etag) {
+          res.writeHead(304, headers);
+          res.end();
+          return true;
+        }
+        headers["content-length"] = String(stat.size);
+        res.writeHead(200, headers);
+        if (method === "HEAD") res.end();
+        else fs.createReadStream(file.abs).pipe(res);
         return true;
       }
 

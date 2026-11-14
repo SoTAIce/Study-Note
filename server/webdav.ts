@@ -35,7 +35,8 @@ export class WebdavError extends Error {
 export type WebdavClient = {
   /** 逐级创建目录（幂等，405 视为已存在）。 */
   ensureDir(relDir: string): Promise<void>;
-  put(relPath: string, data: string): Promise<void>;
+  /** 文字按 UTF-8 的 Markdown 上传；Buffer 按二进制（图片）上传 */
+  put(relPath: string, data: string | Buffer): Promise<void>;
   /** 不存在返回 null，不抛错。 */
   get(relPath: string): Promise<string | null>;
   /** 删除文件；不存在也算成功。 */
@@ -71,7 +72,7 @@ export function createWebdavClient(settings: WebdavSettings, fetchImpl: typeof f
   async function send(
     method: string,
     relPath: string,
-    options: { body?: string; headers?: Record<string, string> } = {},
+    options: { body?: string | Uint8Array<ArrayBuffer>; headers?: Record<string, string> } = {},
   ): Promise<Response> {
     return await sendTo(method, urlFor(relPath), options);
   }
@@ -79,7 +80,7 @@ export function createWebdavClient(settings: WebdavSettings, fetchImpl: typeof f
   async function sendTo(
     method: string,
     target: URL,
-    options: { body?: string; headers?: Record<string, string> } = {},
+    options: { body?: string | Uint8Array<ArrayBuffer>; headers?: Record<string, string> } = {},
   ): Promise<Response> {
     const headers: Record<string, string> = {
       authorization,
@@ -133,15 +134,18 @@ export function createWebdavClient(settings: WebdavSettings, fetchImpl: typeof f
     }
   }
 
-  async function put(relPath: string, data: string): Promise<void> {
+  async function put(relPath: string, data: string | Buffer): Promise<void> {
     const slash = relPath.lastIndexOf("/");
     const parent = slash > -1 ? relPath.slice(0, slash) : "";
     if (parent) await ensureDir(parent);
 
     const doPut = (): Promise<Response> =>
       send("PUT", relPath, {
-        body: data,
-        headers: { "content-type": "text/markdown; charset=utf-8", "content-length": String(Buffer.byteLength(data, "utf8")) },
+        body: typeof data === "string" ? data : new Uint8Array(data),
+        headers:
+          typeof data === "string"
+            ? { "content-type": "text/markdown; charset=utf-8", "content-length": String(Buffer.byteLength(data, "utf8")) }
+            : { "content-type": "application/octet-stream", "content-length": String(data.length) },
       });
 
     let res = await doPut();

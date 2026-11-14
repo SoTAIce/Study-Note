@@ -1,4 +1,28 @@
 import { Marked, type Token, type TokensList } from "marked";
+import { apiFileUrl, embedTarget, imageTarget, type ImageTarget } from "./image-src.ts";
+
+/**
+ * 渲染图片时的上下文（media-001）：当前笔记路径 + 本地图片怎么变成 src。
+ * 预览默认走读文件接口；导出 PDF 时由后端换成 data: 地址。
+ * renderMarkdown 是同步的，渲染期间放在模块变量里给渲染钩子用。
+ */
+export type ImageContext = {
+  notePath: string;
+  /** 依次尝试的库内相对路径 → src；返回 null 表示不显示 */
+  localSrc?: (candidates: string[]) => string | null;
+};
+let imageCtx: ImageContext | null = null;
+
+function imageSrc(target: ImageTarget | null): string | null {
+  if (!target || !imageCtx) return null;
+  if ("remote" in target) return target.remote;
+  return (imageCtx.localSrc ?? apiFileUrl)(target.local);
+}
+
+function imageTag(src: string | null, alt: string, extra = ""): string {
+  if (!src) return alt ? `<span class="img-missing">[图片：${escapeHtml(alt)}]</span>` : `<span class="img-missing">[图片]</span>`;
+  return `<img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" loading="lazy"${extra}>`;
+}
 
 /**
  * Markdown 渲染（纯函数）。
@@ -44,8 +68,19 @@ function safeHref(raw: string): string {
 }
 
 function renderWikilink(raw: string): string {
-  // ![[图片]] 原样保留（Obsidian 的嵌入语法，本期不解析）。
-  if (raw.startsWith("!")) return raw;
+  // ![[图片.png]] / ![[图片.png|300]]：有笔记上下文时渲染成图片；嵌入笔记等其他情况原样保留
+  if (raw.startsWith("!")) {
+    if (!imageCtx) return raw;
+    const inner = unescapeHtml(raw.slice(3, -2));
+    const pipe = inner.indexOf("|");
+    const name = pipe >= 0 ? inner.slice(0, pipe) : inner;
+    const option = pipe >= 0 ? inner.slice(pipe + 1).trim() : "";
+    const target = embedTarget(name, imageCtx.notePath);
+    if (!target) return raw;
+    const width = /^\d{1,4}$/.test(option) ? ` width="${option}"` : "";
+    const alt = /^\d{1,4}$/.test(option) ? "" : option;
+    return imageTag(imageSrc(target), alt || name.trim(), width);
+  }
   const inner = unescapeHtml(raw.slice(2, -2));
   const pipe = inner.indexOf("|");
   const targetPart = pipe >= 0 ? inner.slice(0, pipe) : inner;
@@ -162,6 +197,17 @@ const md = new Marked({
     html({ text }) {
       return escapeHtml(text);
     },
+    // 图片：有笔记上下文时换算地址（media-001）；没有上下文时只放行网络图片和 data:image
+    image({ href, title, text }) {
+      const titleAttr = title ? ` title="${escapeHtml(title)}"` : "";
+      const target = imageCtx
+        ? imageTarget(href, imageCtx.notePath)
+        : /^(https?:\/\/|data:image\/)/i.test(href.trim())
+          ? { remote: href.trim() }
+          : null;
+      const src = imageCtx ? imageSrc(target) : target && "remote" in target ? target.remote : null;
+      return imageTag(src, text, titleAttr);
+    },
     // 任务框带固定类名，方便预览里改成可点（editor-006）；默认禁用
     checkbox({ checked }) {
       return `<input class="task-check" type="checkbox"${checked ? " checked" : ""} disabled> `;
@@ -181,11 +227,17 @@ const md = new Marked({
  */
 export function renderMarkdown(
   markdown: string,
-  options: { interactiveTasks?: boolean; sourceLines?: boolean } = {},
+  options: { interactiveTasks?: boolean; sourceLines?: boolean; images?: ImageContext } = {},
 ): string {
   if (!markdown) return "";
-  const raw = options.sourceLines ? renderWithLines(markdown) : md.parse(markdown, { async: false });
-  const html = transformHtml(raw);
+  imageCtx = options.images ?? null;
+  let html: string;
+  try {
+    const raw = options.sourceLines ? renderWithLines(markdown) : md.parse(markdown, { async: false });
+    html = transformHtml(raw);
+  } finally {
+    imageCtx = null;
+  }
   // 笔记里的原始 HTML 已被转义，这里匹配到的只可能是上面 checkbox 渲染出来的
   return options.interactiveTasks ? html.replace(/(<input class="task-check" type="checkbox"(?: checked)?) disabled>/g, "$1>") : html;
 }

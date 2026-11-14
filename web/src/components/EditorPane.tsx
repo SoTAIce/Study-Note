@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import type { ClipboardEvent, KeyboardEvent, RefObject, SyntheticEvent } from "react";
+import type { ClipboardEvent, DragEvent, KeyboardEvent, RefObject, SyntheticEvent } from "react";
 import Preview from "./Preview.tsx";
 import { toggleTask } from "../lib/markdown.ts";
 import { previewDelay } from "../lib/preview-delay.ts";
 import type { ConflictInfo, NoteDetail } from "../api.ts";
-import { listNotes } from "../api.ts";
+import { errorMessage, listNotes, uploadAttachment } from "../api.ts";
+import { imageInsertText, pickImages } from "../lib/attachments.ts";
 import { caretCoords, textTops } from "../lib/caret-coords.ts";
 import { lineStarts, mapScroll } from "../lib/scroll-sync.ts";
 import { completeWikilink, rankTitles, wikilinkQuery, type WikilinkQuery } from "../lib/wikilink-complete.ts";
@@ -104,6 +105,8 @@ type Props = {
   onViewMode: (mode: ViewMode) => void;
   /** 打开历史版本面板 */
   onOpenHistory: () => void;
+  /** 底部提示条（上传图片的进度 / 失败原因） */
+  onNotify: (text: string, kind: "info" | "ok" | "error") => void;
 };
 
 type Suggest = {
@@ -166,6 +169,7 @@ export default function EditorPane({
   viewMode,
   onViewMode,
   onOpenHistory,
+  onNotify,
 }: Props) {
   const lines = body ? body.split("\n").length : 0;
   const [groupDraft, setGroupDraft] = useState(note.meta.group ?? "");
@@ -336,8 +340,61 @@ export default function EditorPane({
     if (edit) applyEditUndoable(event.currentTarget, edit);
   }
 
-  /** 选中文字后粘贴网址：变成链接（editor-007） */
+  // —— 粘贴 / 拖入图片（media-001）——
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState(0);
+
+  /** 逐张上传，全部完成后在当时的光标处插入（可 Ctrl+Z 撤回）；切走了就不插 */
+  async function uploadImages(files: File[]): Promise<void> {
+    if (files.length === 0) return;
+    const noteId = note.id;
+    setUploading((n) => n + files.length);
+    onNotify(files.length > 1 ? `正在保存 ${files.length} 张图片…` : "正在保存图片…", "info");
+    const markdowns: string[] = [];
+    let failure: string | null = null;
+    for (const file of files) {
+      try {
+        markdowns.push((await uploadAttachment(noteId, file)).markdown);
+      } catch (err) {
+        failure = errorMessage(err);
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+    const textarea = textareaRef.current;
+    if (markdowns.length > 0 && textarea && noteIdRef.current === noteId) {
+      const at = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const insert = imageInsertText(markdowns, at > 0 ? textarea.value[at - 1] : "");
+      applyEditUndoable(textarea, { from: at, to: end, insert, selStart: at + insert.length, selEnd: at + insert.length });
+    }
+    if (failure) onNotify(`图片没有保存：${failure}`, "error");
+    else onNotify(markdowns.length > 1 ? `已插入 ${markdowns.length} 张图片` : "已插入图片", "ok");
+  }
+
+  // 上传期间切到别的笔记时，不往新笔记里插
+  const noteIdRef = useRef(note.id);
+  noteIdRef.current = note.id;
+
+  function takeImages(files: File[], text: string): boolean {
+    const { accept, rejected } = pickImages(files, text);
+    if (rejected) onNotify(rejected, "error");
+    if (accept.length === 0) return Boolean(rejected);
+    void uploadImages(accept);
+    return true;
+  }
+
+  function hasFiles(event: DragEvent<HTMLTextAreaElement>): boolean {
+    return Array.from(event.dataTransfer.types).includes("Files");
+  }
+
+  /** 选中文字后粘贴网址：变成链接（editor-007）；剪贴板里是图片就上传（media-001） */
   function handleBodyPaste(event: ClipboardEvent<HTMLTextAreaElement>): void {
+    const files = Array.from(event.clipboardData.files);
+    if (files.length > 0 && takeImages(files, event.clipboardData.getData("text/plain"))) {
+      event.preventDefault();
+      return;
+    }
     const target = event.currentTarget;
     const edit = pasteLink(
       { value: target.value, start: target.selectionStart, end: target.selectionEnd },
@@ -535,7 +592,8 @@ export default function EditorPane({
         <div className="split__pane split__pane--write">
           <textarea
             ref={textareaRef}
-            className="editor__textarea"
+            className={`editor__textarea${dragging ? " is-dropping" : ""}`}
+            aria-busy={uploading > 0 || undefined}
             value={body}
             onChange={(event) => {
               onChangeBody(event.target.value);
@@ -543,6 +601,21 @@ export default function EditorPane({
             }}
             onKeyDown={handleBodyKeyDown}
             onPaste={handleBodyPaste}
+            onDragOver={(event) => {
+              if (!hasFiles(event)) return;
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+              if (!dragging) setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(event) => {
+              setDragging(false);
+              const files = Array.from(event.dataTransfer.files);
+              if (files.length === 0) return;
+              event.preventDefault();
+              event.currentTarget.focus();
+              takeImages(files, "");
+            }}
             onSelect={reportSelection}
             onKeyUp={(event) => {
               reportSelection(event);
@@ -598,6 +671,7 @@ export default function EditorPane({
           <Preview
             markdown={previewBody}
             sourceLines={viewMode === "split"}
+            notePath={note.relPath}
             onOpenWikilink={onOpenWikilink}
             onFilterTag={onFilterTag}
             onToggleTask={(index) => {

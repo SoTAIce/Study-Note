@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { contentHash } from "./parse.ts";
@@ -180,7 +181,15 @@ export function maskBackupConfig(cfg: BackupConfig | null): BackupConfigView {
 
 // —— 扫描本地笔记 ——
 
-type LocalFile = { relPath: string; abs: string; hash: string; bytes: number };
+/** binary：图片附件（media-001），只进 latest/，不进每日快照和每月归档 */
+type LocalFile = { relPath: string; abs: string; hash: string; bytes: number; binary: boolean };
+
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp|svg)$/i;
+
+/** 读出要上传的内容：笔记按文字，图片按二进制 */
+function readForUpload(file: LocalFile): string | Buffer {
+  return file.binary ? fs.readFileSync(file.abs) : fs.readFileSync(file.abs, "utf8");
+}
 
 export function scanNotes(notesRoot: string): LocalFile[] {
   const out: LocalFile[] = [];
@@ -205,6 +214,20 @@ export function scanNotes(notesRoot: string): LocalFile[] {
             abs: full,
             hash: contentHash(raw),
             bytes: Buffer.byteLength(raw, "utf8"),
+            binary: false,
+          });
+        } catch {
+          // 单个文件读失败不影响整次备份
+        }
+      } else if (entry.isFile() && IMAGE_FILE.test(entry.name)) {
+        try {
+          const data = fs.readFileSync(full);
+          out.push({
+            relPath: path.relative(notesRoot, full).split(path.sep).join("/"),
+            abs: full,
+            hash: createHash("sha256").update(data).digest("hex"),
+            bytes: data.length,
+            binary: true,
           });
         } catch {
           // 单个文件读失败不影响整次备份
@@ -341,6 +364,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
 
     let uploaded = 0;
     let removed = 0;
+    const notes = files.filter((file) => !file.binary);
     try {
       await webdav.ensureDir("latest");
       // 今天的快照已经拍过时，快照里已有的路径就保持"当天首次备份时的样子"；
@@ -349,11 +373,12 @@ export function createBackupService(deps: BackupDeps): BackupService {
       const inTodaySnapshot = new Set(todayEntry?.files ?? []);
 
       for (const file of changed) {
-        const raw = fs.readFileSync(file.abs, "utf8");
+        const raw = readForUpload(file);
         await webdav.put(`latest/${file.relPath}`, raw);
         m.uploaded[file.relPath] = file.hash;
         uploaded += 1;
-        if (todayEntry && !inTodaySnapshot.has(file.relPath)) {
+        // 图片文件名带内容指纹、不会再变：只放 latest/，不进快照（否则每天重传一遍）
+        if (!file.binary && todayEntry && !inTodaySnapshot.has(file.relPath)) {
           await webdav.put(`snapshots/${today}/${file.relPath}`, raw);
           inTodaySnapshot.add(file.relPath);
           todayEntry.files.push(file.relPath);
@@ -367,16 +392,16 @@ export function createBackupService(deps: BackupDeps): BackupService {
 
       // 每天第一次备份：传一份全量快照（32 KB 级别，成本可忽略）
       if (!todayEntry) {
-        for (const file of files) {
+        for (const file of notes) {
           const raw = fs.readFileSync(file.abs, "utf8");
           await webdav.put(`snapshots/${today}/${file.relPath}`, raw);
         }
-        m.snapshots.push({ day: today, files: files.map((file) => file.relPath) });
+        m.snapshots.push({ day: today, files: notes.map((file) => file.relPath) });
       }
 
       // 每月第一次备份：额外留一份永久归档（一年 12 份，几 MB 级别）
       if (!m.monthly.includes(month)) {
-        for (const file of files) {
+        for (const file of notes) {
           const raw = fs.readFileSync(file.abs, "utf8");
           await webdav.put(`monthly/${month}/${file.relPath}`, raw);
         }

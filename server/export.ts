@@ -14,7 +14,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { escapeHtml, renderMarkdown } from "../web/src/lib/markdown.ts";
+import { escapeHtml, renderMarkdown, type ImageContext } from "../web/src/lib/markdown.ts";
+import { servedFile } from "./attachments.ts";
+import type { NoteStore } from "./store.ts";
 
 export type ExportLayout = "phone" | "a4";
 
@@ -136,11 +138,54 @@ body {
 `;
 }
 
-/** 生成导出用的完整 HTML（纯函数：样式由调用方传入） */
+/** 单篇导出里嵌入图片的总量上限：超过后后面的图片显示成「图片缺失」，避免生成卡死 */
+export const EXPORT_IMAGE_BUDGET = 50 * 1024 * 1024;
+
+/**
+ * 导出时把笔记库里的图片读出来嵌成 data: 地址（media-001）：
+ * PDF 页面的内容安全策略只放行 data: 图片，不需要放宽。
+ * 依次尝试候选位置；读不到、或超出总量的返回 null。
+ */
+export function inlineImages(store: NoteStore, notePath: string, budget = EXPORT_IMAGE_BUDGET): ImageContext {
+  let used = 0;
+  const cache = new Map<string, string | null>();
+  return {
+    notePath,
+    localSrc: (candidates) => {
+      for (const rel of candidates) {
+        if (cache.has(rel)) {
+          const hit = cache.get(rel);
+          if (hit) return hit;
+          continue;
+        }
+        let file: { abs: string; type: string } | null = null;
+        try {
+          file = servedFile(store, rel);
+        } catch {
+          file = null;
+        }
+        if (!file) {
+          cache.set(rel, null);
+          continue;
+        }
+        const data = fs.readFileSync(file.abs);
+        if (used + data.length > budget) return null;
+        used += data.length;
+        const uri = `data:${file.type};base64,${data.toString("base64")}`;
+        cache.set(rel, uri);
+        return uri;
+      }
+      return null;
+    },
+  };
+}
+
+/** 生成导出用的完整 HTML（纯函数：样式由调用方传入；images 决定本地图片怎么嵌） */
 export function buildExportHtml(
   note: ExportNote,
   options: ExportOptions,
   css: { global: string; content: string; reading: string },
+  images?: ImageContext,
 ): string {
   // 正文第一行就是同名一级标题时，拿掉它，由下面统一的标题代替：元信息才能排在标题下面
   const source = note.body.replace(/^\s+/, "");
@@ -148,6 +193,7 @@ export function buildExportHtml(
   const firstHeading = /^#\s+(.+?)\s*#*\s*$/.exec(firstLine);
   const body = renderMarkdown(
     firstHeading && firstHeading[1].trim() === note.title.trim() ? source.slice(firstLine.length) : note.body,
+    { images },
   );
   const metaParts = [
     note.updated ? `${note.updated.slice(0, 10)} 更新` : null,

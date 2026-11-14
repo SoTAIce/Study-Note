@@ -159,6 +159,10 @@
   max-width: 100%;
   border-radius: var(--radius);
 }
+.preview .img-missing {
+  font-size: 0.9em;
+  color: var(--text-faint);
+}
 .preview input[type="checkbox"] {
   accent-color: var(--accent);
   margin-right: 6px;
