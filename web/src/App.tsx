@@ -114,6 +114,7 @@ export default function App() {
   const [aiUndoAvailable, setAiUndoAvailable] = useState(false);
   const aiUndoRef = useRef<string | null>(null);
   const composeReturnRef = useRef<Screen>("notes");
+  const composeGroupRef = useRef("");
 
   // —— 全屏预览 ——
   const [previewFull, setPreviewFull] = useState(false);
@@ -540,6 +541,8 @@ export default function App() {
       return;
     }
     composeReturnRef.current = screen;
+    // 正在看某个分组时新建：默认放进这个分组（group-001）
+    composeGroupRef.current = filter.kind === "group" ? filter.name : "";
     setComposeError(null);
     setScreen("compose");
   }
@@ -553,7 +556,11 @@ export default function App() {
     if (composeBusy) return;
     setComposeBusy(true);
     setComposeError(null);
-    const nextFilter: Filter = { kind: "all" };
+    // 在当前分组里新建就留在这个分组；其他情况回到全部笔记
+    const nextFilter: Filter =
+      input.group && filter.kind === "group" && filter.name.toLowerCase() === input.group.toLowerCase()
+        ? filter
+        : { kind: "all" };
     try {
       const created = await api.createNote({
         title: input.title || undefined,
@@ -1335,6 +1342,7 @@ export default function App() {
               busy={composeBusy}
               error={composeError}
               groups={groups.map((group) => group.name)}
+              initialGroup={composeGroupRef.current}
               onCancel={cancelCompose}
               onCreate={(input) => void createFromCompose(input)}
             />

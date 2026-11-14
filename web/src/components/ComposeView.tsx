@@ -6,6 +6,8 @@ type Props = {
   error: string | null;
   /** 可选的已有分组 */
   groups: string[];
+  /** 打开新建页时左栏选中的分组：预先填进分组栏，可以改或清空 */
+  initialGroup?: string;
   onCancel: () => void;
   onCreate: (input: { title: string; body: string; group: string | null }) => void;
 };
@@ -15,9 +17,9 @@ type Props = {
  * 这里什么都不写磁盘，点「创建并开始编辑」才 POST /api/notes；
  * 取消则整页丢弃（不会留下「未命名」的空笔记）。
  */
-export default function ComposeView({ busy, error, groups, onCancel, onCreate }: Props) {
+export default function ComposeView({ busy, error, groups, initialGroup = "", onCancel, onCreate }: Props) {
   const [title, setTitle] = useState("");
-  const [group, setGroup] = useState("");
+  const [group, setGroup] = useState(initialGroup);
   const [body, setBody] = useState("");
   const titleRef = useRef<HTMLInputElement | null>(null);
   const bodyRef = useRef<HTMLTextAreaElement | null>(null);

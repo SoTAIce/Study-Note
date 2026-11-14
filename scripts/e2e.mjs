@@ -545,6 +545,43 @@ try {
     await page.locator(".trash").waitFor({ state: "detached" });
   });
 
+  await step("在分组里新建：分组栏自动填好，可以改", async () => {
+    const groupRow = page.locator(".group-row__main", { hasText: "冒烟" });
+    await groupRow.click();
+    await page.locator(".new-note-entry").click();
+    const groupInput = page.locator(".compose__group-input");
+    await groupInput.waitFor();
+    expect((await groupInput.inputValue()) === "冒烟", `分组栏应预填「冒烟」，实际「${await groupInput.inputValue()}」`);
+    await page.locator(".compose__title").fill("分组里新建");
+    await page.keyboard.press("Control+Enter");
+    await page.locator(".editor__title").waitFor();
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "分组里新建", null, { timeout: 5000 });
+    const list = await api("/api/notes");
+    const made = list.items.find((n) => n.title === "分组里新建");
+    expect(made && made.group === "冒烟", `新笔记应在「冒烟」分组，实际 ${made && made.group}`);
+    expect((await page.locator(".group-row.is-active", { hasText: "冒烟" }).count()) === 1, "新建后应仍停在「冒烟」分组");
+
+    // 误选了：改成别的分组
+    await page.locator(".new-note-entry").click();
+    await groupInput.waitFor();
+    expect((await groupInput.inputValue()) === "冒烟", "再次新建时仍预填当前分组");
+    await groupInput.fill("改过的组");
+    await page.locator(".compose__title").fill("改了分组");
+    await page.keyboard.press("Control+Enter");
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "改了分组", null, { timeout: 5000 });
+    const after = await api("/api/notes");
+    const moved = after.items.find((n) => n.title === "改了分组");
+    expect(moved && moved.group === "改过的组", `改了分组后应放进「改过的组」，实际 ${moved && moved.group}`);
+
+    // 在全部笔记下新建：分组栏是空的
+    await page.locator(".sidebar").getByRole("button", { name: /全部笔记/ }).first().click();
+    await page.locator(".new-note-entry").click();
+    await groupInput.waitFor();
+    expect((await groupInput.inputValue()) === "", "全部笔记下新建分组栏应为空");
+    await page.keyboard.press("Escape");
+    await page.locator(".compose").waitFor({ state: "detached" });
+  });
+
   await step("主题切换并在刷新后保持", async () => {
     const toggle = page.getByLabel(/切换主题/);
     await toggle.click(); // system → light
