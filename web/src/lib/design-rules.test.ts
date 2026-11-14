@@ -7,7 +7,13 @@ import { fileURLToPath } from "node:url";
 
 const stylesDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "styles");
 const globalCss = fs.readFileSync(path.join(stylesDir, "global.css"), "utf8");
-const appCss = fs.readFileSync(path.join(stylesDir, "app.css"), "utf8");
+/** 组件与正文排版样式（除 token 定义所在的 global.css 外的全部样式表） */
+const appCss = fs
+  .readdirSync(stylesDir)
+  .filter((name) => name.endsWith(".css") && name !== "global.css")
+  .sort()
+  .map((name) => fs.readFileSync(path.join(stylesDir, name), "utf8"))
+  .join("\n");
 
 /** 去掉注释，免得注释里的示例触发规则 */
 function stripComments(css: string): string {
@@ -49,7 +55,7 @@ test("深色主题覆盖了浅色里所有会随主题变化的颜色 token", ()
 test("组件样式不写死颜色值，全部走 token", () => {
   const css = stripComments(appCss);
   const hex = [...css.matchAll(/#[0-9a-fA-F]{3,8}\b/g)].map((m) => m[0]);
-  assert.deepEqual(hex, [], `app.css 里出现了写死的颜色：${hex.join(", ")}`);
+  assert.deepEqual(hex, [], `样式表里出现了写死的颜色：${hex.join(", ")}`);
 });
 
 test("不用装饰性渐变（只允许骨架屏的加载闪光）", () => {

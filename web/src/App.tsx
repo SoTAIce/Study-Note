@@ -19,7 +19,7 @@ import CaptureModal from "./components/CaptureModal.tsx";
 import TrashView from "./components/TrashView.tsx";
 import ComposeView from "./components/ComposeView.tsx";
 import AiChatPage from "./components/AiChatPage.tsx";
-import PreviewOverlay from "./components/PreviewOverlay.tsx";
+import ReadingMode from "./components/ReadingMode.tsx";
 import BackupPanel from "./components/BackupPanel.tsx";
 import HistoryPanel from "./components/HistoryPanel.tsx";
 import NoteTabs from "./components/NoteTabs.tsx";
@@ -28,6 +28,7 @@ import type { GroupView } from "./groups-api.ts";
 import { resolveKey } from "./lib/keyboard.ts";
 import { filterLabel, type Filter } from "./lib/nav.ts";
 import { closeNoteTab, renameNoteTab, syncNoteTabTitles, upsertNoteTab, type NoteTab } from "./lib/note-tabs.ts";
+import { neighbors } from "./lib/reading.ts";
 import { connectLive, decideExternalChange, DELETE_CONFIRM_MS, touchesNote, type NoteChange } from "./lib/live.ts";
 import {
   autosaveDelay,
@@ -51,6 +52,8 @@ import {
 } from "./lib/theme.ts";
 import Icon from "./components/Icon.tsx";
 import "./styles/app.css";
+import "./styles/content.css";
+import "./styles/reading.css";
 
 type Screen = "notes" | "trash" | "compose" | "ai";
 type ToastKind = "info" | "ok" | "error";
@@ -1161,6 +1164,17 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
 
+  // —— 阅览模式的上一篇 / 下一篇：按中间列表当前的顺序 ——
+  const readingIds = neighbors(
+    notes.map((note) => note.id),
+    current?.id ?? null,
+  );
+  const titleOf = (id: string | null) => {
+    const found = id ? notes.find((note) => note.id === id) : undefined;
+    return found ? { id: found.id, title: found.title || "无标题" } : null;
+  };
+  const readingNeighbors = { prev: titleOf(readingIds.prev), next: titleOf(readingIds.next) };
+
   // —— 渲染 ——
   const railVisible = railOpen && screen === "notes" && current !== null;
   const aiVisible = isScreenVisible(screen, "ai");
@@ -1508,9 +1522,14 @@ export default function App() {
       />
 
       {previewFull && current ? (
-        <PreviewOverlay
+        <ReadingMode
+          noteId={current.id}
           title={draft.title || current.meta.title}
           body={draft.body}
+          meta={{ updated: current.meta.updated, group: current.meta.group ?? null, tags: current.meta.tags }}
+          prev={readingNeighbors.prev}
+          next={readingNeighbors.next}
+          onNavigate={(id) => void openNote(id)}
           onExit={() => setPreviewFull(false)}
           onOpenWikilink={(target) => void openTitle(target)}
           onFilterTag={(tag) => {

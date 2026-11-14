@@ -59,7 +59,7 @@ type Props = {
   onSelectionChange: (length: number) => void;
   /** 回到首页（欢迎界面），那里是「新建笔记」的入口。 */
   onGoHome: () => void;
-  /** 打开全屏预览（铺满窗口阅读）。 */
+  /** 打开阅览模式（只读、铺满窗口）。 */
   onOpenPreviewFull: () => void;
   /** 上一次「整篇替换」是否还能撤销。 */
   aiUndoAvailable: boolean;
@@ -240,10 +240,10 @@ export default function EditorPane({
             type="button"
             className="icon-btn"
             onClick={onOpenPreviewFull}
-            title="全屏阅读（Ctrl+Shift+F）"
-            aria-label="全屏阅读"
+            title="阅览模式（Ctrl+Shift+F）"
+            aria-label="阅览模式"
           >
-            <Icon name="expand" size={16} />
+            <Icon name="book" size={16} />
           </button>
           <button
             type="button"

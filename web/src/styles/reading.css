@@ -1,0 +1,68 @@
+/*
+ * 阅读排版：在 content.css 的 .preview 基础上，给「阅览模式」和「导出 PDF」用（reading-001 / export-001）。
+ * 原则：字号跟随容器（A− / A+ 整体缩放）；代码自动换行、表格单元格可折行，什么都不被截掉。
+ */
+
+.preview.reading {
+  padding: 0;
+  font-size: inherit;
+  line-height: 1.75;
+}
+
+/* 标题改成相对字号，跟着正文一起缩放 */
+.preview.reading h1 {
+  font-size: 1.6em;
+}
+.preview.reading h2 {
+  font-size: 1.3em;
+}
+.preview.reading h3 {
+  font-size: 1.12em;
+}
+.preview.reading h4 {
+  font-size: 1em;
+}
+.preview.reading h1,
+.preview.reading h2,
+.preview.reading h3,
+.preview.reading h4 {
+  break-after: avoid;
+}
+
+.preview.reading p,
+.preview.reading li {
+  orphans: 2;
+  widows: 2;
+}
+
+/* 代码：自动换行，长行不出横向滚动、打印时不被裁 */
+.preview.reading pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow: visible;
+}
+.preview.reading pre code,
+.preview.reading code {
+  font-size: 0.86em;
+  overflow-wrap: anywhere;
+}
+
+/* 表格：单元格可折行；屏幕上实在太宽时整表横向滚动 */
+.preview.reading table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.preview.reading th,
+.preview.reading td {
+  overflow-wrap: anywhere;
+  min-width: 4em;
+}
+
+.preview.reading img,
+.preview.reading pre,
+.preview.reading blockquote,
+.preview.reading tr {
+  break-inside: avoid;
+}

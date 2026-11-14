@@ -493,13 +493,18 @@
       "area": "ui",
       "title": "阅览模式：目录、进度、上一篇/下一篇、记住位置",
       "user_visible_behavior": "一键进入只读阅览：正文居中、目录跳转并高亮当前小节、阅读进度条、←/→ 切换上一篇/下一篇、记住每篇读到的位置；窄屏目录收进抽屉。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "单测：目录提取、当前小节、上一篇/下一篇",
         "E2E：目录跳转、切换、位置恢复、窄屏"
       ],
-      "evidence": [],
-      "notes": "方案：docs/superpowers/specs/2026-11-14-reading-mode-pdf-export-design.md（待用户批准）"
+      "evidence": [
+        "pnpm test：364 通过（新增 web/src/lib/reading.test.ts 6 条：目录、当前小节、上一篇/下一篇、阅读比例、位置记忆、行宽）",
+        "pnpm e2e：15 步通过；新步骤「阅览模式：目录跳转、上一篇 / 下一篇、记住读到的位置、窄屏目录收起」检查目录 4 项、点「第三节」后高亮、长代码行无横向滚动、退出再进入回到约 0.5 的位置、→ / ← 切篇、窄屏目录默认收起且不横向溢出；截图 e2e-artifacts/07-reading.png",
+        "变异检查：不恢复位置 → E2E 失败；当前小节恒为第一个 → 单测 1 条 + E2E 失败；代码改回不换行 → E2E 失败。恢复后全绿",
+        "./init.sh 全绿（2026-11-14）"
+      ],
+      "notes": "方案：docs/superpowers/specs/2026-11-14-reading-mode-pdf-export-design.md（已批准）。实现：web/src/components/ReadingMode.tsx（替换原 PreviewOverlay，入口与 Ctrl+Shift+F 不变）、web/src/lib/reading.ts；正文排版拆到 web/src/styles/content.css，阅读排版 web/src/styles/reading.css（export-001 复用）。宽表格打印时改卡片形式的方案留到 export-001 视 PDF 效果决定。"
     },
     {
       "id": "export-001",
@@ -514,7 +519,33 @@
         "E2E：下载 PDF 检查页面尺寸与书签"
       ],
       "evidence": [],
-      "notes": "方案：docs/superpowers/specs/2026-11-14-reading-mode-pdf-export-design.md（待用户批准）。依赖 reading-001 的阅读排版。"
+      "notes": "方案：docs/superpowers/specs/2026-11-14-reading-mode-pdf-export-design.md（已批准）。依赖 reading-001 的阅读排版。"
+    },
+    {
+      "id": "export-002",
+      "priority": 30,
+      "area": "export",
+      "title": "多篇合并导出一本 PDF（分组 / 标签）",
+      "user_visible_behavior": "整个分组或标签导出成一本带目录页的 PDF，书签与本书内双链可跳转。",
+      "status": "not_started",
+      "verification": [
+        "E2E：导出分组 PDF，检查书签数"
+      ],
+      "evidence": [],
+      "notes": "方案第八节第 3 期；用户 2026-11-14 决定暂不做。"
+    },
+    {
+      "id": "export-003",
+      "priority": 31,
+      "area": "export",
+      "title": "导出的 PDF 自动放进 WebDAV 同步目录",
+      "user_visible_behavior": "导出时可选「同时上传到坚果云等 WebDAV」，手机直接看到。",
+      "status": "not_started",
+      "verification": [
+        "接口测试：上传到假 WebDAV"
+      ],
+      "evidence": [],
+      "notes": "方案第九节第 5 条；用户 2026-11-14 决定先手动传。"
     }
   ]
 }

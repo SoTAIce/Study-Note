@@ -314,6 +314,79 @@ try {
     await page.locator(".note-row__text", { hasText: /^贝塔（外部改过）$/ }).waitFor({ timeout: 5000 });
   });
 
+  await step("阅览模式：目录跳转、上一篇 / 下一篇、记住读到的位置、窄屏目录收起", async () => {
+    const para = "这一段用来把页面撑长，方便测试滚动、目录高亮和阅读位置。".repeat(6);
+    const sections = ["第一节", "第二节", "第三节"].map((h) => `## ${h}\n\n${para}\n\n${para}\n\n${para}`).join("\n\n");
+    const longCode = `\`\`\`\n${"x".repeat(300)}\n\`\`\``;
+    const created = await page.evaluate(
+      async (body) =>
+        (
+          await fetch("/api/notes", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ title: "阅览测试", body }),
+          })
+        ).json(),
+      `# 阅览测试\n\n${sections}\n\n${longCode}\n`,
+    );
+    expect(created.id, "应能创建阅览测试笔记");
+    // 推送通道会让列表自己出现这篇（sync-001）
+    await page.locator(".note-row__text", { hasText: /^阅览测试$/ }).click();
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "阅览测试", null, {
+      timeout: 5000,
+    });
+
+    await page.getByLabel("阅览模式").click();
+    await page.locator(".reader").waitFor();
+    const items = await page.locator(".reader__toc-item").allTextContents();
+    expect(
+      JSON.stringify(items) === JSON.stringify(["阅览测试", "第一节", "第二节", "第三节"]),
+      `目录应为 4 项，实际 ${JSON.stringify(items)}`,
+    );
+    const scroller = page.locator(".reader__scroll");
+    const hScroll = await scroller.evaluate((el) => el.scrollWidth > el.clientWidth + 1);
+    expect(!hScroll, "长代码行应自动换行，不出横向滚动");
+
+    await page.locator(".reader__toc-item", { hasText: "第三节" }).click();
+    await page.locator(".reader__toc-item.is-active", { hasText: "第三节" }).waitFor({ timeout: 3000 });
+    await page.screenshot({ path: path.join(artifacts, "07-reading.png") });
+
+    // 读到一半退出，再进来应回到那里
+    await scroller.evaluate((el) => el.scrollTo({ top: (el.scrollHeight - el.clientHeight) / 2 }));
+    await page.waitForTimeout(600);
+    await page.keyboard.press("Escape");
+    await page.locator(".reader").waitFor({ state: "detached" });
+    await page.keyboard.press("Control+Shift+F");
+    await page.locator(".reader").waitFor();
+    const ratio = await scroller.evaluate((el) => el.scrollTop / (el.scrollHeight - el.clientHeight));
+    expect(Math.abs(ratio - 0.5) < 0.05, `重新进入应回到读到的位置（约 0.5），实际 ${ratio.toFixed(3)}`);
+
+    // 下一篇 / 上一篇：按中间列表的顺序
+    const order = await page.locator(".note-row__text").allTextContents();
+    const at = order.indexOf("阅览测试");
+    const nextTitle = order[at + 1];
+    expect(nextTitle, `列表里「阅览测试」后面应还有笔记，列表：${order.join(" / ")}`);
+    await page.keyboard.press("ArrowRight");
+    await page.locator(".reader__title", { hasText: nextTitle }).waitFor({ timeout: 5000 });
+    await page.keyboard.press("ArrowLeft");
+    await page.locator(".reader__title", { hasText: "阅览测试" }).waitFor({ timeout: 5000 });
+    await page.keyboard.press("e");
+    await page.locator(".reader").waitFor({ state: "detached" });
+
+    // 窄屏：目录默认收起，点按钮才出来，页面不横向溢出
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.keyboard.press("Control+Shift+F");
+    await page.locator(".reader").waitFor();
+    expect((await page.locator(".reader__toc").count()) === 0, "窄屏进入时目录应收起");
+    await page.locator(".reader").getByLabel("目录").click();
+    await page.locator(".reader__toc").waitFor();
+    const width = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(width <= 390, `阅览模式页面宽度 ${width} 超过视口 390`);
+    await page.keyboard.press("Escape");
+    await page.locator(".reader").waitFor({ state: "detached" });
+    await page.setViewportSize({ width: 1360, height: 860 });
+  });
+
   await step("主题切换并在刷新后保持", async () => {
     const toggle = page.getByLabel(/切换主题/);
     await toggle.click(); // system → light
