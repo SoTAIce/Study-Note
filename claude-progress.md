@@ -6,7 +6,7 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-14，382 个单元/接口测试 + E2E 17 步（本机；GitHub Actions 结果见会话 013）
+- 最近一次全绿：2026-11-14，382 个单元/接口测试 + E2E 17 步（本机 + GitHub Actions 的 Linux、Windows）
 - 优先级最高的未完成功能：`editor-001`（trash-001 已完成）
 - 当前阻塞：无
 
@@ -116,6 +116,6 @@
 ### 会话 013 · 2026-11-14 · 回收站清空与自动清理（trash-001）
 
 - 完成：`store.emptyTrash()`（只删回收站顶层文件，不进子目录）、`store.purgeTrash(30)`（按说明文件的 deletedAt；没说明文件按修改时间；时间读不懂的保留）；`DELETE /api/trash` 清空；`GET /api/trash` 先清过期再列，并返回 `retentionDays`；`server/main.ts` 启动时清一次、之后每 6 小时一次。回收站页：「清空回收站」按钮 + 红色确认条（写明篇数、取消 / 永久删除），每条显示「N 天后自动清理」（`web/src/lib/trash.ts`）。
-- 验证：store 测试 4 条、api 测试 1 条、trash.test.ts 3 条；E2E 新增回收站一步（过期条目被清、取消不删、确认后清空、目录为空）；./init.sh 382 + E2E 17 步全绿。
+- 验证：store 测试 4 条、api 测试 1 条、trash.test.ts 3 条；E2E 新增回收站一步（过期条目被清、取消不删、确认后清空、目录为空）；./init.sh 382 + E2E 17 步全绿。GitHub Actions 运行 43564411517 两个系统都 success。
 - 风险：清空不可撤销，只靠二次确认把关；自动清理在服务没运行时不会发生（下次启动补上）。
 - 下一步：editor-001。
