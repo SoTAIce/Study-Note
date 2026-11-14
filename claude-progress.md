@@ -6,7 +6,7 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-14，440 个单元/接口测试 + E2E 22 步（本机；CI 见会话 018）
+- 最近一次全绿：2026-11-14，440 个单元/接口测试 + E2E 22 步（本机 + GitHub Actions 的 Linux、Windows）
 - 优先级最高的未完成功能：`ui-002`（media-001 已完成）
 - 当前阻塞：无
 
@@ -163,7 +163,7 @@
 - 用户批准方案（第九节全部按推荐）：统一放 `attachments/`；插入标准 `![](相对路径)`；单张 15MB 存原图；一起备份；`日期-时间-指纹` 命名、拖入保留原名。
 - 完成：`server/attachments.ts`；`POST /api/attachments`（JSON + base64，单独 21MB 请求体上限）、`GET /api/files/*`（只限库内图片，`?fallback=`）；`web/src/lib/image-src.ts` + `renderMarkdown(images)`（预览、阅览模式传笔记路径）；正文框粘贴 / 拖入；导出 `inlineImages` 嵌 data:；备份图片二进制只进 `latest/`。
 - 顺带修的：请求体超限时连接被重置（浏览器只看到「连不上」）→ 读完再回 413；剪贴板截图统一叫 image.png → 当作没名字。
-- 验证：新增测试 22 条；E2E 新增一步；./init.sh 440 + E2E 22 步全绿。
+- 验证：新增测试 22 条；E2E 新增一步；./init.sh 440 + E2E 22 步全绿；GitHub Actions 运行 43594157440 两个系统 success。
 - 待人工：Windows 上真实截图粘贴、拖入、坚果云备份（已写进 docs/验收清单.md）。
 - 风险：没被引用的图片不会自动删；首次备份若有几百张图仍可能碰请求额度（backup-001）。
 - 下一步：ui-002（应用内确认弹窗替换 window.confirm）。
