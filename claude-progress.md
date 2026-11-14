@@ -6,8 +6,8 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-14，382 个单元/接口测试 + E2E 18 步（本机）
-- 优先级最高的未完成功能：`editor-001`（trash-001 已完成）
+- 最近一次全绿：2026-11-14，398 个单元/接口测试 + E2E 19 步（本机）
+- 优先级最高的未完成功能：`editor-002`（editor-001 已完成）
 - 当前阻塞：无
 
 ## 会话记录
@@ -126,3 +126,11 @@
 - 完成：`openCompose` 记下当前分组（`composeGroupRef`），`ComposeView` 的 `initialGroup` 预填分组栏，可改可清空；在当前分组里建完仍停在这个分组，其他情况照旧回到全部笔记。Ctrl+N 走同一条路。
 - 验证：E2E 新增一步（预填、保存到该组、改组、全部笔记下为空）；./init.sh 382 + E2E 18 步全绿。
 - 下一步：editor-001。
+
+### 会话 015 · 2026-11-14 · 编辑器基础能力（editor-001）
+
+- 完成：`web/src/lib/edit-ops.ts`（纯函数：indent / continueList / toggleWrap / makeLink）；`EditorPane` 的正文框接管 Tab、Shift+Tab、回车、Ctrl+B / I / K，用 `execCommand("insertText")` 应用以保留 Ctrl+Z；输入法组字（isComposing / 229）时不拦截。
+- 决定：Ctrl+K 只在选中文字时变链接，没选中仍是搜索；有序列表的子项缩 3 格（marked 要求对齐内容列）；选区两头空白挪到标记外（Windows 双击选词带空格）。
+- 验证：edit-ops.test.ts 16 条；E2E 新增一步（真实键盘输入，含 Ctrl+Z 撤回加粗）；./init.sh 398 + E2E 19 步全绿。
+- 风险：execCommand 已被标为过时，但 Chromium / Edge / Firefox 仍支持；不支持时退回 setRangeText（这种情况下 Ctrl+Z 不保证）。
+- 下一步：editor-002（AI 插入 / 替换可 Ctrl+Z 撤销，可复用这次的 applyEdit）。

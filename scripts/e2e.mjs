@@ -9,7 +9,7 @@
  *
  * 覆盖：首页（含加载占位）→ 新建笔记 → 编辑自动保存 → 搜索 → 历史版本（对比 / 恢复 / 撤销恢复）
  *      → 外部编辑同步（改标题、自动载入、冲突、外部删除进回收站）
- *      → 阅览模式 → 导出 PDF → 回收站（自动清理过期、清空二次确认）
+ *      → 阅览模式 → 导出 PDF → 回收站（自动清理过期、清空二次确认）→ 分组里新建 → 编辑器快捷操作
  *      → 主题切换并记住 → 窄屏抽屉不横向溢出；全程不允许出现页面报错。
  * 截图写到 e2e-artifacts/（已 gitignore），作为验证证据。
  *
@@ -580,6 +580,62 @@ try {
     expect((await groupInput.inputValue()) === "", "全部笔记下新建分组栏应为空");
     await page.keyboard.press("Escape");
     await page.locator(".compose").waitFor({ state: "detached" });
+  });
+
+  await step("编辑器：列表续行、Tab 缩进、Ctrl+B / Ctrl+K，Ctrl+Z 能撤回", async () => {
+    await page.locator(".note-row__text", { hasText: /^改了分组$/ }).click();
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "改了分组", null, { timeout: 5000 });
+    const ta = page.locator(".editor__textarea");
+    await ta.fill("");
+    await ta.focus();
+    const kb = page.keyboard;
+    await kb.type("- 苹果");
+    await kb.press("Enter");
+    await kb.type("香蕉");
+    await kb.press("Enter");
+    await kb.press("Tab");
+    await kb.type("小香蕉");
+    await kb.press("Enter");
+    await kb.press("Enter"); // 空的子项：退一级
+    await kb.type("橙子");
+    await kb.press("Enter");
+    await kb.press("Enter"); // 空的顶层项：结束列表
+    await kb.type("1. 一");
+    await kb.press("Enter");
+    await kb.type("二");
+    await kb.press("Enter");
+    await kb.press("Enter");
+    let value = await ta.inputValue();
+    expect(
+      value === "- 苹果\n- 香蕉\n  - 小香蕉\n- 橙子\n1. 一\n2. 二\n",
+      `列表续行 / 缩进结果不对：${JSON.stringify(value)}`,
+    );
+    expect(await ta.evaluate((el) => document.activeElement === el), "按 Tab 后焦点应留在正文框");
+
+    await kb.type("重点");
+    await kb.press("Shift+ArrowLeft");
+    await kb.press("Shift+ArrowLeft");
+    await kb.press("Control+b");
+    value = await ta.inputValue();
+    expect(value.endsWith("**重点**"), `Ctrl+B 应加粗：${JSON.stringify(value)}`);
+    await kb.press("Control+z");
+    value = await ta.inputValue();
+    expect(value.endsWith("\n重点") , `Ctrl+Z 应撤回加粗：${JSON.stringify(value)}`);
+
+    await kb.press("End");
+    await kb.type(" 链接");
+    await kb.press("Shift+ArrowLeft");
+    await kb.press("Shift+ArrowLeft");
+    await kb.press("Control+k");
+    await kb.type("https://example.com");
+    value = await ta.inputValue();
+    expect(value.endsWith("重点 [链接](https://example.com)"), `Ctrl+K 应生成链接：${JSON.stringify(value)}`);
+    expect((await page.locator(".palette").count()) === 0, "选中文字时 Ctrl+K 不应打开搜索");
+    await kb.press("Control+k");
+    await page.locator(".palette").waitFor({ timeout: 3000 });
+    await kb.press("Escape");
+    await page.locator(".palette").waitFor({ state: "detached" });
+    await page.getByText("已保存").first().waitFor({ timeout: 10000 });
   });
 
   await step("主题切换并在刷新后保持", async () => {

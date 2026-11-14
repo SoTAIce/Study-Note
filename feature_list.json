@@ -200,13 +200,17 @@
       "area": "editor",
       "title": "编辑器基础能力：Tab 缩进、列表续行、格式快捷键",
       "user_visible_behavior": "Tab/Shift+Tab 缩进；在列表项回车自动续上 - / 1.；Ctrl+B/I/K 加粗、斜体、链接。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "单测：文本变换纯函数",
         "E2E：输入后检查正文"
       ],
-      "evidence": [],
-      "notes": ""
+      "evidence": [
+        "node --test web/src/lib/edit-ops.test.ts 16 条通过（Tab / Shift+Tab 含有序列表 3 格、多行选区；回车续无序 / 有序 / 任务 / 引用、空项退级或结束；加粗斜体切换且不误伤粗体；Windows 双击带空格；链接）",
+        "pnpm e2e「编辑器：列表续行、Tab 缩进、Ctrl+B / Ctrl+K，Ctrl+Z 能撤回」通过：真实键盘输入后正文逐字核对，Tab 后焦点留在正文框，选中时 Ctrl+K 不开搜索、没选中时开搜索",
+        "./init.sh 全绿：398 个测试 + E2E 19 步（2026-11-14）"
+      ],
+      "notes": "Ctrl+K 只在选中文字时生成链接，没选中时仍打开搜索（保留原有习惯）。"
     },
     {
       "id": "editor-002",

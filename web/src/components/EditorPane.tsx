@@ -5,6 +5,56 @@ import type { ConflictInfo, NoteDetail } from "../api.ts";
 import { relativeTime } from "../lib/time.ts";
 import type { ViewMode } from "../lib/theme.ts";
 import Icon, { type IconName } from "./Icon.tsx";
+import { continueList, indent, makeLink, toggleWrap, type Edit } from "../lib/edit-ops.ts";
+
+/**
+ * 把一次替换应用到正文框。用浏览器的 insertText，这样 Ctrl+Z 能撤回；
+ * 不支持时退回 setRangeText 并补一个 input 事件（React 靠它更新状态）。
+ */
+function applyEdit(textarea: HTMLTextAreaElement, edit: Edit): void {
+  textarea.focus();
+  textarea.setSelectionRange(edit.from, edit.to);
+  let applied = false;
+  try {
+    applied =
+      edit.insert === ""
+        ? edit.from === edit.to || document.execCommand("delete", false)
+        : document.execCommand("insertText", false, edit.insert);
+  } catch {
+    applied = false;
+  }
+  if (!applied) {
+    textarea.setRangeText(edit.insert, edit.from, edit.to, "end");
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  textarea.setSelectionRange(edit.selStart, edit.selEnd);
+}
+
+/** 正文框里的编辑键（editor-001）：Tab 缩进、回车续列表、Ctrl+B / I / K */
+function editForKey(event: KeyboardEvent<HTMLTextAreaElement>): { edit: Edit | null; handled: boolean } {
+  const target = event.currentTarget;
+  const state = { value: target.value, start: target.selectionStart, end: target.selectionEnd };
+  const ctrl = event.ctrlKey || event.metaKey;
+  if (event.key === "Tab" && !ctrl && !event.altKey) {
+    // 退到顶格时 edit 为 null 也拦下，不让焦点跳出正文框
+    return { edit: indent(state, event.shiftKey), handled: true };
+  }
+  if (event.key === "Enter" && !ctrl && !event.altKey && !event.shiftKey) {
+    const edit = continueList(state);
+    return { edit, handled: edit !== null };
+  }
+  if (ctrl && !event.altKey && !event.shiftKey) {
+    const key = event.key.toLowerCase();
+    if (key === "b") return { edit: toggleWrap(state, "**"), handled: true };
+    if (key === "i") return { edit: toggleWrap(state, "*"), handled: true };
+    if (key === "k") {
+      // 没选中文字时不接管：Ctrl+K 照旧打开搜索
+      const edit = makeLink(state);
+      return { edit, handled: edit !== null };
+    }
+  }
+  return { edit: null, handled: false };
+}
 
 const VIEW_OPTIONS: Array<{ mode: ViewMode; icon: IconName; label: string }> = [
   { mode: "write", icon: "pen", label: "只写" },
@@ -129,6 +179,16 @@ export default function EditorPane({
       event.preventDefault();
       textareaRef.current?.focus();
     }
+  }
+
+  function handleBodyKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    // 输入法正在组字（中文输入时回车是上屏）：一律不管
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    const { edit, handled } = editForKey(event);
+    if (!handled) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (edit) applyEdit(event.currentTarget, edit);
   }
 
   function reportSelection(event: SyntheticEvent<HTMLTextAreaElement>): void {
@@ -321,6 +381,7 @@ export default function EditorPane({
             className="editor__textarea"
             value={body}
             onChange={(event) => onChangeBody(event.target.value)}
+            onKeyDown={handleBodyKeyDown}
             onSelect={reportSelection}
             onKeyUp={reportSelection}
             onMouseUp={reportSelection}
