@@ -54,6 +54,8 @@ jobs:
         env:
           # Windows：导出 PDF 走服务自己找到的 Edge，而不是 Playwright 的 Chromium
           E2E_PDF_BROWSER: ${{ runner.os == 'Windows' && 'system' || '' }}
+          # GitHub 的 Ubuntu 不允许普通用户建 Chromium 沙箱（Playwright 自己启动时也是关掉沙箱的）
+          STUDY_PDF_NO_SANDBOX: ${{ runner.os == 'Linux' && '1' || '' }}
         run: ./init.sh
 
       - name: 上传 E2E 截图与导出的 PDF

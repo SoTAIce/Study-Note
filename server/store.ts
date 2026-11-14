@@ -94,7 +94,11 @@ function realPathOf(target: string): string {
     try {
       return fs.realpathSync(target);
     } catch {
-      return path.resolve(target);
+      // 还不存在（比如要新建的子目录）：解析最近一个已存在的上级，再拼回剩下的部分。
+      // 直接返回 path.resolve 会留下 Windows 的 8.3 短名（RUNNER~1），和已解析的根目录对不上而误报越界。
+      const parent = path.dirname(target);
+      if (parent === target) return path.resolve(target);
+      return path.join(realPathOf(parent), path.basename(target));
     }
   }
 }

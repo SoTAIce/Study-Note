@@ -292,3 +292,21 @@ test("setGroup 保留文件 mtime：没有 updated: 的笔记不会因为归组�
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
 });
+
+test("笔记根目录经别名路径给出时（Windows 8.3 短名、符号链接），在还不存在的子目录里新建不误报越界", () => {
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "sn-alias-")));
+  const real = path.join(base, "real");
+  fs.mkdirSync(real);
+  const alias = path.join(base, "alias");
+  // junction 在 Windows 上不需要管理员权限；其他系统就是普通目录符号链接
+  fs.symlinkSync(real, alias, "junction");
+  const store = new NoteStore({
+    notesRoot: path.join(alias, "notes"),
+    historyDir: path.join(alias, "history"),
+    trashDir: path.join(alias, "trash"),
+  });
+  const created = store.create({ type: "idea", body: "子目录还不存在时新建" });
+  assert.ok(created.relPath.startsWith("inbox/"));
+  assert.ok(fs.existsSync(path.join(real, "notes", ...created.relPath.split("/"))));
+  fs.rmSync(base, { recursive: true, force: true });
+});

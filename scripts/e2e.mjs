@@ -417,8 +417,14 @@ try {
     await page.locator(".export-dialog").waitFor();
     expect(await page.getByLabel("手机阅读").isChecked(), "默认应选手机阅读版式");
     const downloading = page.waitForEvent("download", { timeout: 30000 });
+    // 生成失败时面板上会显示原因：先出现就直接报出来，不要干等超时
+    const failed = page
+      .locator(".export-dialog__error")
+      .waitFor({ timeout: 30000 })
+      .then(async () => `导出失败：${await page.locator(".export-dialog__error").textContent()}`)
+      .catch(() => null);
     await page.locator(".export-dialog").getByRole("button", { name: "导出" }).click();
-    const download = await downloading;
+    const download = await Promise.race([downloading, failed.then((message) => Promise.reject(new Error(message ?? "没等到下载")))]);
     page.off("request", record);
     expect(download.suggestedFilename() === "阅览测试.pdf", `文件名应为「阅览测试.pdf」，实际 ${download.suggestedFilename()}`);
     const putAt = order.findIndex((entry) => entry.startsWith("PUT /api/notes/"));

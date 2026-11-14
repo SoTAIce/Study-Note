@@ -256,8 +256,14 @@ export async function printPdf(browser: string, html: string, opts: { timeoutMs?
     "--remote-debugging-pipe",
     "about:blank",
   ];
-  // Linux 下以 root 运行时 Chromium 拒绝启用沙箱（容器、CI）；Windows / macOS 不加
-  if (process.platform === "linux" && process.getuid?.() === 0) args.unshift("--no-sandbox");
+  // Linux 下以 root 运行时 Chromium 拒绝启用沙箱（容器）；有的 Linux（如 GitHub 的 Ubuntu）不允许普通用户建沙箱，
+  // 用 STUDY_PDF_NO_SANDBOX=1 显式关掉。导出的 HTML 禁止脚本、只读本地文件。Windows / macOS 默认不加
+  if (
+    (process.platform === "linux" && process.getuid?.() === 0) ||
+    process.env.STUDY_PDF_NO_SANDBOX === "1"
+  ) {
+    args.unshift("--no-sandbox");
+  }
 
   const child = spawn(browser, args, { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"], windowsHide: true });
   const toBrowser = child.stdio[3] as NodeJS.WritableStream;
