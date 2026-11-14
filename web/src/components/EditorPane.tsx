@@ -61,6 +61,8 @@ type Props = {
   onGoHome: () => void;
   /** 打开阅览模式（只读、铺满窗口）。 */
   onOpenPreviewFull: () => void;
+  /** 打开「导出 PDF」面板 */
+  onExport: () => void;
   /** 上一次「整篇替换」是否还能撤销。 */
   aiUndoAvailable: boolean;
   onUndoAiReplace: () => void;
@@ -95,6 +97,7 @@ export default function EditorPane({
   onSelectionChange,
   onGoHome,
   onOpenPreviewFull,
+  onExport,
   aiUndoAvailable,
   onUndoAiReplace,
   viewMode,
@@ -244,6 +247,9 @@ export default function EditorPane({
             aria-label="阅览模式"
           >
             <Icon name="book" size={16} />
+          </button>
+          <button type="button" className="icon-btn" onClick={onExport} title="导出 PDF" aria-label="导出 PDF">
+            <Icon name="download" size={16} />
           </button>
           <button
             type="button"

@@ -20,6 +20,8 @@ import TrashView from "./components/TrashView.tsx";
 import ComposeView from "./components/ComposeView.tsx";
 import AiChatPage from "./components/AiChatPage.tsx";
 import ReadingMode from "./components/ReadingMode.tsx";
+import ExportDialog from "./components/ExportDialog.tsx";
+import type { ExportPrefs } from "./lib/export.ts";
 import BackupPanel from "./components/BackupPanel.tsx";
 import HistoryPanel from "./components/HistoryPanel.tsx";
 import NoteTabs from "./components/NoteTabs.tsx";
@@ -115,6 +117,7 @@ export default function App() {
 
   // —— 全屏预览 ——
   const [previewFull, setPreviewFull] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   // —— 外观：主题 / 编辑视图 / 窄屏导航抽屉 ——
@@ -941,6 +944,55 @@ export default function App() {
     },
   };
 
+  // —— 导出 PDF（export-001） ——
+  async function exportCurrent(prefs: ExportPrefs): Promise<string | null> {
+    const id = noteIdRef.current;
+    if (!id) return "没有打开的笔记";
+    // 服务端从磁盘读：先把没保存的存掉，导出的才是最新内容
+    if (!(await doSave())) return "当前笔记还没保存成功，先处理冲突或错误再导出";
+    const request = { id, ...prefs };
+    try {
+      const { blob, fileName } = await api.exportPdf(request);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      // 下载开始前就回收地址会让部分浏览器下载失败：稍后再回收
+      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      showToast(`已导出：${fileName}`, "ok");
+      return null;
+    } catch (err) {
+      if (!api.isNoBrowser(err)) return api.errorMessage(err);
+    }
+    // 电脑上没找到 Edge / Chrome：同样的版式交给浏览器的打印对话框
+    try {
+      printHtml(await api.exportHtml(request));
+      showToast("没找到 Edge 或 Chrome，已打开打印对话框：目标选「另存为 PDF」", "ok");
+      return null;
+    } catch (err) {
+      return api.errorMessage(err);
+    }
+  }
+
+  function printHtml(html: string): void {
+    const frame = document.createElement("iframe");
+    frame.className = "print-frame";
+    frame.setAttribute("aria-hidden", "true");
+    frame.srcdoc = html;
+    frame.onload = () => {
+      frame.contentWindow?.focus();
+      frame.contentWindow?.print();
+      // 打印对话框关掉以后再拿掉（拿不到 afterprint 就一分钟后拿掉）
+      const remove = () => frame.remove();
+      frame.contentWindow?.addEventListener("afterprint", remove);
+      window.setTimeout(remove, 60_000);
+    };
+    document.body.appendChild(frame);
+  }
+
   // —— 历史版本 ——
   function openHistory(): void {
     if (screen !== "notes" || !noteIdRef.current) return;
@@ -1075,7 +1127,7 @@ export default function App() {
     openHistory: () => undefined as void,
   });
   keyContext.current = {
-    modalOpen: paletteOpen || captureOpen || previewFull || backupOpen || historyOpen || screen === "ai",
+    modalOpen: paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen || screen === "ai",
     openPalette: () => setPaletteOpen(true),
     openCapture: () => setCaptureOpen(true),
     createNote: () => void openCompose(),
@@ -1335,6 +1387,7 @@ export default function App() {
               onSelectionChange={setSelectionLength}
               onGoHome={() => void goHome()}
               onOpenPreviewFull={() => setPreviewFull(true)}
+              onExport={() => setExportOpen(true)}
               aiUndoAvailable={aiUndoAvailable}
               onUndoAiReplace={undoReplace}
               viewMode={viewMode}
@@ -1530,12 +1583,23 @@ export default function App() {
           prev={readingNeighbors.prev}
           next={readingNeighbors.next}
           onNavigate={(id) => void openNote(id)}
+          onExport={() => setExportOpen(true)}
+          paused={exportOpen}
           onExit={() => setPreviewFull(false)}
           onOpenWikilink={(target) => void openTitle(target)}
           onFilterTag={(tag) => {
             setPreviewFull(false);
             setFilter({ kind: "tag", tag });
           }}
+        />
+      ) : null}
+
+      {current ? (
+        <ExportDialog
+          open={exportOpen}
+          title={draft.title || current.meta.title}
+          onClose={() => setExportOpen(false)}
+          onExport={exportCurrent}
         />
       ) : null}
 

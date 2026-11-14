@@ -207,3 +207,10 @@ msedge --headless=new --disable-gpu --no-pdf-header-footer --generate-pdf-docume
 3. 多篇合并：这次不做，记为 export-002（not_started）。
 4. 护眼暖色：这次不做，阅览模式和 PDF 只跟随浅色 / 深色。
 5. 传到手机：用户自己传；自动放进 WebDAV 记为 export-003（not_started）。
+
+## 十一、实现记录（2026-11-14）
+
+- **打印方式改用调试管道**：方案 3.1 写的是 `--print-to-pdf` 命令行参数。实测它配上独立的临时用户目录（`--user-data-dir`）时会一直挂住，而不用独立用户目录，在 Windows 上又可能和正在运行的 Edge 抢同一个配置。所以改为用 `--remote-debugging-pipe` 启动浏览器，再经管道调 `Page.printToPDF`。仍然只用 Node 自带的 `child_process`，生成一篇约 0.7 秒；还能明确打开背景打印（深色 PDF）、标题书签和带结构标记的 PDF。
+- **标题与元信息**：正文开头的同名一级标题由导出统一渲染，「更新日期 · 分组 · 标签」排在标题下面。
+- **宽表格**：打印时表格铺满版心、单元格折行、字号缩小一级，实测手机版式下 4 列表格可完整显示。「每行一张卡片」的竖排形式没有做，遇到放不下的表格再考虑。
+- **测试环境**：容器、CI 没设 UTF-8 语言环境时，无界面的 Chromium 会把中文下载文件名换成 "download"。`scripts/e2e.mjs` 启动浏览器时补上 `LANG=C.UTF-8`。Windows 上的 Edge 不受影响。

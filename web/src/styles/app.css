@@ -4198,3 +4198,120 @@ button.stat-card:hover {
     padding: 0 12px;
   }
 }
+
+/* ============================================================
+   导出 PDF 面板（export-001）
+   ============================================================ */
+
+/* 阅览模式（z-index 90）里也能打开 */
+.overlay--above {
+  z-index: 100;
+}
+
+.export-dialog {
+  width: min(420px, 100%);
+  padding: 20px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.export-dialog__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 600;
+}
+
+.export-dialog__note {
+  margin: 4px 0 16px;
+  font-size: 13px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-dialog__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 0;
+  border: none;
+}
+.export-dialog__group legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.export-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-ctl);
+  cursor: pointer;
+}
+.export-option:hover {
+  background: var(--bg-hover);
+}
+.export-option.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.export-option input {
+  grid-row: span 2;
+  accent-color: var(--accent);
+}
+.export-option__label {
+  font-size: 14px;
+  font-weight: 600;
+}
+.export-option__hint {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.export-dialog__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 13.5px;
+  color: var(--text);
+}
+.export-dialog__check input {
+  accent-color: var(--accent);
+}
+
+.export-dialog__error {
+  margin: 12px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--danger);
+  background: rgba(var(--danger-rgb), 0.1);
+}
+
+.export-dialog__foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+/* 打印兜底用的隐藏 iframe */
+.print-frame {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 0;
+  height: 0;
+  border: 0;
+}

@@ -72,7 +72,8 @@ const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
 const server = spawn(process.execPath, [path.join(root, "server", "main.ts")], {
   cwd: root,
-  env: { ...process.env, STUDY_DATA: dataDir, STUDY_PORT: String(port) },
+  // 导出 PDF 用 Playwright 自带的 Chromium，结果不依赖这台机器装没装 Edge / Chrome
+  env: { ...process.env, STUDY_DATA: dataDir, STUDY_PORT: String(port), STUDY_PDF_BROWSER: chromium.executablePath() },
   stdio: ["ignore", "pipe", "pipe"],
 });
 let serverLog = "";
@@ -117,7 +118,11 @@ function watch(page) {
 let exitCode = 0;
 try {
   await waitHealthy();
-  browser = await chromium.launch({ headless: process.env.E2E_HEADED !== "1" });
+  browser = await chromium.launch({
+    headless: process.env.E2E_HEADED !== "1",
+    // 系统没设 UTF-8 语言环境时（容器、CI），Chromium 会把中文下载文件名换成 "download"
+    env: { ...process.env, LANG: process.env.LANG || "C.UTF-8" },
+  });
 
   const page = await browser.newPage({ viewport: { width: 1360, height: 860 } });
   watch(page);
@@ -385,6 +390,82 @@ try {
     await page.keyboard.press("Escape");
     await page.locator(".reader").waitFor({ state: "detached" });
     await page.setViewportSize({ width: 1360, height: 860 });
+  });
+
+  await step("导出手机可读 PDF：先保存再导出，纸张 100×178mm、有书签；阅览模式里也能导出；没浏览器时改用打印", async () => {
+    await page.locator(".reader").waitFor({ state: "detached" });
+    const ta = page.locator(".editor__textarea");
+    await ta.click();
+    await page.keyboard.press("Control+End");
+    await page.keyboard.type("\n导出前刚写的一行");
+    const order = [];
+    const record = (req) => {
+      const url = new URL(req.url());
+      if (req.method() !== "GET" && url.pathname.startsWith("/api/")) order.push(`${req.method()} ${url.pathname}`);
+    };
+    page.on("request", record);
+    await page.locator(".editor").getByLabel("导出 PDF").click();
+    await page.locator(".export-dialog").waitFor();
+    expect(await page.getByLabel("手机阅读").isChecked(), "默认应选手机阅读版式");
+    const downloading = page.waitForEvent("download", { timeout: 30000 });
+    await page.locator(".export-dialog").getByRole("button", { name: "导出" }).click();
+    const download = await downloading;
+    page.off("request", record);
+    expect(download.suggestedFilename() === "阅览测试.pdf", `文件名应为「阅览测试.pdf」，实际 ${download.suggestedFilename()}`);
+    const putAt = order.findIndex((entry) => entry.startsWith("PUT /api/notes/"));
+    const exportAt = order.indexOf("POST /api/export/pdf");
+    expect(putAt !== -1 && exportAt > putAt, `应先保存再导出，实际顺序：${order.join(", ")}`);
+    const pdfPath = path.join(artifacts, "08-export-phone.pdf");
+    await download.saveAs(pdfPath);
+    const raw = fs.readFileSync(pdfPath).toString("latin1");
+    expect(raw.startsWith("%PDF"), "下载的应是 PDF");
+    const box = /MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/.exec(raw);
+    expect(
+      box && Math.abs(Number(box[1]) - 283) < 2 && Math.abs(Number(box[2]) - 505) < 2,
+      `纸张应约 283×505pt（100×178mm），实际 ${box ? `${box[1]}×${box[2]}` : "读不到"}`,
+    );
+    expect(raw.includes("/Outlines"), "应有书签（标题目录）");
+    await page.locator(".export-dialog").waitFor({ state: "detached" });
+    await page.getByText("已导出：阅览测试.pdf").waitFor({ timeout: 3000 });
+
+    // 阅览模式里打开导出面板：面板在阅览之上，Esc 先关面板、再退出阅览
+    await page.keyboard.press("Control+Shift+F");
+    await page.locator(".reader").waitFor();
+    await page.locator(".reader").getByLabel("导出 PDF").click();
+    await page.locator(".export-dialog").waitFor();
+    await page.keyboard.press("Escape");
+    await page.locator(".export-dialog").waitFor({ state: "detached" });
+    expect((await page.locator(".reader").count()) === 1, "关掉导出面板后应还在阅览模式里");
+
+    // 电脑上没有 Edge / Chrome：改用浏览器的打印对话框，版式一样
+    await page.route("**/api/export/pdf", (route) =>
+      route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "没找到 Edge 或 Chrome", code: "no-browser" }),
+      }),
+    );
+    // 模拟的 503 会被浏览器记成一条资源加载错误：只在这里、只放过这一种
+    const errorsBefore = pageErrors.length;
+    // 无界面浏览器里打印对话框立刻结束、打印框随即被移除：出现时就记下它的内容
+    await page.evaluate(() => {
+      window.__printSrc = null;
+      new MutationObserver((records) => {
+        for (const record of records)
+          for (const node of record.addedNodes)
+            if (node instanceof HTMLIFrameElement && node.classList.contains("print-frame")) window.__printSrc = node.srcdoc;
+      }).observe(document.body, { childList: true });
+    });
+    await page.locator(".reader").getByLabel("导出 PDF").click();
+    await page.locator(".export-dialog").getByRole("button", { name: "导出" }).click();
+    await page.getByText("已打开打印对话框").waitFor({ timeout: 5000 });
+    const frameHtml = await page.evaluate(() => window.__printSrc);
+    expect(frameHtml && frameHtml.includes("size: 100mm 178mm"), "打印兜底应用同样的手机版式");
+    await page.unroute("**/api/export/pdf");
+    const during = pageErrors.splice(errorsBefore);
+    pageErrors.push(...during.filter((e) => !/status of 503/.test(e)));
+    await page.keyboard.press("Escape");
+    await page.locator(".reader").waitFor({ state: "detached" });
   });
 
   await step("主题切换并在刷新后保持", async () => {

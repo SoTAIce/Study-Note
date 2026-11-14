@@ -33,6 +33,15 @@ import { loadProviders, maskProviders, runtimeOf, saveProviders, streamTurn } fr
 import { sseStart } from "./sse.ts";
 import { ChangeBatcher } from "./events.ts";
 import {
+  buildExportHtml,
+  defaultBrowser,
+  exportFileName,
+  loadExportCss,
+  printPdf,
+  type ExportLayout,
+  type ExportOptions,
+} from "./export.ts";
+import {
   describeWebdavError,
   loadBackupConfig,
   maskBackupConfig,
@@ -78,6 +87,8 @@ export type ApiDeps = {
   backup?: BackupService;
   /** 测试注入：替掉真实的服务商流式调用 */
   agentStream?: StreamTurn;
+  /** 测试注入：找导出 PDF 用的浏览器（默认按 STUDY_PDF_BROWSER → Edge → Chrome 查找） */
+  findPdfBrowser?: () => string | null;
 };
 
 type NoteRow = {
@@ -439,6 +450,57 @@ export function createApi(deps: ApiDeps) {
         const limitRaw = Number(url.searchParams.get("limit") ?? "20");
         const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 50) : 20;
         sendJson(res, 200, { items: search(db, q, { tag, limit }) });
+        return true;
+      }
+
+      // —— 导出（export-001）：pdf 由后台浏览器生成；html 给找不到浏览器时的打印对话框兜底 ——
+      if (route[0] === "export" && route.length === 2 && (route[1] === "pdf" || route[1] === "html") && method === "POST") {
+        const payload = await readJson(req);
+        const id = typeof payload.id === "string" ? payload.id : "";
+        if (!id) throw new HttpError(400, "缺少 id");
+        const layout = payload.layout ?? "phone";
+        if (layout !== "phone" && layout !== "a4") throw new HttpError(400, "layout 只能是 phone 或 a4");
+        const options: ExportOptions = {
+          layout: layout as ExportLayout,
+          dark: payload.dark === true,
+          meta: payload.meta !== false,
+        };
+        const row = findNote(id);
+        const note = store.read(row.path);
+        const meta = note.parsed.meta;
+        const html = buildExportHtml(
+          { title: meta.title, body: note.parsed.body, updated: meta.updated, group: meta.group ?? null, tags: meta.tags },
+          options,
+          loadExportCss(),
+        );
+        if (route[1] === "html") {
+          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+          res.end(html);
+          return true;
+        }
+        const browser = (deps.findPdfBrowser ?? defaultBrowser)();
+        if (!browser) {
+          sendJson(res, 503, {
+            error: "没找到 Edge 或 Chrome，没法在后台生成 PDF",
+            code: "no-browser",
+          });
+          return true;
+        }
+        let pdf: Buffer;
+        try {
+          pdf = await printPdf(browser, html);
+        } catch (err) {
+          sendJson(res, 500, { error: `生成 PDF 失败：${(err as Error).message}`, code: "print-failed" });
+          return true;
+        }
+        const filename = exportFileName(meta.title);
+        res.writeHead(200, {
+          "content-type": "application/pdf",
+          "content-length": String(pdf.length),
+          "content-disposition": `attachment; filename="note.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+          "cache-control": "no-store",
+        });
+        res.end(pdf);
         return true;
       }
 

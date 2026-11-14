@@ -27,6 +27,9 @@ type Props = {
   onExit: () => void;
   onOpenWikilink: (target: string) => void;
   onFilterTag: (tag: string) => void;
+  onExport: () => void;
+  /** 上面又开了弹窗（导出面板）：键盘先让给它 */
+  paused?: boolean;
 };
 
 const FONT_KEY = "study.previewFont";
@@ -80,7 +83,7 @@ function isTyping(target: EventTarget | null): boolean {
  * - 每篇读到的位置记在本机，下次回到那里
  */
 export default function ReadingMode(props: Props) {
-  const { noteId, title, body, meta, prev, next, onNavigate, onExit, onOpenWikilink, onFilterTag } = props;
+  const { noteId, title, body, meta, prev, next, onNavigate, onExit, onOpenWikilink, onFilterTag, onExport, paused } = props;
   const [fontSize, setFontSize] = useState(readFont);
   const [width, setWidth] = useState<ReadingWidth>(() => parseWidth(load(WIDTH_KEY)));
   const [outline, setOutline] = useState<OutlineItem[]>([]);
@@ -177,7 +180,7 @@ export default function ReadingMode(props: Props) {
   // 键盘：Esc / E 退出，← → [ ] 切篇；带修饰键或正在输入时放行
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
-      if (event.ctrlKey || event.metaKey || event.altKey || isTyping(event.target)) return;
+      if (paused || event.ctrlKey || event.metaKey || event.altKey || isTyping(event.target)) return;
       const key = event.key;
       if (key === "Escape" || key === "e" || key === "E") {
         event.preventDefault();
@@ -193,7 +196,7 @@ export default function ReadingMode(props: Props) {
     }
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [onExit, onNavigate, prev, next]);
+  }, [onExit, onNavigate, prev, next, paused]);
 
   const hasToc = outline.length > 1;
   const metaParts = [`更新于 ${relativeTime(meta.updated)}`, meta.group ? `分组 ${meta.group}` : null].filter(Boolean);
@@ -250,6 +253,9 @@ export default function ReadingMode(props: Props) {
             title="放大字号"
           >
             A+
+          </button>
+          <button type="button" className="icon-btn" onClick={onExport} title="导出 PDF" aria-label="导出 PDF">
+            <Icon name="download" size={16} />
           </button>
           <button type="button" className="btn btn--small btn--primary" onClick={onExit} title="回到编辑（Esc 或 E）">
             编辑 <kbd>Esc</kbd>

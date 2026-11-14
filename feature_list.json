@@ -512,14 +512,19 @@
       "area": "export",
       "title": "导出手机可读 PDF",
       "user_visible_behavior": "编辑器点「导出 PDF」，选手机阅读版式，直接下载 标题.pdf；手机上不用放大即可阅读，代码表格不被截断，有书签。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "单测：导出 HTML 生成、浏览器探测",
         "接口测试：/api/export/pdf",
         "E2E：下载 PDF 检查页面尺寸与书签"
       ],
-      "evidence": [],
-      "notes": "方案：docs/superpowers/specs/2026-11-14-reading-mode-pdf-export-design.md（已批准）。依赖 reading-001 的阅读排版。"
+      "evidence": [
+        "pnpm test：373 通过（新增 server/tests/export.test.ts 6 条：转义与 CSP、版式与深色、标题只出现一次且元信息在下、token 读取、文件名、找浏览器；web/src/lib/export.test.ts 2 条；api.test.ts 1 条：html 兜底、503 no-browser、500 print-failed、400、404）",
+        "pnpm e2e：16 步通过；新步骤「导出手机可读 PDF…」检查先 PUT 保存再 POST 导出、下载文件名「阅览测试.pdf」、MediaBox 约 283×505pt、有 /Outlines 书签、阅览模式里导出面板在上层且 Esc 先关面板、模拟 no-browser 时打印兜底用同样的手机版式；PDF 存为 e2e-artifacts/08-export-phone.pdf",
+        "人工看图：演示笔记（含代码、4 列表格）导出手机版与深色版，pdftoppm 转图检查：中文正常、代码自动换行、表格完整、页码 1 / 4、深色背景铺满整页",
+        "./init.sh 全绿（2026-11-14）"
+      ],
+      "notes": "方案：docs/superpowers/specs/2026-11-14-reading-mode-pdf-export-design.md（已批准）。依赖 reading-001 的阅读排版。 实现记录见方案第十一节：打印改用 --remote-debugging-pipe + Page.printToPDF。"
     },
     {
       "id": "export-002",

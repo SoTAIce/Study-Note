@@ -16,6 +16,8 @@ let base: string;
 let store: NoteStore;
 let db: ReturnType<typeof openDb>;
 let indexer: Indexer;
+/** 导出 PDF 用的浏览器：测试里按需改 */
+let pdfBrowser: string | null = null;
 
 before(async () => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sn-api-"));
@@ -29,7 +31,7 @@ before(async () => {
   });
   db = openDb(path.join(tmp, "index.db"));
   indexer = new Indexer({ db, store });
-  const api = createApi({ store, indexer, db });
+  const api = createApi({ store, indexer, db, findPdfBrowser: () => pdfBrowser });
   const app = createApp({ dataDir: tmp, notesRoot, distDir: path.join(tmp, "dist"), api });
   server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -378,4 +380,35 @@ test("保存接口报告哪些会影响左栏 / 反链的东西变了（perf-001
     ...none,
     title: true,
   });
+});
+
+test("导出：html 版可用于打印兜底；找不到浏览器回 503 no-browser；浏览器起不来回 500；参数错 400；笔记不存在 404", async () => {
+  const created = await call("POST", "/api/notes", { title: "导出测试", body: "# 导出测试\n\n正文 <b>粗</b>" });
+  const id = created.json.id as string;
+
+  const res = await fetch(`${base}/api/export/html`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, layout: "phone" }),
+  });
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-type") ?? "", /text\/html/);
+  const html = await res.text();
+  assert.match(html, /size: 100mm 178mm/);
+  assert.ok(html.includes("&lt;b&gt;粗&lt;/b&gt;"));
+
+  pdfBrowser = null;
+  const none = await call("POST", "/api/export/pdf", { id });
+  assert.equal(none.status, 503);
+  assert.equal(none.json.code, "no-browser");
+
+  pdfBrowser = path.join(tmp, "不存在的浏览器.exe");
+  const broken = await call("POST", "/api/export/pdf", { id });
+  assert.equal(broken.status, 500);
+  assert.equal(broken.json.code, "print-failed");
+  pdfBrowser = null;
+
+  assert.equal((await call("POST", "/api/export/pdf", { id, layout: "letter" })).status, 400);
+  assert.equal((await call("POST", "/api/export/pdf", {})).status, 400);
+  assert.equal((await call("POST", "/api/export/pdf", { id: "nope" })).status, 404);
 });

@@ -3,6 +3,7 @@
  * 所有错误统一抛 ApiError（带 HTTP status 与原始 payload），409 冲突可识别。
  */
 
+import { fileNameFromDisposition, type ExportLayout } from "./lib/export.ts";
 import type { IndexChanges } from "./lib/save-plan.ts";
 
 export type NoteType = "note" | "idea" | "source";
@@ -708,3 +709,49 @@ export function restoreFromSnapshot(day: string, relPath: string, baseHash: stri
     body: jsonBody({ day, relPath, baseHash }),
   });
 }
+
+// —— 导出 PDF（export-001） ——
+
+
+export type ExportRequest = { id: string; layout: ExportLayout; dark: boolean; meta: boolean };
+
+/** 后台生成 PDF。找不到浏览器时抛 ApiError(503)，payload.code === "no-browser" */
+export async function exportPdf(input: ExportRequest): Promise<{ blob: Blob; fileName: string }> {
+  let res: Response;
+  try {
+    res = await fetch("/api/export/pdf", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    });
+  } catch (err) {
+    throw new ApiError(0, "连不上本地服务，请确认 Study Notes 已启动", err);
+  }
+  if (!res.ok) {
+    let payload: unknown = null;
+    try {
+      payload = await res.json();
+    } catch {
+      payload = null;
+    }
+    const message = isRecord(payload) && typeof payload.error === "string" ? payload.error : `导出失败（HTTP ${res.status}）`;
+    throw new ApiError(res.status, message, payload);
+  }
+  return { blob: await res.blob(), fileName: fileNameFromDisposition(res.headers.get("content-disposition"), "笔记.pdf") };
+}
+
+/** 导出用的自包含 HTML：找不到浏览器时交给浏览器的打印对话框 */
+export async function exportHtml(input: ExportRequest): Promise<string> {
+  const res = await fetch("/api/export/html", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new ApiError(res.status, `导出失败（HTTP ${res.status}）`);
+  return res.text();
+}
+
+export function isNoBrowser(err: unknown): boolean {
+  return err instanceof ApiError && isRecord(err.payload) && err.payload.code === "no-browser";
+}
+
