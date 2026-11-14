@@ -347,7 +347,7 @@ test("真实 fs.watch：应用刚保存后 0.8 秒内外部又改了，外部修
     indexer.indexFile(note.relPath);
     indexer.onChange((e) => events.push(e));
     await new Promise((r) => setTimeout(r, 400));
-    assert.deepEqual(events, [], `自己的写入不应再通知：${JSON.stringify(events)}`);
+    assert.equal(events.length, 0, `自己的写入不应再通知：${JSON.stringify(events)}`);
 
     // 仍在 0.8 秒时间窗内：外部改写
     const abs = path.join(notesRoot, note.relPath);
