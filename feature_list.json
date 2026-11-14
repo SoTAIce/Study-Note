@@ -148,13 +148,18 @@
       "area": "harness",
       "title": "GitHub Actions 持续集成",
       "user_visible_behavior": "每次推送和 PR 自动在 Linux、Windows 上各跑一遍 ./init.sh（依赖、typecheck、test、build、e2e），失败时 PR 上能看到；Windows 上导出 PDF 用系统自带的 Edge。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "推一个提交，Actions 两个系统都全绿",
         "失败时能看到红色（不专门推坏分支验证：用户 2026-11-14 要求不做故意改坏的检查）"
       ],
-      "evidence": [],
-      "notes": ""
+      "evidence": [
+        "GitHub Actions 第 4 次运行（run 43541045585，提交 ee03430）：verify (ubuntu-latest) 与 verify (windows-latest) 均 success；两边都是 ./init.sh 全绿：374 个单元/接口测试 + E2E 16 步",
+        "Windows 任务里导出 PDF 走 E2E_PDF_BROWSER=system，由服务自己按「Edge → Chrome」查找浏览器（日志未打印路径）；该步 13.5 秒通过",
+        "失败时能看到红色：前 3 次运行就是真实失败（Windows 上 15 个单元测试、Linux 上导出 PDF、Windows 上找不到 Playwright），Actions 显示 failure 并带日志；没有专门推坏分支（用户要求不做故意改坏的检查）",
+        "E2E 截图与导出的 PDF 作为附件上传（e2e-artifacts-<os>，保留 14 天）"
+      ],
+      "notes": "工作流 .github/workflows/ci.yml。Playwright 1.63.0 装在 $RUNNER_TEMP/playwright 并用 NODE_PATH 指向（不进项目依赖）；Linux 设 STUDY_PDF_NO_SANDBOX=1（GitHub 的 Ubuntu 不允许普通用户建 Chromium 沙箱）。.gitattributes 让 *.sh 固定 LF。Actions 提示 Node 20 版的 action 已弃用（目前被强制用 Node 24 跑，不影响结果）。"
     },
     {
       "id": "trash-001",

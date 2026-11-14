@@ -53,3 +53,5 @@ pnpm start
 - `claude-progress.md`：每个会话的进度日志；`session-handoff.md`：中途交接
 - `./init.sh`：标准验证路径（依赖 → 类型检查 → 单元测试 → 构建 → 端到端测试），基线不绿先修基线
 - `pnpm e2e`：真浏览器端到端冒烟测试（需要 Playwright），截图在 `e2e-artifacts/`
+
+每次推送和 PR 会在 GitHub Actions 上用 Linux、Windows 各跑一遍完整基线（`./init.sh`），结果在仓库的 Actions 页，失败时可下载截图和导出的 PDF 附件。

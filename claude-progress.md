@@ -6,8 +6,8 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-14，373 个单元/接口测试 + E2E 16 步
-- 优先级最高的未完成功能：`ci-001`（reading-001、export-001 已完成）
+- 最近一次全绿：2026-11-14，374 个单元/接口测试 + E2E 16 步（本机 + GitHub Actions 的 Linux、Windows）
+- 优先级最高的未完成功能：`trash-001`（ci-001 已完成）
 - 当前阻塞：无
 
 ## 会话记录
@@ -100,3 +100,15 @@
 - 验证：./init.sh 全绿（373 + E2E 16 步）；演示笔记导出后转图人工检查。
 - 风险：只在 Linux 的 Chromium 上实测过，Windows 上的 Edge 需要在用户电脑上验一次（`docs/验收清单.md` 可加一条）；宽到放不下的表格只做了折行和缩小字号。
 - 下一步：ci-001。
+
+### 会话 012 · 2026-11-14 · GitHub Actions 持续集成（ci-001）
+
+- 用户决定：Linux、Windows 都跑。
+- 完成：`.github/workflows/ci.yml`（推送和 PR 时两个系统各跑一遍 ./init.sh，上传截图和导出的 PDF）；Windows 上导出 PDF 用系统浏览器（`E2E_PDF_BROWSER=system`）；`.gitattributes` 让 shell 脚本固定 LF。
+- 支撑性修复（CI 暴露的真实问题）：
+  1. Windows：路径里有 8.3 短名（如 `RUNNER~1`）时，在还不存在的子目录（`inbox/` 等）新建笔记被误报「路径越界（链接）」，15 个测试失败。`server/store.ts` 的 `realPathOf` 改为解析最近的已存在上级再拼回；`store.test.ts` 加了用目录链接模拟的回归测试。
+  2. GitHub 的 Ubuntu 不允许普通用户建 Chromium 沙箱，导出 PDF 失败：加 `STUDY_PDF_NO_SANDBOX=1`，只在 CI 的 Linux 上设置。
+  3. Windows 上 npm 全局目录不在 Node 查找路径里：CI 把 Playwright 装进固定目录再用 NODE_PATH 指过去；E2E 找不到 Playwright 时报出具体原因。
+- 验证：Actions 第 4 次运行两边 success（374 + E2E 16 步）；本机 ./init.sh 全绿。
+- 风险：日志没记录 Windows 上导出用的是哪个浏览器（按查找顺序应是 Edge）；「Edge 正开着时导出」仍要在用户电脑上验。
+- 下一步：trash-001。
