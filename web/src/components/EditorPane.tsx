@@ -6,29 +6,7 @@ import { relativeTime } from "../lib/time.ts";
 import type { ViewMode } from "../lib/theme.ts";
 import Icon, { type IconName } from "./Icon.tsx";
 import { continueList, indent, makeLink, toggleWrap, type Edit } from "../lib/edit-ops.ts";
-
-/**
- * 把一次替换应用到正文框。用浏览器的 insertText，这样 Ctrl+Z 能撤回；
- * 不支持时退回 setRangeText 并补一个 input 事件（React 靠它更新状态）。
- */
-function applyEdit(textarea: HTMLTextAreaElement, edit: Edit): void {
-  textarea.focus();
-  textarea.setSelectionRange(edit.from, edit.to);
-  let applied = false;
-  try {
-    applied =
-      edit.insert === ""
-        ? edit.from === edit.to || document.execCommand("delete", false)
-        : document.execCommand("insertText", false, edit.insert);
-  } catch {
-    applied = false;
-  }
-  if (!applied) {
-    textarea.setRangeText(edit.insert, edit.from, edit.to, "end");
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-  }
-  textarea.setSelectionRange(edit.selStart, edit.selEnd);
-}
+import { applyEditUndoable } from "../lib/textarea-edit.ts";
 
 /** 正文框里的编辑键（editor-001）：Tab 缩进、回车续列表、Ctrl+B / I / K */
 function editForKey(event: KeyboardEvent<HTMLTextAreaElement>): { edit: Edit | null; handled: boolean } {
@@ -188,7 +166,7 @@ export default function EditorPane({
     if (!handled) return;
     event.preventDefault();
     event.stopPropagation();
-    if (edit) applyEdit(event.currentTarget, edit);
+    if (edit) applyEditUndoable(event.currentTarget, edit);
   }
 
   function reportSelection(event: SyntheticEvent<HTMLTextAreaElement>): void {

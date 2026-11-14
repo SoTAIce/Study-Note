@@ -9,7 +9,7 @@
  *
  * 覆盖：首页（含加载占位）→ 新建笔记 → 编辑自动保存 → 搜索 → 历史版本（对比 / 恢复 / 撤销恢复）
  *      → 外部编辑同步（改标题、自动载入、冲突、外部删除进回收站）
- *      → 阅览模式 → 导出 PDF → 回收站（自动清理过期、清空二次确认）→ 分组里新建 → 编辑器快捷操作
+ *      → 阅览模式 → 导出 PDF → 回收站（自动清理过期、清空二次确认）→ 分组里新建 → 编辑器快捷操作 → AI 改动可撤回
  *      → 主题切换并记住 → 窄屏抽屉不横向溢出；全程不允许出现页面报错。
  * 截图写到 e2e-artifacts/（已 gitignore），作为验证证据。
  *
@@ -636,6 +636,72 @@ try {
     await kb.press("Escape");
     await page.locator(".palette").waitFor({ state: "detached" });
     await page.getByText("已保存").first().waitFor({ timeout: 10000 });
+  });
+
+  await step("AI 插入 / 整篇替换后 Ctrl+Z 能撤回", async () => {
+    // 用假的 AI 接口：配置显示「已配置」，生成接口直接回一段固定文字
+    await page.route("**/api/config", (route) =>
+      route.request().method() === "GET"
+        ? route.fulfill({
+            json: { baseUrl: "", model: "mock-model", apiKeyMasked: "****", maxTokens: 1000, temperature: 0.3, configured: true },
+          })
+        : route.fallback(),
+    );
+    const sse = (text) =>
+      `data: ${JSON.stringify({ delta: text })}\n\nevent: done\ndata: ${JSON.stringify({ callId: null })}\n\n`;
+    await page.route("**/api/ai/continue", (route) =>
+      route.fulfill({ headers: { "content-type": "text/event-stream" }, body: sse("AI 续写的一句。") }),
+    );
+    await page.route("**/api/ai/polish", (route) =>
+      route.fulfill({ headers: { "content-type": "text/event-stream" }, body: sse("AI 润色后的全文。") }),
+    );
+    await page.reload();
+    await page.locator(".note-row__text", { hasText: /^改了分组$/ }).click();
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "改了分组", null, { timeout: 5000 });
+    const ta = page.locator(".editor__textarea");
+    await ta.fill("原文。");
+    await ta.focus();
+    await page.keyboard.press("End");
+    const original = await ta.inputValue();
+
+    await page.keyboard.press("Control+j");
+    const ai = page.locator("section.ai");
+    await ai.getByRole("button", { name: "续写", exact: true }).click();
+    await ai.locator(".ai__output", { hasText: "AI 续写的一句。" }).waitFor({ timeout: 5000 });
+    await ai.getByRole("button", { name: "插入光标处" }).click();
+    await page.waitForFunction(() => document.querySelector(".editor__textarea")?.value.includes("AI 续写的一句。"), null, { timeout: 3000 });
+    expect((await ta.inputValue()) === `${original}AI 续写的一句。`, `应插在光标处：${JSON.stringify(await ta.inputValue())}`);
+    await ta.focus();
+    await page.keyboard.press("Control+z");
+    expect((await ta.inputValue()) === original, `Ctrl+Z 应撤回 AI 插入：${JSON.stringify(await ta.inputValue())}`);
+
+    await ai.getByRole("button", { name: "润色", exact: true }).click();
+    await ai.locator(".ai__output", { hasText: "AI 润色后的全文。" }).waitFor({ timeout: 5000 });
+    await ai.getByRole("button", { name: "整篇替换" }).click();
+    await page.waitForFunction(() => document.querySelector(".editor__textarea")?.value === "AI 润色后的全文。", null, { timeout: 3000 });
+    await ta.focus();
+    await page.keyboard.press("Control+z");
+    expect((await ta.inputValue()) === original, `Ctrl+Z 应撤回整篇替换：${JSON.stringify(await ta.inputValue())}`);
+    await page.keyboard.press("Control+Shift+z");
+    expect((await ta.inputValue()) === "AI 润色后的全文。", "Ctrl+Shift+Z 应重做整篇替换");
+    await page.keyboard.press("Control+z");
+
+    // 撤回后的内容要真的存到磁盘
+    await page.keyboard.press("Control+s");
+    await page.waitForFunction(
+      async () => {
+        const list = await (await fetch("/api/notes")).json();
+        const item = list.items.find((n) => n.title === "改了分组");
+        if (!item) return false;
+        const note = await (await fetch(`/api/notes/${item.id}`)).json();
+        return note.body === "原文。";
+      },
+      null,
+      { timeout: 8000 },
+    );
+    await page.unroute("**/api/config");
+    await page.unroute("**/api/ai/continue");
+    await page.unroute("**/api/ai/polish");
   });
 
   await step("主题切换并在刷新后保持", async () => {

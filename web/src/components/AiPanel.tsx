@@ -348,7 +348,7 @@ export default function AiPanel({
                 <button type="button" className="btn btn--small" onClick={() => insert("replace")} disabled={selectionLength === 0}>
                   替换选中
                 </button>
-                <p className="ai__hint">替换后用编辑器工具栏的「撤销 AI 改写」可以还原。</p>
+                <p className="ai__hint">替换后按 Ctrl+Z 或点编辑器工具栏的「撤销 AI 改写」都能还原。</p>
               </div>
             ) : (
               <div className="ai__ops">

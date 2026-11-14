@@ -218,12 +218,15 @@
       "area": "editor",
       "title": "AI 插入 / 替换可以用 Ctrl+Z 撤销",
       "user_visible_behavior": "AI 插入或整篇替换后按 Ctrl+Z 能逐步撤回，不丢浏览器撤销栈。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "E2E：模拟插入后 Ctrl+Z 还原"
       ],
-      "evidence": [],
-      "notes": ""
+      "evidence": [
+        "pnpm e2e「AI 插入 / 整篇替换后 Ctrl+Z 能撤回」通过（假的 AI 接口）：续写插入光标处后 Ctrl+Z 回到原文；润色整篇替换后 Ctrl+Z 回到原文、Ctrl+Shift+Z 重做；撤回后的内容 Ctrl+S 存到磁盘",
+        "./init.sh 全绿：398 个测试 + E2E 20 步（2026-11-14）"
+      ],
+      "notes": "正文框隐藏（只看预览）时退回直接改状态，这时只能用「撤销 AI 改写」按钮还原。"
     },
     {
       "id": "editor-003",

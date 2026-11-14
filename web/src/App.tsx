@@ -31,6 +31,8 @@ import { resolveKey } from "./lib/keyboard.ts";
 import { filterLabel, type Filter } from "./lib/nav.ts";
 import { closeNoteTab, renameNoteTab, syncNoteTabTitles, upsertNoteTab, type NoteTab } from "./lib/note-tabs.ts";
 import { neighbors } from "./lib/reading.ts";
+import type { Edit } from "./lib/edit-ops.ts";
+import { applyEditUndoable } from "./lib/textarea-edit.ts";
 import { connectLive, decideExternalChange, DELETE_CONFIRM_MS, touchesNote, type NoteChange } from "./lib/live.ts";
 import {
   autosaveDelay,
@@ -681,15 +683,39 @@ export default function App() {
     aiUndoRef.current = prev;
     checkpointRef.current = "ai";
     setAiUndoAvailable(true);
-    setDraft((currentDraft) => ({ ...currentDraft, body: next }));
-    draftRef.current = { ...draftRef.current, body: next };
-    dirtyRef.current = true;
-    setSaveError(null);
+    setBodyFromAi({ from: 0, to: prev.length, insert: next, selStart: 0, selEnd: 0 }, true);
+    showToast("已整篇替换，Ctrl+Z 或「撤销 AI 改写」都能还原", "ok");
+  }
+
+  /**
+   * AI 改正文（editor-002）：优先走正文框的撤销栈，这样 Ctrl+Z 能一步步撤回；
+   * 正文框不在（例如只看预览）时退回直接改状态。两条路最后都按「AI 改动」快速保存。
+   */
+  function setBodyFromAi(edit: Edit, keepScroll: boolean): void {
+    const body = draftRef.current.body;
+    const textarea = textareaRef.current;
+    const scrollTop = textarea?.scrollTop ?? 0;
+    const viaUndoStack = textarea !== null && textarea.value === body && applyEditUndoable(textarea, edit);
+    if (viaUndoStack) {
+      if (keepScroll && textarea) textarea.scrollTop = scrollTop;
+      setSelectionLength(Math.abs(edit.selEnd - edit.selStart));
+    } else {
+      const next = body.slice(0, edit.from) + edit.insert + body.slice(edit.to);
+      setDraft((currentDraft) => ({ ...currentDraft, body: next }));
+      draftRef.current = { ...draftRef.current, body: next };
+      dirtyRef.current = true;
+      setSaveError(null);
+      window.requestAnimationFrame(() => {
+        const element = textareaRef.current;
+        if (!element) return;
+        element.setSelectionRange(edit.selStart, edit.selEnd);
+        if (keepScroll) element.scrollTop = scrollTop;
+      });
+    }
     if (!conflictRef.current) {
       setSaveStatus((prevStatus) => (prevStatus === "saving" ? prevStatus : "dirty"));
       scheduleSave(QUICK_SAVE_MS);
     }
-    showToast("已整篇替换，可用「撤销 AI 改写」还原", "ok");
   }
 
   function undoReplace(): void {
@@ -697,14 +723,7 @@ export default function App() {
     if (prev === null) return;
     aiUndoRef.current = null;
     setAiUndoAvailable(false);
-    setDraft((currentDraft) => ({ ...currentDraft, body: prev }));
-    draftRef.current = { ...draftRef.current, body: prev };
-    dirtyRef.current = true;
-    setSaveError(null);
-    if (!conflictRef.current) {
-      setSaveStatus((prevStatus) => (prevStatus === "saving" ? prevStatus : "dirty"));
-      scheduleSave(QUICK_SAVE_MS);
-    }
+    setBodyFromAi({ from: 0, to: draftRef.current.body.length, insert: prev, selStart: 0, selEnd: 0 }, true);
     showToast("已还原到 AI 改写前", "ok");
   }
 
@@ -1100,26 +1119,12 @@ export default function App() {
       removeTo = start;
     }
 
-    const next = body.slice(0, insertAt) + payload + body.slice(removeTo);
     checkpointRef.current = "ai";
-    setDraft((prev) => ({ ...prev, body: next }));
-    draftRef.current = { ...draftRef.current, body: next };
-    dirtyRef.current = true;
-    setSaveError(null);
-    if (!conflictRef.current) {
-      setSaveStatus((prev) => (prev === "saving" ? prev : "dirty"));
-      scheduleSave(QUICK_SAVE_MS);
-    }
-
     const caret = insertAt + payload.length;
-    window.requestAnimationFrame(() => {
-      const element = textareaRef.current;
-      if (!element) return;
-      element.focus();
-      element.setSelectionRange(caret, caret);
-      setSelectionLength(0);
-    });
-    showToast("已插入 AI 建议", "ok");
+    setBodyFromAi({ from: insertAt, to: removeTo, insert: payload, selStart: caret, selEnd: caret }, false);
+    window.requestAnimationFrame(() => textareaRef.current?.focus());
+    setSelectionLength(0);
+    showToast("已插入 AI 建议，Ctrl+Z 可撤回", "ok");
   }
 
   // —— 快捷键 ——

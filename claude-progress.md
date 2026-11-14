@@ -6,8 +6,8 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-14，398 个单元/接口测试 + E2E 19 步（本机）
-- 优先级最高的未完成功能：`editor-002`（editor-001 已完成）
+- 最近一次全绿：2026-11-14，398 个单元/接口测试 + E2E 20 步（本机）
+- 优先级最高的未完成功能：`editor-003`（editor-002 已完成）
 - 当前阻塞：无
 
 ## 会话记录
@@ -134,3 +134,10 @@
 - 验证：edit-ops.test.ts 16 条；E2E 新增一步（真实键盘输入，含 Ctrl+Z 撤回加粗）；./init.sh 398 + E2E 19 步全绿。
 - 风险：execCommand 已被标为过时，但 Chromium / Edge / Firefox 仍支持；不支持时退回 setRangeText（这种情况下 Ctrl+Z 不保证）。
 - 下一步：editor-002（AI 插入 / 替换可 Ctrl+Z 撤销，可复用这次的 applyEdit）。
+
+### 会话 016 · 2026-11-14 · AI 改动可 Ctrl+Z 撤回（editor-002）
+
+- 完成：把 editor-001 的应用函数抽成 `web/src/lib/textarea-edit.ts` 的 `applyEditUndoable`（先确认焦点真在正文框上再 insertText，防止把文字插进别的输入框；不支持时用 setRangeText + input 事件）。`App.tsx` 新增 `setBodyFromAi`：AI 插入、整篇替换、「撤销 AI 改写」都走它，走不了撤销栈（正文框隐藏）时退回直接改状态；两条路都按 AI 改动快速保存。整篇替换保留滚动位置。
+- 验证：E2E 新增一步（假的 AI 接口；插入 → Ctrl+Z；整篇替换 → Ctrl+Z → Ctrl+Shift+Z 重做 → Ctrl+Z → Ctrl+S 落盘）；./init.sh 398 + E2E 20 步全绿。
+- 风险：只看预览模式下 AI 改动不进撤销栈，只能用「撤销 AI 改写」按钮。
+- 下一步：editor-003（输入 [[ 补全标题）。
