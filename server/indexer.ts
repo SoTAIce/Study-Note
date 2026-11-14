@@ -55,13 +55,26 @@ export class Indexer {
     }
   }
 
-  /** 自己写入文件时先登记，watcher 在时间窗内看到该路径就跳过，避免自触发重索引。 */
+  /**
+   * 自己写入文件时先登记。watcher 在时间窗内看到该路径时，读一下文件和索引比内容：
+   * 一样（就是自己刚写的）才跳过；不一样说明外部恰好在这时改了它，照常索引。
+   * 以前时间窗内一律跳过，外部在保存后 0.8 秒内的修改会丢（CI 上偶发）。
+   */
   ignoreNext(relPath: string): void {
     this.ignored.set(relPath, Date.now() + SELF_WRITE_WINDOW_MS);
     setTimeout(() => {
       const until = this.ignored.get(relPath);
       if (until !== undefined && until <= Date.now()) this.ignored.delete(relPath);
     }, SELF_WRITE_WINDOW_MS + 50).unref?.();
+  }
+
+  /** 磁盘上的这篇和索引里记的内容一样（hash 相同） */
+  private matchesIndex(relPath: string): boolean {
+    if (!fs.existsSync(this.store.absPath(relPath))) return false;
+    const row = this.db.prepare("SELECT content_hash AS hash FROM notes WHERE path = ?").get(relPath) as
+      | { hash: string }
+      | undefined;
+    return row !== undefined && this.store.read(relPath).hash === row.hash;
   }
 
   private isSelfWrite(relPath: string): boolean {
@@ -233,7 +246,7 @@ export class Indexer {
       if (!filename) return;
       const rel = String(filename).split(path.sep).join("/").split("\\").join("/");
       if (!rel.toLowerCase().endsWith(".md")) return;
-      if (this.isSelfWrite(rel)) return;
+      const selfWrite = this.isSelfWrite(rel);
       const pending = timers.get(rel);
       if (pending) clearTimeout(pending);
       timers.set(
@@ -241,6 +254,7 @@ export class Indexer {
         setTimeout(() => {
           timers.delete(rel);
           try {
+            if (selfWrite && this.matchesIndex(rel)) return;
             this.indexFile(rel);
           } catch {
             // 文件在防抖窗口内被删掉了；下次扫描会纠正

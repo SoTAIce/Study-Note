@@ -328,3 +328,38 @@ test("真实 fs.watch：外部改写文件后 2 秒内收到 changed，删除后
     db.close();
   }
 });
+
+test("真实 fs.watch：应用刚保存后 0.8 秒内外部又改了，外部修改不丢；自己的写入不重复通知", async () => {
+  const { notesRoot, store, db, indexer } = mk();
+  const note = store.create({ title: "保存后马上外部改", body: "原文" });
+  indexer.indexFile(note.relPath);
+  const events: Array<{ kind: string; id?: string; hash?: string }> = [];
+  const stop = indexer.watch();
+  const until = async (pred: () => boolean, ms = 2500) => {
+    const end = Date.now() + ms;
+    while (!pred() && Date.now() < end) await new Promise((r) => setTimeout(r, 25));
+    return pred();
+  };
+  try {
+    // 应用自己的保存：登记 → 写 → 立即索引（和 api.ts 的顺序一样）
+    indexer.ignoreNext(note.relPath);
+    const saved = store.save(note.relPath, "应用保存的", note.hash);
+    indexer.indexFile(note.relPath);
+    indexer.onChange((e) => events.push(e));
+    await new Promise((r) => setTimeout(r, 400));
+    assert.deepEqual(events, [], `自己的写入不应再通知：${JSON.stringify(events)}`);
+
+    // 仍在 0.8 秒时间窗内：外部改写
+    const abs = path.join(notesRoot, note.relPath);
+    fs.writeFileSync(abs, fs.readFileSync(abs, "utf8").replace("应用保存的", "外部紧接着改的"), "utf8");
+    assert.ok(
+      await until(() => events.some((e) => e.kind === "changed" && e.id === note.id && e.hash !== saved.hash)),
+      `时间窗内的外部修改也应收到 changed，实际：${JSON.stringify(events)}`,
+    );
+    const row = db.prepare("SELECT excerpt FROM notes WHERE id = ?").get(note.id) as { excerpt: string };
+    assert.match(row.excerpt, /外部紧接着改的/);
+  } finally {
+    stop();
+    db.close();
+  }
+});
