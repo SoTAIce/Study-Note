@@ -5,6 +5,7 @@
  * 用法：pnpm build && pnpm e2e
  *   E2E_KEEP=1      结束后不删临时数据目录（排查用）
  *   E2E_HEADED=1    有界面运行
+ *   E2E_PDF_BROWSER=system  导出 PDF 用服务自己找到的 Edge / Chrome（默认用 Playwright 的 Chromium）
  *
  * 覆盖：首页（含加载占位）→ 新建笔记 → 编辑自动保存 → 搜索 → 历史版本（对比 / 恢复 / 撤销恢复）
  *      → 外部编辑同步（改标题、自动载入、冲突、外部删除进回收站）
@@ -68,12 +69,20 @@ fs.writeFileSync(
 fs.rmSync(artifacts, { recursive: true, force: true });
 fs.mkdirSync(artifacts, { recursive: true });
 
+/**
+ * 导出 PDF 用哪个浏览器：默认用 Playwright 自带的 Chromium，结果不依赖这台机器装没装 Edge / Chrome；
+ * E2E_PDF_BROWSER=system 时让服务自己去找（CI 的 Windows 上就是系统自带的 Edge）。
+ */
+function pdfBrowserEnv() {
+  if (process.env.E2E_PDF_BROWSER === "system") return {};
+  return { STUDY_PDF_BROWSER: chromium.executablePath() };
+}
+
 const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
 const server = spawn(process.execPath, [path.join(root, "server", "main.ts")], {
   cwd: root,
-  // 导出 PDF 用 Playwright 自带的 Chromium，结果不依赖这台机器装没装 Edge / Chrome
-  env: { ...process.env, STUDY_DATA: dataDir, STUDY_PORT: String(port), STUDY_PDF_BROWSER: chromium.executablePath() },
+  env: { ...process.env, STUDY_DATA: dataDir, STUDY_PORT: String(port), ...pdfBrowserEnv() },
   stdio: ["ignore", "pipe", "pipe"],
 });
 let serverLog = "";

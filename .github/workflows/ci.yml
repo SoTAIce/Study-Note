@@ -1,0 +1,66 @@
+# 持续集成（ci-001）：每次推送和 PR 在 Linux、Windows 上各跑一遍完整基线（./init.sh）。
+# Windows 上导出 PDF 用系统自带的 Edge，顺带验证真实部署环境。
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Playwright 不进项目依赖（本机和云端会话各自全局安装），这里也全局装同一版本
+      PLAYWRIGHT_VERSION: 1.63.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 安装 Playwright 与 Chromium
+        run: |
+          npm install -g "playwright@${PLAYWRIGHT_VERSION}"
+          echo "NODE_PATH=$(npm root -g)" >> "$GITHUB_ENV"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            npx --yes "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium
+          else
+            npx --yes "playwright@${PLAYWRIGHT_VERSION}" install chromium
+          fi
+
+      - name: 完整基线（依赖 → 类型检查 → 单元测试 → 构建 → E2E）
+        env:
+          # Windows：导出 PDF 走服务自己找到的 Edge，而不是 Playwright 的 Chromium
+          E2E_PDF_BROWSER: ${{ runner.os == 'Windows' && 'system' || '' }}
+        run: ./init.sh
+
+      - name: 上传 E2E 截图与导出的 PDF
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts-${{ matrix.os }}
+          path: e2e-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14

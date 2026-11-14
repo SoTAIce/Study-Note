@@ -1,0 +1,2 @@
+# shell 脚本必须是 LF：Windows 上 Git 默认转成 CRLF 后 bash 跑不起来（./init.sh、CI 都受影响）
+*.sh text eol=lf
