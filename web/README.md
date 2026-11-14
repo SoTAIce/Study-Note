@@ -9,7 +9,7 @@ React 19 + Vite，无状态管理库。入口 `src/main.tsx` → `src/App.tsx`�
 | `src/App.tsx` | 全部顶层状态：当前笔记、草稿、自动保存（停手 5 秒 / 连续输入最多 30 秒 / 失焦立即存，节奏见 `lib/save-plan.ts`；baseHash 冲突处理）、筛选、弹层开关、快捷键 |
 | `src/api.ts` / `groups-api.ts` / `agent-api.ts` | 类型化 API 客户端，字段与 `server/api.ts` 一一对齐 |
 | `src/components/` | 视图组件。`Sidebar` 左栏、`EditorPane` 编辑页、`RightRail`+`AiPanel` 右栏、`HistoryPanel` 历史版本、`BackupPanel` 备份、`AiChatPage` AI 对话页、`ReadingMode` 阅览模式、`ExportDialog` 导出 PDF、`Icon` 内置图标 |
-| `src/lib/` | 纯函数（都有 `*.test.ts`）：markdown 渲染、diff、快捷键、时间、主题偏好；`live.ts` 外部编辑同步（连接 `/api/events` + 「当前这篇变了怎么办」的决策）；`save-plan.ts` 自动保存节奏、保存后刷新什么、回声过滤；`reading.ts` 阅览模式的目录 / 当前小节 / 上一篇下一篇 / 位置记忆；`export.ts` 导出选项与下载文件名 |
+| `src/lib/` | 纯函数（都有 `*.test.ts`）：markdown 渲染、diff、快捷键、时间、主题偏好；`live.ts` 外部编辑同步（连接 `/api/events` + 「当前这篇变了怎么办」的决策）；`save-plan.ts` 自动保存节奏、保存后刷新什么、回声过滤；`reading.ts` 阅览模式的目录 / 当前小节 / 上一篇下一篇 / 位置记忆；`export.ts` 导出选项与下载文件名；`trash.ts` 回收站条目还剩几天自动清理 |
 | `src/styles/global.css` | 设计 token：浅色 / 深色两套，颜色只用这里的变量（带透明度用 `rgba(var(--accent-rgb), x)`） |
 | `src/styles/app.css` | 组件样式，按区块分节 |
 | `src/styles/content.css` / `reading.css` | 正文排版（预览 / 阅览 / PDF 共用）与阅读排版（字号随容器、代码换行、表格不截断） |

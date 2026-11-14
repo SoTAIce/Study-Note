@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import * as api from "../api.ts";
 import type { TrashItem } from "../api.ts";
 import { relativeTime } from "../lib/time.ts";
+import { purgeLabel } from "../lib/trash.ts";
 
 type Props = {
   onBack: () => void;
@@ -14,6 +15,10 @@ export default function TrashView({ onBack, onRestored }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [retentionDays, setRetentionDays] = useState(30);
+  const [confirming, setConfirming] = useState(false);
+  const [emptying, setEmptying] = useState(false);
+  const [emptyError, setEmptyError] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -21,6 +26,7 @@ export default function TrashView({ onBack, onRestored }: Props) {
     try {
       const res = await api.getTrash();
       setItems(res.items);
+      setRetentionDays(res.retentionDays);
     } catch (err) {
       setError(api.errorMessage(err));
     } finally {
@@ -46,17 +52,71 @@ export default function TrashView({ onBack, onRestored }: Props) {
     }
   }
 
+  async function emptyAll(): Promise<void> {
+    setEmptying(true);
+    setEmptyError(null);
+    try {
+      await api.emptyTrash();
+      setItems([]);
+      setConfirming(false);
+    } catch (err) {
+      setEmptyError(api.errorMessage(err));
+    } finally {
+      setEmptying(false);
+    }
+  }
+
   return (
     <div className="trash">
       <header className="trash__head">
         <div>
           <h1>回收站</h1>
-          <p className="trash__sub">删除的笔记先放这里，恢复后回到原来的文件位置。</p>
+          <p className="trash__sub">
+            删除的笔记先放这里，恢复后回到原来的文件位置；放进来超过 {retentionDays} 天的会自动永久删除。
+          </p>
         </div>
-        <button type="button" className="btn" onClick={onBack}>
-          返回笔记
-        </button>
+        <div className="trash__actions">
+          <button
+            type="button"
+            className="btn btn--danger"
+            onClick={() => {
+              setEmptyError(null);
+              setConfirming(true);
+            }}
+            disabled={items.length === 0 || confirming || emptying}
+          >
+            清空回收站
+          </button>
+          <button type="button" className="btn" onClick={onBack}>
+            返回笔记
+          </button>
+        </div>
       </header>
+
+      {confirming ? (
+        <div className="trash__confirm" role="alertdialog" aria-label="确认清空回收站">
+          <p>将永久删除回收站里的 {items.length} 篇笔记，删除后无法恢复。</p>
+          <div className="trash__confirm-actions">
+            <button type="button" className="btn btn--small" onClick={() => setConfirming(false)} disabled={emptying}>
+              取消
+            </button>
+            <button
+              type="button"
+              className="btn btn--small btn--danger"
+              onClick={() => void emptyAll()}
+              disabled={emptying}
+            >
+              {emptying ? "正在删除…" : "永久删除"}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {emptyError ? (
+        <p className="trash__state trash__state--error" role="alert">
+          清空失败：{emptyError}
+        </p>
+      ) : null}
 
       {loading ? <p className="trash__state">正在读取回收站…</p> : null}
 
@@ -85,7 +145,9 @@ export default function TrashView({ onBack, onRestored }: Props) {
             <div className="trash__info">
               <span className="trash__name">{item.origPath}</span>
               <span className="trash__meta">
-                删除于 {relativeTime(item.deletedAt)} · {item.name}
+                {["删除于 " + relativeTime(item.deletedAt), purgeLabel(item.deletedAt, retentionDays), item.name]
+                  .filter(Boolean)
+                  .join(" · ")}
               </span>
             </div>
             <button

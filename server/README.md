@@ -16,7 +16,7 @@ data/notes/*.md  ──(唯一真源)──►  store.ts  ──►  indexer.ts 
 |---|---|---|
 | `app.ts` | HTTP 闸门（Host / Origin / Content-Type 校验）、静态文件 | 安全闸门有测试 `tests/guard.test.ts`，不要放宽 |
 | `api.ts` | 全部 `/api/*` 路由 | 写笔记前 `indexer.ignoreNext()`，写完 `indexer.indexFile()` |
-| `store.ts` | 笔记读写、原子写、冲突检测（baseHash）、回收站、历史版本 | 所有写入都带 baseHash；整理动作（setGroup）不改 updated、不写历史 |
+| `store.ts` | 笔记读写、原子写、冲突检测（baseHash）、回收站（清空 `emptyTrash`、超过 30 天自动清理 `purgeTrash`）、历史版本 | 所有写入都带 baseHash；整理动作（setGroup）不改 updated、不写历史 |
 | `history.ts` | 历史版本命名 / 解析 / 分层稀疏（纯函数） | 设计：`docs/superpowers/specs/2026-11-12-note-history-design.md` |
 | `parse.ts` | frontmatter 解析与序列化、标签/双链提取 | 与前端 `web/src/lib/markdown.ts` 的标签规则保持一致 |
 | `indexer.ts` / `db.ts` / `search.ts` / `index-diff.ts` | SQLite 索引、FTS5 trigram 全文检索；`indexFile` 返回索引前后对比（保存接口据此告诉前端要不要刷新左栏 / 反链） | 索引是派生数据：schema 变了就重建，不做迁移 |

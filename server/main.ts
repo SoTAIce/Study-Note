@@ -7,7 +7,7 @@ import { createApi } from "./api.ts";
 import { createBackupService } from "./backup.ts";
 import { openDb } from "./db.ts";
 import { Indexer } from "./indexer.ts";
-import { NoteStore } from "./store.ts";
+import { NoteStore, TRASH_RETENTION_DAYS } from "./store.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dataDir = process.env.STUDY_DATA ?? path.join(root, "data");
@@ -25,6 +25,18 @@ const built = indexer.reindexAll();
 indexer.watch();
 
 const backup = createBackupService({ dataDir, notesRoot });
+
+// 回收站自动清理（trash-001）：启动时一次，之后每 6 小时一次，删掉超过保留天数的条目
+function purgeTrash(): void {
+  try {
+    const { removed } = store.purgeTrash();
+    if (removed > 0) console.log(`回收站：清理了 ${removed} 篇超过 ${TRASH_RETENTION_DAYS} 天的笔记`);
+  } catch (err) {
+    console.warn(`回收站自动清理失败：${(err as Error).message}`);
+  }
+}
+purgeTrash();
+const trashTick = setInterval(purgeTrash, 6 * 60 * 60 * 1000);
 
 const port = Number(process.env.STUDY_PORT ?? 7777);
 const app = createApp({ dataDir, notesRoot, api: createApi({ store, indexer, db, dataDir, backup }) });
@@ -60,6 +72,7 @@ const shutdown = (): void => {
   try {
     clearInterval(backupTick);
     clearTimeout(backupKickoff);
+    clearInterval(trashTick);
     server.close();
     db.close();
   } finally {

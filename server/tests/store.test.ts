@@ -310,3 +310,75 @@ test("笔记根目录经别名路径给出时（Windows 8.3 短名、符号链�
   assert.ok(fs.existsSync(path.join(real, "notes", ...created.relPath.split("/"))));
   fs.rmSync(base, { recursive: true, force: true });
 });
+
+test("emptyTrash 删掉回收站里所有条目和说明文件，返回篇数；空回收站返回 0", () => {
+  const { store } = mkStore();
+  assert.deepEqual(store.emptyTrash(), { removed: 0 });
+  const a = store.create({ title: "甲", body: "一" });
+  const b = store.create({ title: "乙", body: "二" });
+  store.moveToTrash(a.relPath);
+  store.moveToTrash(b.relPath);
+  assert.equal(store.listTrash().length, 2);
+  assert.deepEqual(store.emptyTrash(), { removed: 2 });
+  assert.equal(store.listTrash().length, 0);
+  assert.deepEqual(fs.readdirSync(store.trashDir), []);
+  // 笔记库里的其他笔记不受影响
+  const c = store.create({ title: "丙", body: "三" });
+  store.emptyTrash();
+  assert.equal(store.read(c.relPath).parsed.body, "三");
+});
+
+test("emptyTrash 不进子目录", () => {
+  const { store } = mkStore();
+  const sub = path.join(store.trashDir, "keep");
+  fs.mkdirSync(sub, { recursive: true });
+  fs.writeFileSync(path.join(sub, "x.md"), "x");
+  store.emptyTrash();
+  assert.ok(fs.existsSync(path.join(sub, "x.md")));
+});
+
+test("purgeTrash 只删超过保留天数的条目；deletedAt 坏掉的保留；无说明文件的按修改时间", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "sn-store-"));
+  let now = new Date(2026, 9, 1, 10, 0, 0);
+  const store = new NoteStore({
+    notesRoot: path.join(root, "notes"),
+    historyDir: path.join(root, "history"),
+    trashDir: path.join(root, "trash"),
+    now: () => now,
+  });
+  const old = store.create({ title: "旧", body: "旧" });
+  const oldName = store.moveToTrash(old.relPath).name;
+  now = new Date(2026, 9, 20, 10, 0, 0);
+  const fresh = store.create({ title: "新", body: "新" });
+  const freshName = store.moveToTrash(fresh.relPath).name;
+  // 说明文件里的时间读不懂：保留
+  fs.writeFileSync(path.join(store.trashDir, "broken.md"), "坏");
+  fs.writeFileSync(path.join(store.trashDir, "broken.md.json"), JSON.stringify({ origPath: "broken.md", deletedAt: "不是时间" }));
+  // 没有说明文件的旧条目：按文件修改时间算
+  const orphan = path.join(store.trashDir, "orphan.md");
+  fs.writeFileSync(orphan, "孤儿");
+  fs.utimesSync(orphan, new Date(2026, 8, 1), new Date(2026, 8, 1));
+
+  // 10/31：旧条目刚满 30 天，新条目才 11 天
+  now = new Date(2026, 9, 31, 10, 0, 0);
+  assert.deepEqual(store.purgeTrash(), { removed: 2 });
+  const left = fs.readdirSync(store.trashDir).sort();
+  assert.ok(!left.includes(oldName) && !left.includes(`${oldName}.json`));
+  assert.ok(!left.includes("orphan.md"));
+  assert.ok(left.includes(freshName) && left.includes(`${freshName}.json`));
+  assert.ok(left.includes("broken.md"));
+
+  // 差一点不到 30 天的不删
+  now = new Date(2026, 10, 19, 9, 59, 0);
+  assert.deepEqual(store.purgeTrash(), { removed: 0 });
+  now = new Date(2026, 10, 19, 10, 0, 0);
+  assert.deepEqual(store.purgeTrash(), { removed: 1 });
+  assert.equal(store.listTrash().map((t) => t.origPath).join(), "broken.md");
+});
+
+test("purgeTrash / emptyTrash：回收站目录不存在时不报错", () => {
+  const { store } = mkStore();
+  assert.equal(fs.existsSync(store.trashDir), false);
+  assert.deepEqual(store.purgeTrash(), { removed: 0 });
+  assert.deepEqual(store.emptyTrash(), { removed: 0 });
+});

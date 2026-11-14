@@ -83,6 +83,9 @@ export type StoredNote = {
 
 export type TrashedNote = { name: string; origPath: string; deletedAt: string };
 
+/** 回收站条目保留天数，超过就自动清理（trash-001） */
+export const TRASH_RETENTION_DAYS = 30;
+
 const MAX_VERSION_BYTES = 2 * 1024 * 1024;
 const pad = (n: number, width = 2): string => String(n).padStart(width, "0");
 
@@ -533,6 +536,54 @@ export class NoteStore {
       }
     }
     return out.sort((a, b) => b.deletedAt.localeCompare(a.deletedAt));
+  }
+
+  /**
+   * 清空回收站：删掉回收站目录里的所有文件（条目和它们的 .json 说明）。不能撤销。
+   * 只删回收站目录顶层的普通文件，不跟随链接、不进子目录。
+   */
+  emptyTrash(): { removed: number } {
+    if (!fs.existsSync(this.trashDir)) return { removed: 0 };
+    let removed = 0;
+    for (const entry of fs.readdirSync(this.trashDir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const file = path.join(this.trashDir, entry.name);
+      if (entry.name.toLowerCase().endsWith(".md")) removed += 1;
+      fs.rmSync(file, { force: true });
+    }
+    return { removed };
+  }
+
+  /**
+   * 自动清理：删除进回收站超过 maxAgeDays 天的条目。
+   * 以说明文件里的 deletedAt 为准；没有说明文件的旧条目按文件修改时间算；
+   * deletedAt 解析不了的条目保留（宁可多留，不误删）。
+   */
+  purgeTrash(maxAgeDays = TRASH_RETENTION_DAYS): { removed: number } {
+    if (!fs.existsSync(this.trashDir)) return { removed: 0 };
+    const cutoff = this.now().getTime() - maxAgeDays * 24 * 60 * 60 * 1000;
+    let removed = 0;
+    for (const entry of fs.readdirSync(this.trashDir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) continue;
+      const file = path.join(this.trashDir, entry.name);
+      const sidecar = `${file}.json`;
+      let at = Number.NaN;
+      if (fs.existsSync(sidecar)) {
+        try {
+          const data = JSON.parse(fs.readFileSync(sidecar, "utf8")) as { deletedAt?: string };
+          at = Date.parse(data.deletedAt ?? "");
+        } catch {
+          at = Number.NaN;
+        }
+      } else {
+        at = fs.statSync(file).mtimeMs;
+      }
+      if (!Number.isFinite(at) || at > cutoff) continue;
+      fs.rmSync(file, { force: true });
+      fs.rmSync(sidecar, { force: true });
+      removed += 1;
+    }
+    return { removed };
   }
 
   restore(name: string): { relPath: string } {

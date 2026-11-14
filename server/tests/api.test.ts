@@ -412,3 +412,26 @@ test("导出：html 版可用于打印兜底；找不到浏览器回 503 no-brow
   assert.equal((await call("POST", "/api/export/pdf", {})).status, 400);
   assert.equal((await call("POST", "/api/export/pdf", { id: "nope" })).status, 404);
 });
+
+test("回收站：GET 返回保留天数并清掉过期条目；DELETE 清空", async () => {
+  const created = await call("POST", "/api/notes", { title: "要清空的", body: "内容" });
+  await call("DELETE", `/api/notes/${created.json.id}`);
+  // 手工放一条 60 天前进回收站的条目
+  fs.writeFileSync(path.join(store.trashDir, "expired.md"), "过期");
+  fs.writeFileSync(
+    path.join(store.trashDir, "expired.md.json"),
+    JSON.stringify({ origPath: "expired.md", deletedAt: new Date(2026, 7, 1).toISOString() }),
+  );
+  const listed = await call("GET", "/api/trash");
+  assert.equal(listed.status, 200);
+  assert.equal(listed.json.retentionDays, 30);
+  assert.ok(!listed.json.items.some((i: any) => i.origPath === "expired.md"), "过期条目不应再出现");
+  assert.equal(fs.existsSync(path.join(store.trashDir, "expired.md")), false);
+  assert.ok(listed.json.items.length >= 1);
+
+  const emptied = await call("DELETE", "/api/trash");
+  assert.equal(emptied.status, 200);
+  assert.equal(emptied.json.removed, listed.json.items.length);
+  const after = await call("GET", "/api/trash");
+  assert.deepEqual(after.json.items, []);
+});

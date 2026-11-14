@@ -51,7 +51,7 @@ import {
 import type { Indexer } from "./indexer.ts";
 import type { NoteMeta, NoteType } from "./parse.ts";
 import { search } from "./search.ts";
-import { ConflictError, HistoryNotFoundError, toLocalIso, type HistoryReason, type NoteStore } from "./store.ts";
+import { ConflictError, HistoryNotFoundError, toLocalIso, TRASH_RETENTION_DAYS, type HistoryReason, type NoteStore } from "./store.ts";
 import { isValidVersionId } from "./history.ts";
 
 const MAX_BODY = 5 * 1024 * 1024;
@@ -624,7 +624,16 @@ export function createApi(deps: ApiDeps) {
       }
 
       if (route[0] === "trash" && route.length === 1 && method === "GET") {
-        sendJson(res, 200, { items: store.listTrash() });
+        // 打开回收站时顺手清掉过期条目，页面上就不会出现「已过期但还在」的条目
+        store.purgeTrash();
+        sendJson(res, 200, { items: store.listTrash(), retentionDays: TRASH_RETENTION_DAYS });
+        return true;
+      }
+
+      // 清空回收站（前端先二次确认）；不能撤销
+      if (route[0] === "trash" && route.length === 1 && method === "DELETE") {
+        const { removed } = store.emptyTrash();
+        sendJson(res, 200, { ok: true, removed });
         return true;
       }
 

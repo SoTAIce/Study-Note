@@ -390,8 +390,13 @@ export function getBacklinks(id: string): Promise<BacklinksResult> {
 
 // —— 回收站 / 捕获 / 索引 ——
 
-export function getTrash(): Promise<{ items: TrashItem[] }> {
+export function getTrash(): Promise<{ items: TrashItem[]; retentionDays: number }> {
   return request("/trash");
+}
+
+/** 清空回收站：永久删除，不能撤销 */
+export function emptyTrash(): Promise<{ ok: true; removed: number }> {
+  return request("/trash", { method: "DELETE" });
 }
 
 export function restoreTrash(name: string): Promise<{ ok: true; relPath: string }> {

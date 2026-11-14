@@ -167,12 +167,18 @@
       "area": "data",
       "title": "回收站清空与自动清理",
       "user_visible_behavior": "回收站页可「清空」（二次确认）；超过 30 天的条目自动清理。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "store/api 测试：清空、按时间清理",
         "E2E：回收站清空流程"
       ],
-      "evidence": [],
+      "evidence": [
+        "node --test server/tests/store.test.ts：emptyTrash 两条、purgeTrash（30 天边界、坏时间保留、无说明文件按 mtime）、目录不存在不报错，通过",
+        "node --test server/tests/api.test.ts「回收站：GET 返回保留天数并清掉过期条目；DELETE 清空」通过",
+        "node --test web/src/lib/trash.test.ts 3 条通过",
+        "pnpm e2e「回收站：过期条目自动清理，清空要二次确认，取消不删」通过，截图 e2e-artifacts/12-trash-confirm.png",
+        "./init.sh 全绿：382 个测试 + E2E 17 步（2026-11-14）"
+      ],
       "notes": ""
     },
     {

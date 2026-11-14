@@ -9,6 +9,7 @@
  *
  * 覆盖：首页（含加载占位）→ 新建笔记 → 编辑自动保存 → 搜索 → 历史版本（对比 / 恢复 / 撤销恢复）
  *      → 外部编辑同步（改标题、自动载入、冲突、外部删除进回收站）
+ *      → 阅览模式 → 导出 PDF → 回收站（自动清理过期、清空二次确认）
  *      → 主题切换并记住 → 窄屏抽屉不横向溢出；全程不允许出现页面报错。
  * 截图写到 e2e-artifacts/（已 gitignore），作为验证证据。
  *
@@ -484,6 +485,64 @@ try {
     pageErrors.push(...during.filter((e) => !/status of 503/.test(e)));
     await page.keyboard.press("Escape");
     await page.locator(".reader").waitFor({ state: "detached" });
+  });
+
+  await step("回收站：过期条目自动清理，清空要二次确认，取消不删", async () => {
+    const ids = [];
+    for (const title of ["回收甲", "回收乙"]) {
+      const created = await page.evaluate(
+        async (t) =>
+          (
+            await fetch("/api/notes", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ title: t, body: "要删的" }),
+            })
+          ).json(),
+        title,
+      );
+      ids.push(created.id);
+    }
+    for (const id of ids) {
+      const status = await page.evaluate(async (i) => (await fetch(`/api/notes/${i}`, { method: "DELETE" })).status, id);
+      expect(status === 200, `删除应成功，实际 ${status}`);
+    }
+    // 一条 40 天前进回收站的条目：打开回收站时应被自动清理
+    const trashDir = path.join(dataDir, ".trash");
+    const old = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000).toISOString();
+    fs.writeFileSync(path.join(trashDir, "expired-e2e.md"), "过期");
+    fs.writeFileSync(path.join(trashDir, "expired-e2e.md.json"), JSON.stringify({ origPath: "expired-e2e.md", deletedAt: old }));
+
+    await page.locator(".sidebar").getByRole("button", { name: "回收站" }).first().click();
+    const rows = page.locator(".trash__item");
+    await rows.first().waitFor({ timeout: 5000 });
+    expect((await page.locator(".trash__item", { hasText: "expired-e2e.md" }).count()) === 0, "过期条目不应出现");
+    expect(!fs.existsSync(path.join(trashDir, "expired-e2e.md")), "过期条目应已从磁盘删除");
+    expect(
+      (await page.locator(".trash__item", { hasText: "30 天后自动清理" }).count()) >= 2,
+      "刚删的条目应显示 30 天后自动清理",
+    );
+    const count = await rows.count();
+
+    const emptyBtn = page.getByRole("button", { name: "清空回收站" });
+    await emptyBtn.click();
+    const confirm = page.getByRole("alertdialog", { name: "确认清空回收站" });
+    await confirm.waitFor();
+    expect((await confirm.textContent()).includes(`${count} 篇`), "确认框应写明篇数");
+    await page.screenshot({ path: path.join(artifacts, "12-trash-confirm.png") });
+    await confirm.getByRole("button", { name: "取消" }).click();
+    await confirm.waitFor({ state: "detached" });
+    expect((await rows.count()) === count, "取消后条目都还在");
+
+    await emptyBtn.click();
+    await confirm.getByRole("button", { name: "永久删除" }).click();
+    await page.getByText("回收站是空的。").waitFor({ timeout: 5000 });
+    expect(await emptyBtn.isDisabled(), "空回收站时清空按钮应不可点");
+    const after = await api("/api/trash");
+    expect(after.items.length === 0, `清空后接口应返回空，实际 ${after.items.length}`);
+    expect(fs.readdirSync(trashDir).length === 0, "回收站目录应为空");
+    await page.getByRole("button", { name: "返回笔记" }).click();
+    await page.locator(".trash").waitFor({ state: "detached" });
   });
 
   await step("主题切换并在刷新后保持", async () => {
