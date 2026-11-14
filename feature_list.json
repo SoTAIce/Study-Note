@@ -486,6 +486,35 @@
       ],
       "evidence": [],
       "notes": "2026-11-13 云端演示截图发现：「梯度下降」摘要变成「更新参数：。」（行内代码被整段去掉）；「激活函数」摘要是「| 函数 | 特点 | |---|---|」。"
+    },
+    {
+      "id": "reading-001",
+      "priority": 3,
+      "area": "ui",
+      "title": "阅览模式：目录、进度、上一篇/下一篇、记住位置",
+      "user_visible_behavior": "一键进入只读阅览：正文居中、目录跳转并高亮当前小节、阅读进度条、←/→ 切换上一篇/下一篇、记住每篇读到的位置；窄屏目录收进抽屉。",
+      "status": "not_started",
+      "verification": [
+        "单测：目录提取、当前小节、上一篇/下一篇",
+        "E2E：目录跳转、切换、位置恢复、窄屏"
+      ],
+      "evidence": [],
+      "notes": "方案：docs/superpowers/specs/2026-11-14-reading-mode-pdf-export-design.md（待用户批准）"
+    },
+    {
+      "id": "export-001",
+      "priority": 3,
+      "area": "export",
+      "title": "导出手机可读 PDF",
+      "user_visible_behavior": "编辑器点「导出 PDF」，选手机阅读版式，直接下载 标题.pdf；手机上不用放大即可阅读，代码表格不被截断，有书签。",
+      "status": "not_started",
+      "verification": [
+        "单测：导出 HTML 生成、浏览器探测",
+        "接口测试：/api/export/pdf",
+        "E2E：下载 PDF 检查页面尺寸与书签"
+      ],
+      "evidence": [],
+      "notes": "方案：docs/superpowers/specs/2026-11-14-reading-mode-pdf-export-design.md（待用户批准）。依赖 reading-001 的阅读排版。"
     }
   ]
 }
