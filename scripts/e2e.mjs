@@ -35,8 +35,11 @@ function fail(message, fix) {
 let chromium;
 try {
   ({ chromium } = require("playwright"));
-} catch {
-  fail("找不到 playwright", "npm i -g playwright && npx playwright install chromium（云端会话已预装，无需安装）");
+} catch (err) {
+  fail(
+    `找不到 playwright（${err instanceof Error ? err.message.split("\n")[0] : err}；NODE_PATH=${process.env.NODE_PATH ?? "未设置"}）`,
+    "npm i -g playwright && npx playwright install chromium（云端会话已预装，无需安装）",
+  );
 }
 
 if (!fs.existsSync(path.join(root, "dist", "index.html"))) {

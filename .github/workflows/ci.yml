@@ -42,12 +42,15 @@ jobs:
 
       - name: 安装 Playwright 与 Chromium
         run: |
-          npm install -g "playwright@${PLAYWRIGHT_VERSION}"
-          echo "NODE_PATH=$(npm root -g)" >> "$GITHUB_ENV"
+          # 装进一个固定目录再用 NODE_PATH 指过去：Windows 上 npm 全局目录和 Node 的查找路径不一定一致
+          PW_DIR="${RUNNER_TEMP}/playwright"
+          npm install --no-save --no-audit --no-fund --prefix "$PW_DIR" "playwright@${PLAYWRIGHT_VERSION}"
+          echo "NODE_PATH=${PW_DIR}/node_modules" >> "$GITHUB_ENV"
+          PW_CLI="${PW_DIR}/node_modules/playwright/cli.js"
           if [ "$RUNNER_OS" = "Linux" ]; then
-            npx --yes "playwright@${PLAYWRIGHT_VERSION}" install --with-deps chromium
+            node "$PW_CLI" install --with-deps chromium
           else
-            npx --yes "playwright@${PLAYWRIGHT_VERSION}" install chromium
+            node "$PW_CLI" install chromium
           fi
 
       - name: 完整基线（依赖 → 类型检查 → 单元测试 → 构建 → E2E）
