@@ -74,4 +74,4 @@ Study Notes：本地个人笔记应用。`data/notes/*.md` 是唯一真源，SQL
 - 设计方案：`docs/superpowers/specs/`（实现计划在 `docs/superpowers/plans/`）
 - 收工自检：`docs/harness/clean-state-checklist.md`；验收评分：`docs/harness/evaluator-rubric.md`
 - 各模块质量等级：`docs/harness/quality.md`
-- 人工验收清单：`docs/验收清单.md`
+- 人工验收清单：`docs/验收清单.md`；2026-11 新功能的逐项测试表：`docs/测试文档-2026-11.md`
