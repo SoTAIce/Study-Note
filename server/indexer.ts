@@ -9,6 +9,8 @@ import { toLocalIso, type NoteStore, type StoredNote } from "./store.ts";
 const DEBOUNCE_MS = 250;
 /** 自己的写入事件通常几毫秒内就到；超过这个窗口的事件当外部修改，正常索引。 */
 const SELF_WRITE_WINDOW_MS = 800;
+/** reindexAll 每写这么多篇提交一次事务 */
+const REINDEX_BATCH = 500;
 
 /** indexFile 的结果：保存接口据此告诉前端要不要刷新左栏 / 反链 */
 export type IndexResult = {
@@ -148,10 +150,12 @@ export class Indexer {
       insertLink.run(id, link.title, this.resolveTargetId(link.title));
     }
 
-    this.db.prepare("DELETE FROM notes_fts WHERE note_id = ?").run(id);
+    // 全文行的 rowid 和 notes 行的 rowid 对齐：删改都按 rowid 定位（note_id 是 UNINDEXED 列，按它查会扫整张表）
+    const { rowid } = this.db.prepare("SELECT rowid FROM notes WHERE id = ?").get(id) as { rowid: number };
+    this.db.prepare("DELETE FROM notes_fts WHERE rowid = ?").run(rowid);
     this.db
-      .prepare("INSERT INTO notes_fts (note_id, title, body) VALUES (?, ?, ?)")
-      .run(id, note.parsed.meta.title, note.parsed.body);
+      .prepare("INSERT INTO notes_fts (rowid, note_id, title, body) VALUES (?, ?, ?, ?)")
+      .run(rowid, id, note.parsed.meta.title, note.parsed.body);
 
     // 之前引用过我标题的笔记，现在可以补上 target_id 了
     this.db
@@ -194,11 +198,13 @@ export class Indexer {
   }
 
   private deleteById(id: string): void {
+    // 先按 rowid 删全文行（必须在删 notes 行之前取 rowid）
+    const row = this.db.prepare("SELECT rowid FROM notes WHERE id = ?").get(id) as { rowid: number } | undefined;
+    if (row) this.db.prepare("DELETE FROM notes_fts WHERE rowid = ? AND note_id = ?").run(row.rowid, id);
     this.db.prepare("DELETE FROM notes WHERE id = ?").run(id);
     this.db.prepare("DELETE FROM tags WHERE note_id = ?").run(id);
     this.db.prepare("DELETE FROM links WHERE src_id = ?").run(id);
     this.db.prepare("UPDATE links SET target_id = NULL WHERE target_id = ?").run(id);
-    this.db.prepare("DELETE FROM notes_fts WHERE note_id = ?").run(id);
   }
 
   private resolveTargetId(title: string): string | null {
@@ -208,36 +214,68 @@ export class Indexer {
     return row ? row.id : null;
   }
 
-  reindexAll(): { indexed: number; removed: number; failed: number } {
+  /**
+   * 启动时把索引和磁盘对齐（perf-006）：
+   * - 内容 hash 和索引里一样的文件直接跳过（平时启动绝大多数文件都没变）；
+   * - 变了的、新的重新索引，磁盘上没有了的移除；
+   * - 每 REINDEX_BATCH 篇一个事务，免得每写一行就落一次盘。
+   * 索引里的数据只由文件内容决定，所以跳过没变的文件结果不变。
+   * force：左栏「重建索引」按钮用，不管有没有变都重写一遍（怀疑索引不对时的兜底）。
+   */
+  reindexAll(opts: { force?: boolean } = {}): { indexed: number; unchanged: number; removed: number; failed: number } {
     const files = this.store.list();
-    const known = new Set(
-      (this.db.prepare("SELECT path FROM notes").all() as Array<{ path: string }>).map((r) => r.path),
+    const known = new Map(
+      (this.db.prepare("SELECT path, content_hash AS hash FROM notes").all() as Array<{ path: string; hash: string }>).map(
+        (r) => [r.path, r.hash],
+      ),
     );
     let indexed = 0;
+    let unchanged = 0;
     let removed = 0;
     let failed = 0;
+    let inBatch = 0;
     this.muted += 1;
+    this.db.exec("BEGIN");
+    const commitEvery = () => {
+      inBatch += 1;
+      if (inBatch >= REINDEX_BATCH) {
+        this.db.exec("COMMIT");
+        this.db.exec("BEGIN");
+        inBatch = 0;
+      }
+    };
     try {
       for (const relPath of files) {
+        const indexedHash = known.get(relPath);
+        known.delete(relPath);
         try {
+          if (!opts.force && indexedHash !== undefined && indexedHash === contentHash(fs.readFileSync(this.store.absPath(relPath), "utf8"))) {
+            unchanged += 1;
+            continue;
+          }
           this.indexFile(relPath);
           indexed += 1;
+          commitEvery();
         } catch (err) {
           // 单个文件坏掉（编码异常、被别的程序锁住、同名目录）不该拖垮整次启动
           failed += 1;
           console.warn(`[index] 跳过无法索引的文件 ${relPath}：${(err as Error).message}`);
         }
-        known.delete(relPath);
       }
-      for (const stale of known) {
+      for (const stale of known.keys()) {
         this.removeFile(stale);
         removed += 1;
+        commitEvery();
       }
+      this.db.exec("COMMIT");
+    } catch (err) {
+      this.db.exec("ROLLBACK");
+      throw err;
     } finally {
       this.muted -= 1;
     }
     this.emit({ kind: "resync" });
-    return { indexed, removed, failed };
+    return { indexed, unchanged, removed, failed };
   }
 
   watch(): () => void {

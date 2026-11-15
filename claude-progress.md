@@ -6,8 +6,8 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-15，455 个单元/接口测试 + 搜索基准 + E2E 23 步（本机 + GitHub Actions 的 Linux、Windows）
-- 优先级最高的未完成功能：`perf-006`（启动索引提速，做 perf-003 时发现）
+- 最近一次全绿：2026-11-15，458 个单元/接口测试 + 搜索基准 + 启动索引基准 + E2E 23 步（本机；GitHub Actions 结果见会话 021）
+- 优先级最高的未完成功能：`ui-009`（侧栏加宽、可隐藏；Ctrl+B 与正文加粗冲突，需用户定快捷键）
 - 当前阻塞：无
 
 ## 会话记录
@@ -191,4 +191,13 @@
 - 验证：search.test.ts 新增 3 条；./init.sh 455 + 基准 + E2E 23 步全绿；GitHub Actions 运行 43658935465 两个系统 success（Windows 上基准同样在 200ms 内）。
 - 新发现（没做，已记 perf-006）：启动时每个文件都重新索引、每篇按 note_id 删全文行（1 万篇时每次约 10ms），大库启动可能一分多钟。
 - 下一步：perf-006。
+
+### 会话 021 · 2026-11-15 · 启动索引提速（perf-006）
+
+- 用户顺带提出：左右侧栏太窄、希望能隐藏并配 Ctrl+B → 记为 ui-009（Ctrl+B 在正文框里是加粗，要先和用户确认）。
+- 先写 `scripts/bench-index.ts`（真写 N 篇 .md，量首次建库 / 二次启动 / 改 20 篇后启动）。旧实现 2000 篇二次启动就要 10 秒：每次启动每篇都重新索引，且每篇按无索引的 note_id 删全文行。
+- 改 `server/indexer.ts`：hash 没变的跳过、500 篇一个事务、全文行 rowid 与 notes 对齐并按 rowid 删改；`SCHEMA_VERSION` 4；`POST /api/reindex` 用 force 全量。
+- 结果：1 万篇二次启动 213ms（首次建库 2.5 秒）。基准进 init.sh。
+- 验证：indexer.test.ts 新增 3 条；./init.sh 458 + 两个基准 + E2E 23 步全绿。
+- 下一步：ui-009。
 

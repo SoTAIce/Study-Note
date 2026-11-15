@@ -127,7 +127,7 @@ test("indexFile 更新 content_hash；removeFile 清干净；空目录 reindexAl
     trashDir: path.join(emptyRoot, "t"),
   });
   const emptyIndexer = new Indexer({ db: openDb(path.join(emptyRoot, "index.db")), store: emptyStore });
-  assert.deepEqual(emptyIndexer.reindexAll(), { indexed: 0, removed: 0, failed: 0 });
+  assert.deepEqual(emptyIndexer.reindexAll(), { indexed: 0, unchanged: 0, removed: 0, failed: 0 });
   db.close();
 });
 
@@ -219,9 +219,9 @@ test("索引表有 group_name 列，且把笔记的组写进去", () => {
   assert.equal(byPath.get(plain.relPath), null);
 });
 
-test("改组之后重新索引，group_name 跟着变；SCHEMA_VERSION 升到 3（摘要 / 收件箱规则变了要重建）", () => {
+test("改组之后重新索引，group_name 跟着变；SCHEMA_VERSION 升到 4（全文表 rowid 与 notes 对齐，旧库要重建）", () => {
   const { store, db, indexer } = mk();
-  assert.equal(SCHEMA_VERSION, 3);
+  assert.equal(SCHEMA_VERSION, 4);
 
   const note = store.create({ title: "Go 接口", body: "正文" });
   indexer.indexFile(note.relPath);
@@ -245,7 +245,7 @@ test("旧版本库（schema_version=1）打开后整库重建并带上 group_nam
   const cols = second.prepare("PRAGMA table_info(notes)").all() as Array<{ name: string }>;
   assert.ok(cols.some((col) => col.name === "group_name"), JSON.stringify(cols));
   const version = second.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string };
-  assert.equal(version.value, "3");
+  assert.equal(version.value, "4");
   second.close();
 });
 
@@ -362,4 +362,59 @@ test("真实 fs.watch：应用刚保存后 0.8 秒内外部又改了，外部修
     stop();
     db.close();
   }
+});
+
+test("启动时没变的文件跳过，改过 / 新增 / 删掉的照常处理（perf-006）", () => {
+  const { notesRoot, store, db, indexer } = mk();
+  const a = store.create({ title: "甲", body: "甲的正文 [[乙]]", tags: [] });
+  store.create({ title: "乙", body: "乙的正文", tags: [] });
+  const c = store.create({ title: "丙", body: "丙的正文", tags: [] });
+  assert.equal(indexer.reindexAll().indexed, 3);
+
+  const second = indexer.reindexAll();
+  assert.deepEqual(second, { indexed: 0, unchanged: 3, removed: 0, failed: 0 });
+
+  // 外部改甲、删丙、加丁
+  fs.appendFileSync(path.join(notesRoot, a.relPath), "\n外部补了一句「梯度下降」\n");
+  fs.rmSync(path.join(notesRoot, c.relPath));
+  fs.writeFileSync(path.join(notesRoot, "丁.md"), "# 丁\n\n新来的", "utf8");
+  const third = indexer.reindexAll();
+  assert.deepEqual(third, { indexed: 2, unchanged: 1, removed: 1, failed: 0 });
+
+  const titles = (db.prepare("SELECT title FROM notes ORDER BY title").all() as Array<{ title: string }>).map((r) => r.title);
+  assert.deepEqual(titles, ["丁", "乙", "甲"]);
+  // 全文表跟着变：行数一致，改过的内容搜得到，删掉的搜不到
+  const fts = (db.prepare("SELECT count(*) AS n FROM notes_fts").get() as { n: number }).n;
+  assert.equal(fts, 3);
+  const hit = db.prepare("SELECT note_id FROM notes_fts WHERE notes_fts MATCH ?").all('"梯度下降"') as Array<{ note_id: string }>;
+  assert.equal(hit.length, 1);
+  assert.equal((db.prepare("SELECT count(*) AS n FROM notes_fts WHERE body LIKE '%丙的正文%'").get() as { n: number }).n, 0);
+  // 甲 → 乙 的链接还在、已解析
+  const link = db.prepare("SELECT target_id FROM links WHERE target_title = '乙'").get() as { target_id: string | null };
+  assert.ok(link.target_id);
+});
+
+test("force 时不管有没有变都重写（左栏「重建索引」按钮）", () => {
+  const { store, indexer } = mk();
+  store.create({ title: "甲", body: "正文", tags: [] });
+  indexer.reindexAll();
+  assert.deepEqual(indexer.reindexAll({ force: true }), { indexed: 1, unchanged: 0, removed: 0, failed: 0 });
+});
+
+test("全文行的 rowid 与 notes 行对齐，反复改写后不留多余的全文行（perf-006）", () => {
+  const { notesRoot, store, db, indexer } = mk();
+  const notes = [1, 2, 3].map((i) => store.create({ title: `篇${i}`, body: `正文${i}`, tags: [] }));
+  indexer.reindexAll();
+  for (let round = 0; round < 3; round += 1) {
+    for (const n of notes) {
+      fs.appendFileSync(path.join(notesRoot, n.relPath), `\n第 ${round} 轮`);
+      indexer.indexFile(n.relPath);
+    }
+  }
+  indexer.removeFile(notes[1].relPath);
+  const mismatched = db
+    .prepare("SELECT count(*) AS n FROM notes n LEFT JOIN notes_fts f ON f.rowid = n.rowid WHERE f.note_id IS NOT n.id")
+    .get() as { n: number };
+  assert.equal(mismatched.n, 0);
+  assert.equal((db.prepare("SELECT count(*) AS n FROM notes_fts").get() as { n: number }).n, 2);
 });

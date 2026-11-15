@@ -64,7 +64,7 @@ server.on("error", (err: NodeJS.ErrnoException) => {
 server.listen(port, "127.0.0.1", () => {
   console.log(`Study Notes 已启动：http://127.0.0.1:${port}`);
   console.log(`数据目录：${dataDir}`);
-  console.log(`索引：${built.indexed} 条笔记，清理 ${built.removed} 条陈旧记录`);
+  console.log(`索引：${built.indexed} 篇重新索引，${built.unchanged} 篇没变跳过，清理 ${built.removed} 条陈旧记录`);
   if (built.failed > 0) console.warn(`有 ${built.failed} 个文件没能索引，见上方警告`);
 });
 

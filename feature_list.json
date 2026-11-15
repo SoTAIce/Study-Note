@@ -487,13 +487,33 @@
       "area": "perf",
       "title": "启动索引提速：没变的文件跳过，全文表按 rowid 删除",
       "user_visible_behavior": "笔记很多（1 万篇）时，启动服务不用等一分多钟；只有改过的文件才重新索引。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "基准：1 万篇的库二次启动 reindexAll 耗时",
         "indexer.test.ts：内容没变时不重写索引，变了照常更新"
       ],
-      "evidence": [],
+      "evidence": [
+        "基准 scripts/bench-index.ts（pnpm bench:index，已加进 ./init.sh）。旧实现 2000 篇：首次建库 3133ms、二次启动 9998ms、改 20 篇后 10477ms（随篇数平方增长，1 万篇估计约 4 分钟）",
+        "改法（server/indexer.ts）：reindexAll 先比内容 hash，没变的跳过；每 500 篇一个事务；全文行的 rowid 与 notes 行对齐，删改按 rowid（不再按无索引的 note_id 扫整表）；SCHEMA_VERSION 升到 4 让旧库重建对齐；左栏「重建索引」接口传 force 仍全量重写",
+        "新实现 1 万篇：首次建库 2481ms、二次启动 213ms、改 20 篇后 233ms，notes / notes_fts 行数都是 10000",
+        "node --test server/tests/indexer.test.ts 新增 3 条：没变跳过、改 / 删 / 新增照常且全文与链接正确；force 全量；反复改写后 rowid 对齐、不留多余全文行",
+        "./init.sh 全绿：458 个测试 + 搜索基准 + 启动索引基准 + E2E 23 步（2026-11-15）"
+      ],
       "notes": "2026-11-15 做 perf-003 时测得：notes_fts 按 note_id 删除一行在 1 万篇时约 10ms（note_id 是 UNINDEXED 列，整表扫描）；reindexAll 对每个文件都调 indexFile，已有索引时每篇都会删一次。"
+    },
+    {
+      "id": "ui-009",
+      "priority": 12,
+      "area": "ui",
+      "title": "侧栏加宽、可隐藏，并配快捷键",
+      "user_visible_behavior": "左栏和右栏比现在宽一些、更舒展；可以一键隐藏 / 显示，用快捷键切换，刷新后记住状态。",
+      "status": "not_started",
+      "verification": [
+        "单测：快捷键解析",
+        "E2E：快捷键隐藏 / 显示侧栏、刷新后保持、窄屏不受影响"
+      ],
+      "evidence": [],
+      "notes": "用户 2026-11-15 提出：边栏太窄不美观，希望加宽并可隐藏，最好用 Ctrl+B。注意 Ctrl+B 在正文框里已是加粗（editor-001），需和用户确认怎么分配。"
     },
     {
       "id": "perf-004",

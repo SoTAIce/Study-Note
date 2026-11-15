@@ -38,6 +38,8 @@ echo "==> 单元 / 接口测试"
 "${RUN[@]}" test
 echo "==> 搜索基准（1 万篇，每种查询 < 200ms）"
 "${RUN[@]}" run bench:search
+echo "==> 启动索引基准（1 万篇，二次启动 < 5 秒）"
+"${RUN[@]}" run bench:index
 echo "==> 构建前端"
 "${RUN[@]}" build
 

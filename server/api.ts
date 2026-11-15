@@ -735,7 +735,7 @@ export function createApi(deps: ApiDeps) {
       }
 
       if (route[0] === "reindex" && route.length === 1 && method === "POST") {
-        sendJson(res, 200, { ok: true, ...indexer.reindexAll() });
+        sendJson(res, 200, { ok: true, ...indexer.reindexAll({ force: true }) });
         return true;
       }
 

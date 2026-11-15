@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "e2e": "node scripts/e2e.mjs",
     "bench:search": "node scripts/bench-search.ts",
-    "verify": "pnpm typecheck && pnpm test && pnpm bench:search && pnpm build && pnpm e2e"
+    "bench:index": "node scripts/bench-index.ts",
+    "verify": "pnpm typecheck && pnpm test && pnpm bench:search && pnpm bench:index && pnpm build && pnpm e2e"
   },
   "dependencies": {
     "marked": "^18.1.2",

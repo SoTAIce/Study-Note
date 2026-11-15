@@ -49,6 +49,7 @@ Study Notes：本地个人笔记应用。`data/notes/*.md` 是唯一真源，SQL
 | 类型检查 | `pnpm typecheck` |
 | 端到端冒烟 | `pnpm build && pnpm e2e`（截图在 `e2e-artifacts/`） |
 | 搜索基准 | `pnpm bench:search`（1 万篇的临时库，任一查询中位数 > 200ms 失败；init.sh 已包含） |
+| 启动索引基准 | `pnpm bench:index`（1 万篇真 .md，二次启动 > 5 秒或行数不对就失败；init.sh 已包含） |
 | 本地运行 | `pnpm start` → http://127.0.0.1:7777（开发：`pnpm dev:server` + `pnpm dev`） |
 
 ## 硬性约束
