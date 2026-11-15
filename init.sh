@@ -40,6 +40,8 @@ echo "==> 搜索基准（1 万篇，每种查询 < 200ms）"
 "${RUN[@]}" run bench:search
 echo "==> 启动索引基准（1 万篇，二次启动 < 5 秒）"
 "${RUN[@]}" run bench:index
+echo "==> 复习日志基准（5000 张卡 + 5 万条记录，< 300ms）"
+"${RUN[@]}" run bench:review
 echo "==> 构建前端"
 "${RUN[@]}" build
 

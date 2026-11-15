@@ -24,6 +24,7 @@ data/notes/*.md  ──(唯一真源)──►  store.ts  ──►  indexer.ts 
 | `groups.ts` / `groups-api.ts` / `migrate-groups.ts` | 分组（frontmatter 的 `group:`） | 设计：`docs/superpowers/specs/2026-11-02-note-groups-design.md` |
 | `ai.ts` / `agent*.ts` / `providers/` | 右栏 AI 动作、AI 对话代理（计划 → 人审批 → 执行 → 可撤销） | 改笔记必须走计划审批；执行前快照到 `.history/batches/` |
 | `backup.ts` / `webdav.ts` | WebDAV 单向备份与快照恢复；图片附件按二进制只传 `latest/`，不进每日快照 / 月度归档 | 免费额度每 30 分钟 600 次请求 |
+| `cards.ts` / `fsrs.ts` / `review.ts` / `review-api.ts` | 知识简卡（srs-001）：从正文解析 `> [!card] 标题` 和 `概念 :: 解释`（索引进 `cards` 表）；FSRS 调度；`data/review/log.jsonl` 只追加的复习日志（打分 / 撤回 / 别名），启动重放算状态；卡片墙、今日队列、打分接口 | 复习状态只在日志里，SQLite 只放可重建的卡片；卡片 id 不写进笔记，改标题靠别名接上记录 |
 | `attachments.ts` | 图片附件：按文件头认类型（PNG / JPEG / GIF / WebP）、起名（带内容指纹，去重）、原子写到 `attachments/`；读文件接口的白名单 | 不收 SVG；读文件只限库内图片、隐藏目录不给，越界一律 404 |
 | `config.ts` / `net.ts` / `sse.ts` | 配置读写、网络错误翻译、SSE | |
 | `events.ts` | 笔记变化推送（`GET /api/events`）的合并：300ms 一批、同一路径留最后一次、超过 100 条改发 resync | 事件由 `Indexer.onChange` 发出（外部编辑和应用自己的写入都走这里），只说哪篇变了，不带正文 |

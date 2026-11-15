@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import * as api from "../api.ts";
+import { listCards, type ReviewCounts } from "../review-api.ts";
 import type { BacklinksResult } from "../api.ts";
 import AiPanel from "./AiPanel.tsx";
 import Icon from "./Icon.tsx";
@@ -11,6 +13,8 @@ type Props = {
   onOpenNote: (id: string) => void;
   onOpenTitle: (title: string) => void;
   onClose: () => void;
+  /** 知识简卡（srs-001）：这篇笔记的卡片数；version 变了（保存过）就重新查 */
+  cards: { noteId: string | null; version: string; onReview: () => void; onOpenWall: () => void };
   ai: {
     noteId: string | null;
     noteTitle: string;
@@ -32,8 +36,25 @@ export default function RightRail({
   onOpenNote,
   onOpenTitle,
   onClose,
+  cards,
   ai,
 }: Props) {
+  const [cardCounts, setCardCounts] = useState<ReviewCounts | null>(null);
+  useEffect(() => {
+    setCardCounts(null);
+    if (!cards.noteId) return;
+    let alive = true;
+    listCards({ note: cards.noteId }, "recent")
+      .then((res) => {
+        if (alive) setCardCounts({ total: res.total, due: res.due, fresh: res.fresh, tomorrow: res.tomorrow });
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [cards.noteId, cards.version]);
+  const todo = cardCounts ? cardCounts.due + cardCounts.fresh : 0;
+
   return (
     <aside className="rail" aria-label="关联与 AI">
       <header className="rail__head">
@@ -47,6 +68,25 @@ export default function RightRail({
       </header>
 
       <div className="rail__scroll">
+        {cardCounts && cardCounts.total > 0 ? (
+          <section className="rail__section rail__cards" aria-label="这篇的知识简卡">
+            <div className="rail__sectionhead">
+              <h3>知识简卡</h3>
+              <span className="rail__count">{cardCounts.total}</span>
+            </div>
+            <p className="rail__state">
+              这篇有 {cardCounts.total} 张简卡{todo > 0 ? `，今天要复习 ${todo} 张` : "，今天都复习过了"}。
+            </p>
+            <div className="rail__cards-actions">
+              <button type="button" className="btn btn--small btn--primary" onClick={cards.onReview} disabled={todo === 0}>
+                复习这篇
+              </button>
+              <button type="button" className="btn btn--small" onClick={cards.onOpenWall}>
+                在卡片墙看
+              </button>
+            </div>
+          </section>
+        ) : null}
         <section className="rail__section" aria-label="反查链接">
           <div className="rail__sectionhead">
             <h3>反查链接</h3>

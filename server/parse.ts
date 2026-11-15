@@ -121,6 +121,8 @@ function stripBlockMarks(line: string): string {
   if (TABLE_RULE.test(line) || /^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(line)) return "";
   let out = line
     .replace(/^\s{0,3}(>\s?)+/, "")
+    // Obsidian callout 的类型标记（知识简卡的 [!card] 等）不进摘要
+    .replace(/^\[![\w-]+\][-+]?\s*/, "")
     .replace(/^\s*([-*+]|\d{1,9}[.)])\s+(\[[ xX]\]\s+)?/, "")
     .replace(/^\s{0,3}#{1,6}\s+/, "");
   if (/^\s*\|.*\|\s*$/.test(out)) {

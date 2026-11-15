@@ -192,3 +192,27 @@ test("不存在的双链标成 is-missing，存在的照常；不给标题表时
   renderMarkdown("[[x]]", { knownTitle: () => false });
   assert.doesNotMatch(renderMarkdown("[[x]]"), /is-missing/);
 });
+
+test("知识简卡：`> [!card] 标题` 渲染成卡片，标题和要点分开；普通引用照旧（srs-001）", () => {
+  const html = renderMarkdown("> [!card] 梯度 **下降**\n> - 沿负梯度\n> - 公式");
+  assert.match(html, /<div class="kcard"><div class="kcard__title"><span class="kcard__badge">简卡<\/span>梯度 <strong>下降<\/strong><\/div>/);
+  assert.match(html, /<div class="kcard__body"><ul>\n<li>沿负梯度<\/li>/);
+  assert.doesNotMatch(html, /\[!card\]/);
+  // 标题后面直接跟文字行
+  assert.match(renderMarkdown("> [!card]- T\n> 正文一行"), /kcard__title"><span class="kcard__badge">简卡<\/span>T<\/div><div class="kcard__body"><p>正文一行<\/p>/);
+  assert.match(renderMarkdown("> 普通引用"), /^<blockquote>/);
+  // 没有标题的不算
+  assert.doesNotMatch(renderMarkdown("> [!card]\n> x"), /kcard/);
+  // 卡片里的原始 HTML 仍然转义
+  assert.doesNotMatch(renderMarkdown("> [!card] <img src=x onerror=alert(1)>\n> <script>x</script>"), /<img|<script/);
+});
+
+test("一行简卡：`概念 :: 解释` 渲染成术语 + 解释；行内代码、引用里、std::vector 不算", () => {
+  assert.match(
+    renderMarkdown("过拟合 :: 学进了 *噪声*"),
+    /<p class="kline"><span class="kline__term">过拟合<\/span><span class="kline__sep" aria-hidden="true">::<\/span><span class="kline__def">学进了 <em>噪声<\/em><\/span><\/p>/,
+  );
+  assert.doesNotMatch(renderMarkdown("行内 `a :: b` 不算"), /kline/);
+  assert.doesNotMatch(renderMarkdown("> 引用 :: 不算"), /kline/);
+  assert.doesNotMatch(renderMarkdown("用 std::vector 存"), /kline/);
+});

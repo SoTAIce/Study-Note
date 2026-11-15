@@ -12,6 +12,20 @@ export type ImageContext = {
   localSrc?: (candidates: string[]) => string | null;
 };
 let imageCtx: ImageContext | null = null;
+/** 正在渲染引用块的层数：普通引用里的 `a :: b` 不当一行简卡（和 server/cards.ts 的识别一致） */
+let quoteDepth = 0;
+
+/** 一行简卡：单行段落里有前后带空格的 ` :: `（行内代码里的不算） */
+function splitLineCard(text: string): [string, string] | null {
+  if (text.includes("\n")) return null;
+  const masked = text.replace(/`[^`\n]*`/g, (m) => "\u0000".repeat(m.length));
+  const at = masked.indexOf(" :: ");
+  if (at <= 0) return null;
+  const term = text.slice(0, at).trim();
+  const def = text.slice(at + 4).trim();
+  return term && def ? [term, def] : null;
+}
+
 /** 已有笔记的标题判断（ui-006）：给了才标出指向不存在笔记的双链 */
 let knownTitle: ((title: string) => boolean) | null = null;
 
@@ -212,6 +226,34 @@ const md = new Marked({
           : null;
       const src = imageCtx ? imageSrc(target) : target && "remote" in target ? target.remote : null;
       return imageTag(src, text, titleAttr);
+    },
+    // 知识简卡（srs-001）：`> [!card] 标题` 渲染成卡片；其余引用照旧
+    blockquote({ tokens }) {
+      const first = tokens[0];
+      const head = first?.type === "paragraph" ? /^\[!card\][-+]?[ \t]*([^\n]*)(?:\n([\s\S]*))?$/i.exec(first.text) : null;
+      quoteDepth += 1;
+      try {
+        if (head && head[1].trim()) {
+          const title = this.parser.parseInline(md.Lexer.lexInline(head[1].trim()));
+          const rest = head[2]?.trim() ? md.lexer(head[2]) : [];
+          const body = this.parser.parse([...rest, ...tokens.slice(1)]);
+          return `<div class="kcard"><div class="kcard__title"><span class="kcard__badge">简卡</span>${title}</div>${
+            body.trim() ? `<div class="kcard__body">${body}</div>` : ""
+          }</div>\n`;
+        }
+        return `<blockquote>\n${this.parser.parse(tokens)}</blockquote>\n`;
+      } finally {
+        quoteDepth -= 1;
+      }
+    },
+    paragraph({ tokens, text }) {
+      const pair = quoteDepth === 0 ? splitLineCard(text) : null;
+      if (pair) {
+        const term = this.parser.parseInline(md.Lexer.lexInline(pair[0]));
+        const def = this.parser.parseInline(md.Lexer.lexInline(pair[1]));
+        return `<p class="kline"><span class="kline__term">${term}</span><span class="kline__sep" aria-hidden="true">::</span><span class="kline__def">${def}</span></p>\n`;
+      }
+      return `<p>${this.parser.parseInline(tokens)}</p>\n`;
     },
     // 任务框带固定类名，方便预览里改成可点（editor-006）；默认禁用
     checkbox({ checked }) {

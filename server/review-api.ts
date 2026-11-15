@@ -109,7 +109,7 @@ export function createReviewRoutes(deps: ReviewDeps) {
 
   function counts(all: CardRow[]) {
     const { due, fresh } = buildQueue(log, all, { newPerDay: readNewPerDay(dataDir) });
-    return { total: all.length, due, fresh };
+    return { total: all.length, due, fresh, tomorrow: log.dueTomorrow(all.map((r) => r.id)) };
   }
 
   return async function handle(

@@ -43,6 +43,10 @@ type Props = {
   onClose: () => void;
   themePref: ThemePref;
   onCycleTheme: () => void;
+  /** 知识简卡（srs-001）：在卡片墙上、今天待复习张数（null = 还没读到） */
+  cardsActive: boolean;
+  reviewTodo: number | null;
+  onOpenCards: () => void;
   /** 宽屏收起左栏（ui-009，Ctrl+\） */
   onCollapse: () => void;
 };
@@ -92,6 +96,9 @@ export default function Sidebar({
   themePref,
   onCycleTheme,
   onCollapse,
+  cardsActive,
+  reviewTodo,
+  onOpenCards,
 }: Props) {
   const confirm = useConfirm();
   const [groupsOpen, setGroupsOpen] = useState(true);
@@ -250,7 +257,7 @@ export default function Sidebar({
       key: "all",
       label: "全部笔记",
       icon: "notes",
-      active: filter.kind === "all" && !trashActive && !aiActive,
+      active: filter.kind === "all" && !trashActive && !aiActive && !cardsActive,
       count: timeline.length,
       onClick: () => onFilter({ kind: "all" }),
     },
@@ -258,7 +265,7 @@ export default function Sidebar({
       key: "inbox",
       label: "收件箱",
       icon: "inbox",
-      active: filter.kind === "inbox" && !trashActive && !aiActive,
+      active: filter.kind === "inbox" && !trashActive && !aiActive && !cardsActive,
       count: ideaCount,
       onClick: () => onFilter({ kind: "inbox" }),
     },
@@ -266,8 +273,16 @@ export default function Sidebar({
       key: "timeline",
       label: "时间流",
       icon: "clock",
-      active: (filter.kind === "timeline" || filter.kind === "day") && !trashActive && !aiActive,
+      active: (filter.kind === "timeline" || filter.kind === "day") && !trashActive && !aiActive && !cardsActive,
       onClick: () => onFilter({ kind: "timeline" }),
+    },
+    {
+      key: "cards",
+      label: "知识简卡",
+      icon: "zap",
+      active: cardsActive,
+      count: reviewTodo ?? undefined,
+      onClick: onOpenCards,
     },
     {
       key: "ai",

@@ -20,15 +20,38 @@
       "area": "review",
       "title": "知识简卡（卡片墙 + 间隔复习）",
       "user_visible_behavior": "在笔记里用 `> [!card] 概念` 加要点、或一行 `概念 :: 解释` 写简卡；左栏「简卡」是卡片墙，可按分组 / 标签筛选浏览；每天按遗忘规律推送到期的卡片翻面回想、打分；复习进度存成文件并随备份。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "单测：cards / fsrs / review",
         "接口测试：卡片墙筛选、队列、打分、撤回",
         "基准：5000 张卡 + 5 万条日志重算 < 300ms",
         "E2E：写简卡 → 卡片墙 → 复习 → 重启后进度还在"
       ],
+      "evidence": [
+        "设计方案 docs/superpowers/specs/2026-11-15-spaced-repetition-design.md（v2，用户 2026-11-15 批准，第九节全部按推荐；第十一节记实现时的偏差）",
+        "node --test server/tests/cards.test.ts 6 条：两种写法、普通引用 / std::vector / 代码块 / 行内代码 / 无标题不误认、id 稳定、同名加序号、改标题按位置 + 相似度配对",
+        "node --test server/tests/fsrs.test.ts 9 条：新卡四档 10 分钟 / 15 分钟 / 2 天 / 8 天（初始稳定性即公开参数 w2、w3）、初始难度公式、间隔递增至熟练、四档单调、忘了进重学、确定性、到期记住率约 90%",
+        "node --test server/tests/review.test.ts 7 条：日志与逐次 FSRS 一致且重开可恢复、撤回、别名（含链式与防环）、坏行跳过、队列顺序与每日上限、刚忘的卡排最后、明天到期数",
+        "node --test server/tests/review-api.test.ts 5 条：卡片墙筛选、队列 / 打分 / 撤回、参数检查 400 / 404、每日新卡设置、改标题后记录跟着走；indexer / backup / parse / markdown / review-format / card-signature 各有新增",
+        "pnpm bench:review：5000 张卡 + 50100 行日志重放并出队列，中位数约 70ms（阈值 300ms，进 init.sh）",
+        "pnpm e2e「知识简卡…」通过：预览卡片、右栏「这篇有 2 张简卡」、卡片墙按分组筛选、今日复习翻面 / 四档间隔 / 打分 / Ctrl+Z 撤回 / 结束页统计、log.jsonl 落盘 3 次打分 + 1 次撤回、熟练度变「学习中」、Ctrl+Shift+R 进入复习（截图 e2e-artifacts/19-cards-wall.png、20-review-back.png）",
+        "./init.sh 全绿：497 个测试 + 三个基准 + E2E 25 步（2026-11-15）"
+      ],
+      "notes": "用户 2026-11-15 在功能讨论中只选了间隔复习，随后改为「知识简卡」并选择卡片墙 + 到期复习结合。设计方案 docs/superpowers/specs/2026-11-15-spaced-repetition-design.md（v2），用户 2026-11-15 批准，第九节全部按推荐。 运行第三方参考实现做数值核对被环境安全策略拦下，改为逐行对照源码移植（见方案第十一节）。"
+    },
+    {
+      "id": "srs-002",
+      "priority": 2,
+      "area": "review",
+      "title": "AI 提炼知识简卡（第二阶段）",
+      "user_visible_behavior": "右栏 AI「提炼简卡」：读当前笔记给出候选简卡，逐张勾选、可改，确认后写到笔记末尾的「## 简卡」一节，能 Ctrl+Z 撤回。",
+      "status": "not_started",
+      "verification": [
+        "接口测试：AI 返回解析成候选卡",
+        "E2E：勾选写入、撤回"
+      ],
       "evidence": [],
-      "notes": "用户 2026-11-15 在功能讨论中只选了间隔复习，随后改为「知识简卡」并选择卡片墙 + 到期复习结合。设计方案 docs/superpowers/specs/2026-11-15-spaced-repetition-design.md（v2），用户 2026-11-15 批准，第九节全部按推荐。"
+      "notes": "srs-001 方案第六节第 7 条，用户批准放第二阶段。"
     },
     {
       "id": "ui-001",

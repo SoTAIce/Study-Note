@@ -126,6 +126,10 @@ test("excerpt：去掉列表、任务、引用、分隔线标记（list-001）",
   assert.equal(excerpt(body), "矩阵乘法 复习定义 做习题 3.2 第一步 星号项 引用：概率论 结尾");
 });
 
+test("excerpt：callout 的 [!card] 标记不进摘要（srs-001）", () => {
+  assert.equal(excerpt("> [!card] 梯度下降\n> - 沿负梯度更新"), "梯度下降 沿负梯度更新");
+});
+
 test("excerpt：snake_case 的下划线保留，强调标记去掉（list-001）", () => {
   assert.equal(excerpt("调用 learning_rate_decay，**重点** 和 _斜体_ ~~删掉~~"), "调用 learning_rate_decay，重点 和 斜体 删掉");
 });

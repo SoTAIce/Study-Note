@@ -104,3 +104,25 @@ test("今日队列：先到期旧卡再新卡；新卡每天上限；明天到�
   // 旧卡上限
   assert.equal(buildQueue(log, cards, { newPerDay: 2, maxReviews: 0 }).queue.length, 0);
 });
+
+test("今日队列：刚答「忘了」的卡排在新卡后面，不会马上又出现", () => {
+  const { clock, open } = mk();
+  const log = open();
+  const cards = ["a", "b", "c"].map((x) => ({ id: `c_${x}` }));
+  log.grade("c_a", "n", 1); // 10 分钟后再来
+  const q = buildQueue(log, cards, { newPerDay: 20 });
+  assert.deepEqual(q.queue.map((c) => c.id), ["c_b", "c_c", "c_a"]);
+  clock.advance(11 * 60_000);
+  assert.deepEqual(buildQueue(log, cards, { newPerDay: 20 }).queue.map((c) => c.id), ["c_a", "c_b", "c_c"]);
+});
+
+test("明天到期数：只数明天（本地时间）到期的", () => {
+  const { clock, open } = mk();
+  const log = open();
+  clock.advance(-DAY);
+  log.grade("c_c", "n", 3); // 昨天学的，2 天后 = 明天到期
+  clock.advance(DAY);
+  log.grade("c_a", "n", 2); // 学习步，今天
+  log.grade("c_b", "n", 3); // 2 天后 = 后天
+  assert.equal(log.dueTomorrow(["c_a", "c_b", "c_c", "c_x"]), 1);
+});

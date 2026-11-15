@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as api from "./api.ts";
 import { useConfirm } from "./components/ConfirmDialog.tsx";
+import CardsView, { useReviewSummary, type CardsIntent } from "./components/CardsView.tsx";
 import type {
   BacklinksResult,
   BackupStatus,
@@ -29,6 +30,7 @@ import NoteTabs from "./components/NoteTabs.tsx";
 import * as groupsApi from "./groups-api.ts";
 import type { GroupView } from "./groups-api.ts";
 import { resolveKey } from "./lib/keyboard.ts";
+import { cardSignature } from "./lib/card-signature.ts";
 import { readSidebarCollapsed, writeSidebarCollapsed } from "./lib/sidebar-pref.ts";
 import { filterLabel, type Filter } from "./lib/nav.ts";
 import { closeNoteTab, renameNoteTab, syncNoteTabTitles, upsertNoteTab, type NoteTab } from "./lib/note-tabs.ts";
@@ -61,7 +63,7 @@ import "./styles/app.css";
 import "./styles/content.css";
 import "./styles/reading.css";
 
-type Screen = "notes" | "trash" | "compose" | "ai";
+type Screen = "notes" | "trash" | "compose" | "ai" | "cards";
 type ToastKind = "info" | "ok" | "error";
 type Toast = { id: number; text: string; kind: ToastKind };
 
@@ -140,6 +142,20 @@ export default function App() {
   const [themePref, setThemePref] = useState<ThemePref>(() => readThemePref());
   const [viewMode, setViewMode] = useState<ViewMode>(() => readViewMode());
   const [navOpen, setNavOpen] = useState(false);
+  // —— 知识简卡（srs-001） ——
+  const [cardsIntent, setCardsIntent] = useState<CardsIntent>({ review: false, seq: 0 });
+  const [reviewTick, setReviewTick] = useState(0);
+  const reviewSummary = useReviewSummary(reviewTick);
+  const reviewTodo = reviewSummary ? reviewSummary.due + reviewSummary.fresh : null;
+  // 右栏简卡数只在保存后的正文里简卡相关的行变了时重新查
+  const currentCardSig = useMemo(() => cardSignature(current?.body ?? ""), [current?.body]);
+  function openCards(review: boolean, note?: { id: string; title: string }): void {
+    void doSave();
+    setNavOpen(false);
+    setCardsIntent((prev) => ({ review, note, seq: prev.seq + 1 }));
+    setScreen("cards");
+    setBacklinks(null);
+  }
   /** 宽屏左栏收起成一条窄边（ui-009，Ctrl+\），刷新后记住；窄屏仍是抽屉，不受影响 */
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     readSidebarCollapsed(typeof window === "undefined" ? null : window.localStorage),
@@ -284,6 +300,8 @@ export default function App() {
   }
 
   async function refreshSidebar(): Promise<TimelineItem[] | null> {
+    // 笔记变了，简卡也可能跟着变：顺带刷新今日复习数
+    setReviewTick((n) => n + 1);
     try {
       const [tagRes, timelineRes, groupRes] = await Promise.all([
         api.getTags(),
@@ -1198,12 +1216,14 @@ export default function App() {
     openHistory: () => undefined as void,
     toggleSidebar: () => undefined as void,
     dialogOpen: false,
+    openReview: () => undefined as void,
   });
   keyContext.current = {
     modalOpen: paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen || screen === "ai",
     // 收左栏只在真的有弹窗时不响应（AI 对话页也能收）
     dialogOpen: paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen,
     toggleSidebar,
+    openReview: () => openCards(true),
     openPalette: () => setPaletteOpen(true),
     openCapture: () => setCaptureOpen(true),
     createNote: () => void openCompose(),
@@ -1256,6 +1276,9 @@ export default function App() {
           break;
         case "history":
           context.openHistory();
+          break;
+        case "review":
+          context.openReview();
           break;
       }
     }
@@ -1323,6 +1346,8 @@ export default function App() {
       ? "AI 对话"
       : screen === "trash"
         ? "回收站"
+        : screen === "cards"
+          ? "知识简卡"
         : screen === "compose"
           ? "新建笔记"
           : current
@@ -1356,6 +1381,9 @@ export default function App() {
         error={listsError}
         activeNoteId={current?.id ?? null}
         trashActive={screen === "trash"}
+        cardsActive={screen === "cards"}
+        reviewTodo={reviewTodo}
+        onOpenCards={() => openCards(false)}
         reindexing={reindexing}
         groups={groups}
         ungroupedCount={ungroupedCount}
@@ -1437,6 +1465,21 @@ export default function App() {
               initialGroup={composeGroupRef.current}
               onCancel={cancelCompose}
               onCreate={(input) => void createFromCompose(input)}
+            />
+          ) : screen === "cards" ? (
+            <CardsView
+              groups={groups.map((g) => g.name)}
+              tags={tags}
+              intent={cardsIntent}
+              onOpenNote={(id) => {
+                setScreen("notes");
+                void openNote(id);
+              }}
+              onOpenWikilink={(title) => {
+                setScreen("notes");
+                void openTitle(title);
+              }}
+              onChanged={() => setReviewTick((n) => n + 1)}
             />
           ) : screen === "trash" ? (
             <TrashView onBack={() => setScreen("notes")} onRestored={(relPath) => void handleRestored(relPath)} />
@@ -1536,16 +1579,19 @@ export default function App() {
                     </span>
                     <span className="stat-card__value">{statsReady ? ideaCount : "—"}</span>
                   </button>
-                  <div
+                  <button
+                    type="button"
                     className="stat-card"
                     style={{ ["--stat-tone" as string]: "var(--ok)" }}
+                    onClick={() => openCards(Boolean(reviewTodo))}
+                    title="知识简卡：今天要复习和新学的张数（Ctrl+Shift+R 开始复习）"
                   >
                     <span className="stat-card__label">
-                      <Icon name="hash" size={14} />
-                      标签
+                      <Icon name="zap" size={14} />
+                      今日复习
                     </span>
-                    <span className="stat-card__value">{statsReady ? tags.length : "—"}</span>
-                  </div>
+                    <span className="stat-card__value">{statsReady && reviewTodo !== null ? reviewTodo : "—"}</span>
+                  </button>
                   <div
                     className="stat-card"
                     style={{ ["--stat-tone" as string]: "var(--accent)" }}
@@ -1653,6 +1699,12 @@ export default function App() {
             onOpenNote={(id) => void openNote(id)}
             onOpenTitle={(title) => void openTitle(title)}
             onClose={() => setRailOpen(false)}
+            cards={{
+              noteId: current?.id ?? null,
+              version: currentCardSig,
+              onReview: () => current && openCards(true, { id: current.id, title: draft.title || current.meta.title }),
+              onOpenWall: () => current && openCards(false, { id: current.id, title: draft.title || current.meta.title }),
+            }}
             ai={{
               noteId: current?.id ?? null,
               noteTitle: draft.title,

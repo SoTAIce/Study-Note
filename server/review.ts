@@ -182,6 +182,21 @@ export class ReviewLog {
     return { newDone, reviewsDone };
   }
 
+  nowMs(): number {
+    return this.now();
+  }
+
+  /** 明天（本地时间）会到期的卡数 */
+  dueTomorrow(ids: string[]): number {
+    const end = startOfDay(this.now()) + 86_400_000;
+    let n = 0;
+    for (const id of ids) {
+      const s = this.stateOf(id);
+      if (s && s.due >= end && s.due < end + 86_400_000) n += 1;
+    }
+    return n;
+  }
+
   /** 到期：在今天结束前到期的都算（学习中的 10 分钟卡也在内） */
   isDue(state: CardState): boolean {
     return state.due < startOfDay(this.now()) + 86_400_000;
@@ -191,7 +206,10 @@ export class ReviewLog {
 export type QueueCard<T> = T & { id: string };
 
 /**
- * 今日复习队列：先到期的旧卡（按到期时间），再新卡（按给定顺序），各自受每日上限约束。
+ * 今日复习队列，各自受每日上限约束：
+ * 1. 已经到期的旧卡（按到期时间）；
+ * 2. 新卡（按给定顺序）；
+ * 3. 今天晚些时候才到期的（例如刚答「忘了」、10 分钟后再来的卡）——放最后，免得刚翻过马上又出现。
  */
 export function buildQueue<T extends { id: string }>(
   log: ReviewLog,
@@ -209,7 +227,10 @@ export function buildQueue<T extends { id: string }>(
   due.sort((a, b) => a.at - b.at);
   const reviewLeft = Math.max(0, (limits.maxReviews ?? MAX_REVIEWS_PER_DAY) - reviewsDone);
   const newLeft = Math.max(0, limits.newPerDay - newDone);
-  const dueCards = due.slice(0, reviewLeft).map((d) => d.card);
+  const dueCards = due.slice(0, reviewLeft);
+  const now = log.nowMs();
+  const dueNow = dueCards.filter((d) => d.at <= now).map((d) => d.card);
+  const later = dueCards.filter((d) => d.at > now).map((d) => d.card);
   const newCards = fresh.slice(0, newLeft);
-  return { queue: [...dueCards, ...newCards], due: dueCards.length, fresh: newCards.length };
+  return { queue: [...dueNow, ...newCards, ...later], due: dueCards.length, fresh: newCards.length };
 }

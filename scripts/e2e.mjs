@@ -1082,6 +1082,97 @@ try {
     expect((await page.locator(".sidebar-strip").count()) === 0, "展开后窄边应消失");
   });
 
+  await step("知识简卡：预览显示卡片、卡片墙筛选、今日复习翻面打分与撤回、Ctrl+Shift+R、复习记录落盘", async () => {
+    const body = [
+      "# 简卡测试",
+      "",
+      "> [!card] 梯度下降",
+      "> - 沿负梯度方向更新参数",
+      "> - w ← w − η·∇L(w)",
+      "",
+      "过拟合 :: 把训练数据的噪声也学进去",
+      "",
+      "用 std::vector 存的不算",
+    ].join("\n");
+    await page.evaluate(
+      async (b) =>
+        (
+          await fetch("/api/notes", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ title: "简卡测试", body: b, group: "简卡组" }),
+          })
+        ).json(),
+      body,
+    );
+
+    // 笔记预览里显示成卡片；右栏显示这篇有 2 张
+    await page.locator(".note-row__text", { hasText: /^简卡测试$/ }).click({ timeout: 5000 });
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "简卡测试", null, { timeout: 5000 });
+    const preview = page.locator(".split__pane--preview .preview");
+    await preview.locator(".kcard").waitFor({ timeout: 5000 });
+    expect((await preview.locator(".kcard__title").textContent()).includes("梯度下降"), "预览应显示简卡标题");
+    expect((await preview.locator(".kline").count()) === 1, "一行简卡应只有 1 个（std::vector 不算）");
+    await page.locator(".rail__cards").waitFor({ timeout: 5000 });
+    expect((await page.locator(".rail__cards").textContent()).includes("这篇有 2 张简卡"), "右栏应显示这篇有 2 张简卡");
+
+    // 卡片墙：按分组筛选
+    await page.locator(".sidebar").getByRole("button", { name: /知识简卡/ }).click();
+    await page.locator(".cards").waitFor();
+    await page.getByLabel("按分组筛选").selectOption("简卡组");
+    await page.waitForFunction(() => document.querySelectorAll(".kcard-tile").length === 2, null, { timeout: 5000 });
+    const titles = await page.locator(".kcard-tile__title").allTextContents();
+    expect(JSON.stringify(titles.sort()) === JSON.stringify(["梯度下降", "过拟合"].sort()), `卡片墙标题不对：${titles}`);
+    expect((await page.locator(".kcard-tile__mastery", { hasText: "新卡" }).count()) === 2, "两张都应是新卡");
+    await page.screenshot({ path: path.join(artifacts, "19-cards-wall.png") });
+
+    // 今日复习：只复习这个分组
+    await page.getByRole("button", { name: /今日复习 2 张/ }).click();
+    const card = page.locator(".review-card");
+    await card.waitFor();
+    expect((await page.locator(".review__progress").textContent()).trim() === "0 / 2", "进度应为 0 / 2");
+    expect((await page.locator(".review-card__body").count()) === 0, "翻面前不显示要点");
+    await page.keyboard.press("Space");
+    await page.locator(".review-card__body").waitFor();
+    const nextLabels = await page.locator(".review__grade-next").allTextContents();
+    expect(nextLabels.length === 4 && nextLabels[0] === "10 分钟", `四档间隔应显示，实际 ${nextLabels}`);
+    await page.screenshot({ path: path.join(artifacts, "20-review-back.png") });
+    const firstTitle = await page.locator(".review-card__title").textContent();
+    await page.keyboard.press("3");
+    await page.waitForFunction(() => document.querySelector(".review__progress")?.textContent?.trim() === "1 / 2", null, { timeout: 5000 });
+
+    // 撤回：同一张卡回来、进度回到 0
+    await page.keyboard.press("Control+z");
+    await page.waitForFunction(() => document.querySelector(".review__progress")?.textContent?.trim() === "0 / 2", null, { timeout: 5000 });
+    expect((await page.locator(".review-card__title").textContent()) === firstTitle, "撤回后应回到刚才那张卡");
+
+    for (const grade of ["3", "4"]) {
+      await page.keyboard.press("Space");
+      await page.locator(".review-card__body").waitFor();
+      await page.keyboard.press(grade);
+      await page.waitForTimeout(200);
+    }
+    await page.getByText("今天的复习完成了").waitFor({ timeout: 5000 });
+    expect((await page.locator(".review__done").textContent()).includes("本次复习 2 张，记住 2 张"), "结束页应显示本次复习统计");
+
+    // 复习记录落盘：打分 3 次 + 撤回 1 次
+    const logFile = path.join(dataDir, "review", "log.jsonl");
+    const lines = fs.readFileSync(logFile, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    expect(lines.filter((l) => l.grade).length === 3 && lines.filter((l) => l.undo).length === 1, `日志行不对：${JSON.stringify(lines)}`);
+
+    // 回到卡片墙：两张都变成「学习中」，左栏待复习数减少
+    await page.getByRole("button", { name: "回到卡片墙" }).click();
+    await page.waitForFunction(() => document.querySelectorAll(".kcard-tile__mastery--learning").length === 2, null, { timeout: 5000 });
+
+    // Ctrl+Shift+R 从笔记页直接进入复习
+    await page.locator(".sidebar").getByRole("button", { name: /全部笔记/ }).first().click();
+    await page.keyboard.press("Control+Shift+R");
+    await page.locator(".review").waitFor({ timeout: 5000 });
+    await page.keyboard.press("Escape");
+    await page.locator(".cards").waitFor();
+    await page.locator(".sidebar").getByRole("button", { name: /全部笔记/ }).first().click();
+  });
+
   await step("主题切换并在刷新后保持", async () => {
     const toggle = page.getByLabel(/切换主题/);
     await toggle.click(); // system → light
