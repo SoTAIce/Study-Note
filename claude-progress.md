@@ -6,7 +6,7 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-15，455 个单元/接口测试 + 搜索基准 + E2E 23 步（本机；GitHub Actions 结果见会话 020）
+- 最近一次全绿：2026-11-15，455 个单元/接口测试 + 搜索基准 + E2E 23 步（本机 + GitHub Actions 的 Linux、Windows）
 - 优先级最高的未完成功能：`perf-006`（启动索引提速，做 perf-003 时发现）
 - 当前阻塞：无
 
@@ -188,7 +188,7 @@
 - 先写基准 `scripts/bench-search.ts`（直接往索引表造 1 万篇，每篇约 1500 字，量 6 种查询的中位数）。旧实现在 1 万篇时跑不完：每个候选按无索引的 `notes_fts.note_id` 取正文，整表扫描，耗时随篇数平方增长（1000 篇已 340ms）。
 - 改 `server/search.ts`：一条 SQL 取候选（标题 / 时间 / 标签，标签筛选进 SQL）→ 内存打分排序截断 → 只给前 limit 条按 FTS rowid 取正文做片段。打分规则不变。
 - 结果：1 万篇时各查询中位数 0.3~50ms。基准加进 `./init.sh`（`pnpm bench:search`，超过 200ms 失败）；tsconfig 把 `scripts/**/*.ts` 纳入类型检查。
-- 验证：search.test.ts 新增 3 条；./init.sh 455 + 基准 + E2E 23 步全绿。
+- 验证：search.test.ts 新增 3 条；./init.sh 455 + 基准 + E2E 23 步全绿；GitHub Actions 运行 43658935465 两个系统 success（Windows 上基准同样在 200ms 内）。
 - 新发现（没做，已记 perf-006）：启动时每个文件都重新索引、每篇按 note_id 删全文行（1 万篇时每次约 10ms），大库启动可能一分多钟。
 - 下一步：perf-006。
 
