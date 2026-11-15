@@ -70,7 +70,7 @@ Study Notes：本地个人笔记应用。`data/notes/*.md` 是唯一真源，SQL
 
 - 界面长什么样：`DESIGN.md`（改界面前先读）
 - 后端模块地图：`server/README.md`；前端模块地图：`web/README.md`
-- 功能清单（唯一的「要做什么」来源）：`feature_list.json`
+- 功能清单（唯一的「要做什么」来源）：`feature_list.json`；给人看的分类总览：`docs/待实现.md`（标了「等用户决定」的不要自己开工）
 - 进度日志：`claude-progress.md`；交接：`session-handoff.md`
 - 设计方案：`docs/superpowers/specs/`（实现计划在 `docs/superpowers/plans/`）
 - 收工自检：`docs/harness/clean-state-checklist.md`；验收评分：`docs/harness/evaluator-rubric.md`

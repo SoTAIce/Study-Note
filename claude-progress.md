@@ -7,7 +7,7 @@
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
 - 最近一次全绿：2026-11-15，497 个单元/接口测试 + 三个基准 + E2E 25 步（本机 + GitHub Actions 的 Linux、Windows）
-- 优先级最高的未完成功能：`srs-002`（AI 提炼知识简卡，第二阶段）
+- 优先级最高的未完成功能：`perf-004`（srs-002 已标 blocked：用户先试用知识简卡几天再定，见 docs/待实现.md）
 - 当前阻塞：无
 
 ## 会话记录

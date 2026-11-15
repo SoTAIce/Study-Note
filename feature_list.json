@@ -45,13 +45,13 @@
       "area": "review",
       "title": "AI 提炼知识简卡（第二阶段）",
       "user_visible_behavior": "右栏 AI「提炼简卡」：读当前笔记给出候选简卡，逐张勾选、可改，确认后写到笔记末尾的「## 简卡」一节，能 Ctrl+Z 撤回。",
-      "status": "not_started",
+      "status": "blocked",
       "verification": [
         "接口测试：AI 返回解析成候选卡",
         "E2E：勾选写入、撤回"
       ],
       "evidence": [],
-      "notes": "srs-001 方案第六节第 7 条，用户批准放第二阶段。"
+      "notes": "srs-001 方案第六节第 7 条，用户批准放第二阶段。 2026-11-15 用户决定先试用 srs-001 几天，再决定是否做 / 怎么做；在用户确认前不要开工（见 docs/待实现.md）。"
     },
     {
       "id": "ui-001",
