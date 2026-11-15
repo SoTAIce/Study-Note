@@ -29,6 +29,7 @@ import NoteTabs from "./components/NoteTabs.tsx";
 import * as groupsApi from "./groups-api.ts";
 import type { GroupView } from "./groups-api.ts";
 import { resolveKey } from "./lib/keyboard.ts";
+import { readSidebarCollapsed, writeSidebarCollapsed } from "./lib/sidebar-pref.ts";
 import { filterLabel, type Filter } from "./lib/nav.ts";
 import { closeNoteTab, renameNoteTab, syncNoteTabTitles, upsertNoteTab, type NoteTab } from "./lib/note-tabs.ts";
 import { neighbors } from "./lib/reading.ts";
@@ -139,6 +140,21 @@ export default function App() {
   const [themePref, setThemePref] = useState<ThemePref>(() => readThemePref());
   const [viewMode, setViewMode] = useState<ViewMode>(() => readViewMode());
   const [navOpen, setNavOpen] = useState(false);
+  /** 宽屏左栏收起成一条窄边（ui-009，Ctrl+\），刷新后记住；窄屏仍是抽屉，不受影响 */
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    readSidebarCollapsed(typeof window === "undefined" ? null : window.localStorage),
+  );
+  function toggleSidebar(): void {
+    // 窄屏：左栏是抽屉，快捷键就开关抽屉
+    if (window.matchMedia("(max-width: 760px)").matches) {
+      setNavOpen((value) => !value);
+      return;
+    }
+    setSidebarCollapsed((value) => {
+      writeSidebarCollapsed(window.localStorage, !value);
+      return !value;
+    });
+  }
 
   // —— refs（自动保存与异步竞态） ——
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1180,9 +1196,14 @@ export default function App() {
     focusAi: () => undefined as void,
     togglePreview: () => undefined as void,
     openHistory: () => undefined as void,
+    toggleSidebar: () => undefined as void,
+    dialogOpen: false,
   });
   keyContext.current = {
     modalOpen: paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen || screen === "ai",
+    // 收左栏只在真的有弹窗时不响应（AI 对话页也能收）
+    dialogOpen: paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen,
+    toggleSidebar,
     openPalette: () => setPaletteOpen(true),
     openCapture: () => setCaptureOpen(true),
     createNote: () => void openCompose(),
@@ -1206,6 +1227,12 @@ export default function App() {
       const action = resolveKey(event);
       if (!action) return;
       const context = keyContext.current;
+      if (action === "sidebar") {
+        if (context.dialogOpen || document.querySelector('[aria-modal="true"]')) return;
+        event.preventDefault();
+        context.toggleSidebar();
+        return;
+      }
       if (context.modalOpen) return;
       event.preventDefault();
       switch (action) {
@@ -1303,7 +1330,23 @@ export default function App() {
             : "Study Notes";
 
   return (
-    <div className={`app${railVisible ? " app--rail" : ""}`}>
+    <div className={`app${railVisible ? " app--rail" : ""}${sidebarCollapsed ? " app--collapsed" : ""}`}>
+      {sidebarCollapsed ? (
+        <nav className="sidebar-strip" aria-label="左栏（已收起）">
+          <button type="button" className="icon-btn" onClick={toggleSidebar} title="展开左栏（Ctrl+\）" aria-label="展开左栏">
+            <Icon name="panelLeft" size={17} />
+          </button>
+          <button type="button" className="icon-btn" onClick={() => setPaletteOpen(true)} title="搜索（Ctrl+K）" aria-label="搜索">
+            <Icon name="search" size={17} />
+          </button>
+          <button type="button" className="icon-btn" onClick={() => void openCompose()} title="新建笔记（Ctrl+N）" aria-label="新建笔记">
+            <Icon name="plus" size={17} />
+          </button>
+          <button type="button" className="icon-btn" onClick={() => setCaptureOpen(true)} title="快速捕获（Ctrl+Shift+Space）" aria-label="快速捕获">
+            <Icon name="zap" size={17} />
+          </button>
+        </nav>
+      ) : null}
       <Sidebar
         filter={filter}
         notes={notes}
@@ -1349,6 +1392,7 @@ export default function App() {
         onClose={() => setNavOpen(false)}
         themePref={themePref}
         onCycleTheme={cycleTheme}
+        onCollapse={toggleSidebar}
       />
 
       {navOpen ? (

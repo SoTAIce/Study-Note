@@ -4,10 +4,12 @@
  * 约定：只有精确的修饰键组合才触发动作，避免误触
  * （例如 Ctrl+Alt+K 是浏览器的「复制链接」类组合，必须放行）。
  */
-export type Action = "search" | "new" | "save" | "ai" | "capture" | "preview" | "history";
+export type Action = "search" | "new" | "save" | "ai" | "capture" | "preview" | "history" | "sidebar";
 
 export type KeyInput = {
   key: string;
+  /** 物理按键位置；Ctrl+\ 在部分键盘布局下 key 不是 "\\"，按 code 认 */
+  code?: string;
   ctrlKey?: boolean;
   shiftKey?: boolean;
   metaKey?: boolean;
@@ -41,7 +43,10 @@ export function resolveKey(ev: KeyInput): Action | null {
       return "save";
     case "j":
       return "ai";
+    // 收起 / 展开左栏（ui-009）；Ctrl+B 留给正文加粗
+    case "\\":
+      return "sidebar";
     default:
-      return null;
+      return ev.code === "Backslash" ? "sidebar" : null;
   }
 }

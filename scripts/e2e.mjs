@@ -9,7 +9,7 @@
  *
  * 覆盖：首页（含加载占位）→ 新建笔记 → 编辑自动保存 → 搜索 → 历史版本（对比 / 恢复 / 撤销恢复）
  *      → 外部编辑同步（改标题、自动载入、冲突、外部删除进回收站）
- *      → 阅览模式 → 导出 PDF → 回收站（自动清理过期、清空二次确认）→ 分组里新建 → 编辑器快捷操作 → AI 改动可撤回 → 编辑器第二批 → 粘贴图片 → 界面一批（确认框、焦点、双链、摘要）
+ *      → 阅览模式 → 导出 PDF → 回收站（自动清理过期、清空二次确认）→ 分组里新建 → 编辑器快捷操作 → AI 改动可撤回 → 编辑器第二批 → 粘贴图片 → 界面一批（确认框、焦点、双链、摘要）→ 左栏收起
  *      → 主题切换并记住 → 窄屏抽屉不横向溢出；全程不允许出现页面报错。
  * 截图写到 e2e-artifacts/（已 gitignore），作为验证证据。
  *
@@ -1040,6 +1040,46 @@ try {
     expect((await page.locator(".group-row", { hasText: "改过的组" }).count()) === 1, "取消后分组应还在");
     page.off("dialog", onDialog);
     expect(!nativeDialog, "不应再弹浏览器原生确认框");
+  });
+
+  await step("左栏加宽，Ctrl+\\ 收起 / 展开并在刷新后保持；Ctrl+B 仍是加粗", async () => {
+    const sidebarWidth = await page.locator(".sidebar").evaluate((el) => el.getBoundingClientRect().width);
+    expect(Math.round(sidebarWidth) === 300, `左栏应加宽到 300px，实际 ${sidebarWidth}`);
+
+    await page.locator(".note-row__text", { hasText: /^改了分组$/ }).click();
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "改了分组", null, { timeout: 5000 });
+    const ta = page.locator(".editor__textarea");
+    await ta.fill("加粗这个");
+    await ta.evaluate((el) => el.setSelectionRange(2, 4));
+    await page.keyboard.press("Control+b");
+    expect((await ta.inputValue()) === "加粗**这个**", `Ctrl+B 应加粗，实际「${await ta.inputValue()}」`);
+    expect(await page.locator(".sidebar").isVisible(), "Ctrl+B 不应收起左栏");
+
+    await page.keyboard.press("Control+Backslash");
+    await page.locator(".sidebar-strip").waitFor();
+    expect(!(await page.locator(".sidebar").isVisible()), "Ctrl+\\ 后左栏应收起");
+    const mainLeft = await page.locator(".main").evaluate((el) => el.getBoundingClientRect().left);
+    expect(mainLeft <= 60, `收起后编辑区应贴到窄边旁，实际 left=${mainLeft}`);
+    await page.screenshot({ path: path.join(artifacts, "18-sidebar-collapsed.png") });
+
+    // 窄边上的按钮能用
+    await page.locator(".sidebar-strip").getByRole("button", { name: "搜索" }).click();
+    await page.locator(".palette").waitFor();
+    await page.keyboard.press("Escape");
+    await page.locator(".palette").waitFor({ state: "detached" });
+
+    await page.keyboard.press("Control+s");
+    await page.reload();
+    await page.locator(".sidebar-strip").waitFor();
+    expect(!(await page.locator(".sidebar").isVisible()), "刷新后应仍是收起状态");
+
+    await page.locator(".sidebar-strip").getByRole("button", { name: "展开左栏" }).click();
+    await page.locator(".sidebar").waitFor({ state: "visible" });
+    await page.locator(".sidebar").getByRole("button", { name: "收起左栏" }).click();
+    await page.locator(".sidebar-strip").waitFor();
+    await page.keyboard.press("Control+Backslash");
+    await page.locator(".sidebar").waitFor({ state: "visible" });
+    expect((await page.locator(".sidebar-strip").count()) === 0, "展开后窄边应消失");
   });
 
   await step("主题切换并在刷新后保持", async () => {

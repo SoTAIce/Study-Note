@@ -43,6 +43,8 @@ type Props = {
   onClose: () => void;
   themePref: ThemePref;
   onCycleTheme: () => void;
+  /** 宽屏收起左栏（ui-009，Ctrl+\） */
+  onCollapse: () => void;
 };
 
 function TypeBadge({ type }: { type: NoteSummary["type"] }) {
@@ -89,6 +91,7 @@ export default function Sidebar({
   onClose,
   themePref,
   onCycleTheme,
+  onCollapse,
 }: Props) {
   const confirm = useConfirm();
   const [groupsOpen, setGroupsOpen] = useState(true);
@@ -303,6 +306,15 @@ export default function Sidebar({
           aria-label={`切换主题，当前${THEME_LABEL[themePref]}`}
         >
           <Icon name={themePref === "light" ? "sun" : themePref === "dark" ? "moon" : "monitor"} size={16} />
+        </button>
+        <button
+          type="button"
+          className="icon-btn sidebar__collapse"
+          onClick={onCollapse}
+          title="收起左栏（Ctrl+\）"
+          aria-label="收起左栏"
+        >
+          <Icon name="panelLeft" size={16} />
         </button>
         <button type="button" className="icon-btn sidebar__close" onClick={onClose} aria-label="关闭导航">
           <Icon name="x" size={17} />

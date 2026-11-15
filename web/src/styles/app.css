@@ -4,8 +4,11 @@
    ============================================================ */
 
 :root {
-  --sidebar-w: 268px;
-  --rail-w: clamp(320px, 26vw, 384px);
+  /* 侧栏宽度（ui-009 加宽：左 268→300，右 320~384→360~420） */
+  --sidebar-w: 300px;
+  --rail-w: clamp(360px, 28vw, 420px);
+  /* 左栏收起后的窄边 */
+  --strip-w: 52px;
 }
 
 ::selection {
@@ -2437,7 +2440,7 @@ button.stat-card:hover {
     right: 0;
     bottom: 0;
     z-index: 40;
-    width: min(380px, 92vw);
+    width: min(400px, 92vw);
     box-shadow: var(--shadow-lg);
     animation: slide-left 0.22s var(--ease);
   }
@@ -2445,7 +2448,7 @@ button.stat-card:hover {
 
 @media (max-width: 1080px) {
   :root {
-    --sidebar-w: 244px;
+    --sidebar-w: 264px;
   }
   .welcome__stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4449,3 +4452,36 @@ button.stat-card:hover {
 .btn--danger-solid:hover:not(:disabled) {
   background: rgba(var(--danger-rgb), 0.88);
 }
+
+/* ---------- 左栏收起（ui-009，Ctrl+\） ---------- */
+.sidebar-strip {
+  display: none;
+}
+.sidebar__collapse {
+  margin-left: -6px;
+}
+@media (min-width: 761px) {
+  .app--collapsed {
+    --sidebar-w: var(--strip-w);
+  }
+  .app--collapsed > .sidebar {
+    display: none;
+  }
+  .sidebar-strip {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 14px 0;
+    min-height: 0;
+    background: var(--bg-side);
+    border-right: 1px solid var(--line);
+  }
+}
+@media (max-width: 760px) {
+  /* 窄屏左栏是抽屉，收起按钮没有意义 */
+  .sidebar__collapse {
+    display: none;
+  }
+}
+

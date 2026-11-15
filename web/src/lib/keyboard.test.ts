@@ -57,3 +57,15 @@ test("Ctrl+Shift+H → history（历史版本）", () => {
   assert.equal(resolveKey({ ...none, key: "h", ctrlKey: true, shiftKey: true }), "history");
   assert.equal(resolveKey({ ...none, key: "h", ctrlKey: true }), null);
 });
+
+test("Ctrl+\\ → sidebar（收起 / 展开左栏，ui-009）", () => {
+  assert.equal(resolveKey({ key: "\\", code: "Backslash", ctrlKey: true }), "sidebar");
+  // 别的键盘布局下 key 可能是别的字符，按物理位置认
+  assert.equal(resolveKey({ key: "#", code: "Backslash", ctrlKey: true }), "sidebar");
+  assert.equal(resolveKey({ key: "\\", ctrlKey: true, altKey: true }), null);
+  assert.equal(resolveKey({ key: "\\" }), null);
+});
+
+test("Ctrl+B 不被快捷键接管（留给正文加粗）", () => {
+  assert.equal(resolveKey({ key: "b", ctrlKey: true }), null);
+});

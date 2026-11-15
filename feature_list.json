@@ -506,14 +506,19 @@
       "priority": 12,
       "area": "ui",
       "title": "侧栏加宽、可隐藏，并配快捷键",
-      "user_visible_behavior": "左栏和右栏比现在宽一些、更舒展；可以一键隐藏 / 显示，用快捷键切换，刷新后记住状态。",
-      "status": "not_started",
+      "user_visible_behavior": "左栏和右栏比现在宽一些；左栏可用 Ctrl+\\ 或按钮收起成一条窄边（保留展开 / 搜索 / 新建 / 快速捕获），刷新后记住；正文里 Ctrl+B 仍是加粗。",
+      "status": "passing",
       "verification": [
         "单测：快捷键解析",
         "E2E：快捷键隐藏 / 显示侧栏、刷新后保持、窄屏不受影响"
       ],
-      "evidence": [],
-      "notes": "用户 2026-11-15 提出：边栏太窄不美观，希望加宽并可隐藏，最好用 Ctrl+B。注意 Ctrl+B 在正文框里已是加粗（editor-001），需和用户确认怎么分配。"
+      "evidence": [
+        "app.css：左栏 268→300px（≤1080px 时 244→264px），右栏 clamp(320,26vw,384)→clamp(360,28vw,420)，窄屏浮层右栏 380→400px；收起时左栏换成 52px 窄边（只在 >760px 生效，窄屏仍是抽屉）",
+        "web/src/lib/keyboard.ts：Ctrl+\\ → sidebar（也按 code=Backslash 认，适配别的键盘布局）；keyboard.test.ts 新增 2 条（含 Ctrl+B 不被接管）；sidebar-pref.test.ts 2 条（读写、存储不可用）",
+        "pnpm e2e「左栏加宽，Ctrl+\\ 收起 / 展开…」通过：左栏 300px；正文 Ctrl+B 加粗且不收左栏；Ctrl+\\ 收起后编辑区左移、窄边搜索按钮能打开搜索；刷新后仍收起；按钮与快捷键都能展开 / 收起（截图 e2e-artifacts/18-sidebar-collapsed.png）",
+        "./init.sh 全绿：462 个测试 + 两个基准 + E2E 24 步（2026-11-15）"
+      ],
+      "notes": "用户 2026-11-15 提出并选定：快捷键用 Ctrl+\\（Ctrl+B 保留加粗），宽度「适当加宽」。右栏原本就能用工具栏按钮开关，没另加快捷键。"
     },
     {
       "id": "perf-004",
