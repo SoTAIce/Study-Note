@@ -56,6 +56,8 @@ import { search } from "./search.ts";
 import { ConflictError, HistoryNotFoundError, toLocalIso, TRASH_RETENTION_DAYS, type HistoryReason, type NoteStore } from "./store.ts";
 import { isValidVersionId } from "./history.ts";
 import { AttachmentError, MAX_UPLOAD_BODY, saveAttachment, servedFile } from "./attachments.ts";
+import { ReviewLog } from "./review.ts";
+import { createReviewRoutes, ReviewHttpError } from "./review-api.ts";
 
 const MAX_BODY = 5 * 1024 * 1024;
 
@@ -92,6 +94,8 @@ export type ApiDeps = {
   agentStream?: StreamTurn;
   /** 测试注入：找导出 PDF 用的浏览器（默认按 STUDY_PDF_BROWSER → Edge → Chrome 查找） */
   findPdfBrowser?: () => string | null;
+  /** 知识简卡的复习记录（srs-001）；不传就按 dataDir 打开 */
+  review?: ReviewLog;
 };
 
 type NoteRow = {
@@ -187,6 +191,10 @@ export function createApi(deps: ApiDeps) {
   }
 
   const groupsDeps = { db, store, dataDir, reindex };
+  // 知识简卡（srs-001）：改了标题的卡在复习日志里记别名，接着用原来的记录
+  const reviewLog = deps.review ?? new ReviewLog({ dataDir });
+  indexer.onCardRenamed((newId, oldId) => reviewLog.alias(newId, oldId));
+  const reviewRoutes = createReviewRoutes({ db, log: reviewLog, dataDir });
   /** 每次进程启动不同：前端重连后发现它变了，就知道服务重启过，整体刷新一次 */
   const bootId = randomUUID();
 
@@ -197,6 +205,12 @@ export function createApi(deps: ApiDeps) {
     const route = seg.slice(1);
 
     try {
+      const reviewResult = await reviewRoutes(method, route, url, () => readJson(req));
+      if (reviewResult !== undefined) {
+        sendJson(res, 200, reviewResult);
+        return true;
+      }
+
       // /api/notes
       if (route[0] === "notes" && route.length === 1) {
         if (method === "GET") {
@@ -1236,7 +1250,7 @@ export function createApi(deps: ApiDeps) {
 
       return false;
     } catch (err) {
-      if (err instanceof GroupsHttpError) {
+      if (err instanceof GroupsHttpError || err instanceof ReviewHttpError) {
         sendJson(res, err.status, { error: err.message });
         return true;
       }

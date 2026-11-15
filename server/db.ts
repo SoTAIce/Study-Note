@@ -2,9 +2,9 @@ import { DatabaseSync } from "node:sqlite";
 
 /**
  * 改了表结构或索引里的派生字段（摘要、类型）就加一，旧库打开时整库重建。
- * 3：list-001 摘要规则、ui-008 inbox/ 默认算想法；4：notes_fts 的 rowid 与 notes 对齐（perf-006）
+ * 3：list-001 摘要规则、ui-008 inbox/ 默认算想法；4：notes_fts 的 rowid 与 notes 对齐（perf-006）；5：知识简卡表 cards（srs-001）
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -45,6 +45,18 @@ CREATE INDEX IF NOT EXISTS links_src ON links(src_id);
 CREATE INDEX IF NOT EXISTS links_target ON links(target_id);
 CREATE INDEX IF NOT EXISTS links_title ON links(target_title);
 
+-- 知识简卡（srs-001）：从笔记正文解析出来的卡片，可重建；复习状态不在这里（在 data/review/log.jsonl）
+CREATE TABLE IF NOT EXISTS cards (
+  id TEXT PRIMARY KEY,
+  note_id TEXT NOT NULL,
+  ord INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  title TEXT NOT NULL,
+  body TEXT NOT NULL,
+  line INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS cards_note ON cards(note_id);
+
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
   note_id UNINDEXED,
   title,
@@ -63,7 +75,7 @@ CREATE TABLE IF NOT EXISTS ai_calls (
 );
 `;
 
-const ALL_TABLES = ["notes_fts", "links", "tags", "notes", "ai_calls", "meta"];
+const ALL_TABLES = ["notes_fts", "cards", "links", "tags", "notes", "ai_calls", "meta"];
 
 /** 打开（或创建）索引库。索引是可重建的派生数据：schema 版本对不上就整库重建。 */
 export function openDb(file: string): DatabaseSync {

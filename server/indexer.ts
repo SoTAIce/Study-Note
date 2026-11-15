@@ -3,6 +3,7 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import type { ChangeEvent } from "./events.ts";
 import { diffIndexed, type IndexChanges, type IndexedShape } from "./index-diff.ts";
+import { indexCards, matchRenamed, parseCards, type IndexedCard } from "./cards.ts";
 import { contentHash, excerpt, extractLinks, extractTags } from "./parse.ts";
 import { toLocalIso, type NoteStore, type StoredNote } from "./store.ts";
 
@@ -28,6 +29,8 @@ export class Indexer {
   private readonly now: () => Date;
   private readonly ignored = new Map<string, number>();
   private readonly listeners = new Set<(event: ChangeEvent) => void>();
+  /** 简卡改了标题、认回原卡时通知（复习日志记别名，srs-001） */
+  private cardRenamed: ((newId: string, oldId: string) => void) | null = null;
   /** reindexAll 期间不逐篇发事件，结束时发一次 resync */
   private muted = 0;
 
@@ -35,6 +38,16 @@ export class Indexer {
     this.db = deps.db;
     this.store = deps.store;
     this.now = deps.now ?? (() => new Date());
+  }
+
+  onCardRenamed(listener: (newId: string, oldId: string) => void): void {
+    this.cardRenamed = listener;
+  }
+
+  private cardsOf(noteId: string): IndexedCard[] {
+    return this.db
+      .prepare("SELECT id, ord, kind, title, body, line FROM cards WHERE note_id = ? ORDER BY ord")
+      .all(noteId) as IndexedCard[];
   }
 
   /** 订阅索引变化（外部编辑、应用自己的写入、整体重建都会发）。返回取消订阅函数。 */
@@ -114,6 +127,7 @@ export class Indexer {
       | { id: string }
       | undefined;
     const before = previous ? this.indexedShape(previous.id) : null;
+    const cardsBefore = previous ? this.cardsOf(previous.id) : [];
     if (previous) this.deleteById(previous.id);
     const id = this.uniqueId(note.id, relPath);
 
@@ -156,6 +170,16 @@ export class Indexer {
     this.db
       .prepare("INSERT INTO notes_fts (rowid, note_id, title, body) VALUES (?, ?, ?, ?)")
       .run(rowid, id, note.parsed.meta.title, note.parsed.body);
+
+    // 知识简卡（srs-001）
+    const cards = indexCards(id, parseCards(note.parsed.body));
+    const insertCard = this.db.prepare(
+      "INSERT OR REPLACE INTO cards (id, note_id, ord, kind, title, body, line) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    );
+    for (const card of cards) insertCard.run(card.id, id, card.ord, card.kind, card.title, card.body, card.line);
+    if (this.cardRenamed && cardsBefore.length > 0) {
+      for (const [newId, oldId] of matchRenamed(cardsBefore, cards)) this.cardRenamed(newId, oldId);
+    }
 
     // 之前引用过我标题的笔记，现在可以补上 target_id 了
     this.db
@@ -204,6 +228,7 @@ export class Indexer {
     this.db.prepare("DELETE FROM notes WHERE id = ?").run(id);
     this.db.prepare("DELETE FROM tags WHERE note_id = ?").run(id);
     this.db.prepare("DELETE FROM links WHERE src_id = ?").run(id);
+    this.db.prepare("DELETE FROM cards WHERE note_id = ?").run(id);
     this.db.prepare("UPDATE links SET target_id = NULL WHERE target_id = ?").run(id);
   }
 

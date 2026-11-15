@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { contentHash } from "./parse.ts";
+import { reviewLogPath } from "./review.ts";
 import { toLocalIso } from "./store.ts";
 import { maskSecret, patchSection, readSection } from "./config.ts";
 import { createWebdavClient, WebdavError, type WebdavClient } from "./webdav.ts";
@@ -191,6 +192,22 @@ function readForUpload(file: LocalFile): string | Buffer {
   return file.binary ? fs.readFileSync(file.abs) : fs.readFileSync(file.abs, "utf8");
 }
 
+/** 复习记录（srs-001）在云端的位置：和笔记放在一起，跟着 latest / 快照 / 月度归档 */
+export const REVIEW_BACKUP_PATH = "_review/log.jsonl";
+
+/** 要备份的文件：笔记、图片，再加上知识简卡的复习日志 */
+export function scanBackupFiles(notesRoot: string, dataDir: string): LocalFile[] {
+  const files = scanNotes(notesRoot);
+  const log = reviewLogPath(dataDir);
+  try {
+    const raw = fs.readFileSync(log, "utf8");
+    files.push({ relPath: REVIEW_BACKUP_PATH, abs: log, hash: contentHash(raw), bytes: Buffer.byteLength(raw, "utf8"), binary: false });
+  } catch {
+    // 还没复习过：没有日志文件
+  }
+  return files;
+}
+
 export function scanNotes(notesRoot: string): LocalFile[] {
   const out: LocalFile[] = [];
   const walk = (dir: string): void => {
@@ -283,7 +300,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
 
   function pendingCount(): number {
     const m = manifest();
-    const files = scanNotes(deps.notesRoot);
+    const files = scanBackupFiles(deps.notesRoot, deps.dataDir);
     const changed = files.filter((file) => m.uploaded[file.relPath] !== file.hash).length;
     const deleted = Object.keys(m.uploaded).filter((relPath) => !files.some((file) => file.relPath === relPath)).length;
     return changed + deleted;
@@ -334,7 +351,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
       m.snapshots = [];
       m.monthly = [];
     }
-    const files = scanNotes(deps.notesRoot);
+    const files = scanBackupFiles(deps.notesRoot, deps.dataDir);
     const today = toLocalIso(now()).slice(0, 10);
     const month = today.slice(0, 7);
 
@@ -482,7 +499,7 @@ export function createBackupService(deps: BackupDeps): BackupService {
 
   function listSnapshots(): SnapshotSummary[] {
     const m = manifest();
-    const files = scanNotes(deps.notesRoot);
+    const files = scanBackupFiles(deps.notesRoot, deps.dataDir);
     const sizes = new Map(files.map((file) => [file.relPath, file.bytes]));
     return m.snapshots
       .map((entry) => ({
@@ -497,7 +514,8 @@ export function createBackupService(deps: BackupDeps): BackupService {
   function snapshotFiles(day: string): SnapshotFile[] {
     const entry = manifest().snapshots.find((item) => item.day === day);
     if (!entry) return [];
-    return entry.files.map((relPath) => ({ path: relPath, bytes: 0 }));
+    // 复习日志不是笔记，不出现在「从快照恢复笔记」的列表里（需要时手动从云端拷回 data/review/）
+    return entry.files.filter((relPath) => relPath !== REVIEW_BACKUP_PATH).map((relPath) => ({ path: relPath, bytes: 0 }));
   }
 
   async function readSnapshotFile(day: string, relPath: string): Promise<string | null> {

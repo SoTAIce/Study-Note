@@ -50,7 +50,8 @@ try {
     "data/index.db",
     "data/chats",
     "data/.history",
-    "data/.trash"
+    "data/.trash",
+    "data/review"
   )
   foreach ($rel in $forbidden) {
     if (Test-Path (Join-Path $tmp $rel)) { throw "自检失败：快照里不该有 $rel" }

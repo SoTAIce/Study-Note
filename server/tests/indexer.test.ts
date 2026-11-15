@@ -219,9 +219,9 @@ test("索引表有 group_name 列，且把笔记的组写进去", () => {
   assert.equal(byPath.get(plain.relPath), null);
 });
 
-test("改组之后重新索引，group_name 跟着变；SCHEMA_VERSION 升到 4（全文表 rowid 与 notes 对齐，旧库要重建）", () => {
+test("改组之后重新索引，group_name 跟着变；SCHEMA_VERSION 升到 5（新增知识简卡表，旧库要重建）", () => {
   const { store, db, indexer } = mk();
-  assert.equal(SCHEMA_VERSION, 4);
+  assert.equal(SCHEMA_VERSION, 5);
 
   const note = store.create({ title: "Go 接口", body: "正文" });
   indexer.indexFile(note.relPath);
@@ -245,7 +245,7 @@ test("旧版本库（schema_version=1）打开后整库重建并带上 group_nam
   const cols = second.prepare("PRAGMA table_info(notes)").all() as Array<{ name: string }>;
   assert.ok(cols.some((col) => col.name === "group_name"), JSON.stringify(cols));
   const version = second.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string };
-  assert.equal(version.value, "4");
+  assert.equal(version.value, "5");
   second.close();
 });
 
@@ -417,4 +417,18 @@ test("全文行的 rowid 与 notes 行对齐，反复改写后不留多余的全
     .get() as { n: number };
   assert.equal(mismatched.n, 0);
   assert.equal((db.prepare("SELECT count(*) AS n FROM notes_fts").get() as { n: number }).n, 2);
+});
+
+test("简卡跟着笔记进索引：改了重写、删了笔记卡也没了（srs-001）", () => {
+  const { notesRoot, store, db, indexer } = mk();
+  const note = store.create({ title: "甲", body: "术语 :: 解释\n\n> [!card] 概念\n> 要点", tags: [] });
+  indexer.reindexAll();
+  const titles = () => (db.prepare("SELECT title FROM cards ORDER BY ord").all() as Array<{ title: string }>).map((r) => r.title);
+  assert.deepEqual(titles(), ["术语", "概念"]);
+  fs.writeFileSync(path.join(notesRoot, note.relPath), fs.readFileSync(path.join(notesRoot, note.relPath), "utf8").replace("术语 :: 解释", ""));
+  indexer.indexFile(note.relPath);
+  assert.deepEqual(titles(), ["概念"]);
+  fs.rmSync(path.join(notesRoot, note.relPath));
+  indexer.indexFile(note.relPath);
+  assert.deepEqual(titles(), []);
 });

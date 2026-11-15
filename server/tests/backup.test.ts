@@ -9,6 +9,7 @@ import {
   loadBackupConfig,
   maskBackupConfig,
   saveBackupConfig,
+  REVIEW_BACKUP_PATH,
   scanNotes,
 } from "../backup.ts";
 import { createWebdavClient } from "../webdav.ts";
@@ -361,4 +362,27 @@ test("图片附件：二进制原样传到 latest/，不进每日快照和月度
   const second = await service.run();
   assert.equal(second.skipped, true);
   assert.equal(dav.calls.length, before, "图片没变化时不应再上传");
+});
+
+test("知识简卡的复习日志跟着备份：latest / 快照 / 月度归档都有，但不出现在快照的笔记恢复列表里（srs-001）", async () => {
+  const { dataDir, notesRoot } = makeDataDir();
+  configure(dataDir);
+  fs.mkdirSync(path.join(dataDir, "review"), { recursive: true });
+  const line = '{"t":"2026-11-15T09:00:00+08:00","card":"c_a","note":"n","grade":3}\n';
+  fs.writeFileSync(path.join(dataDir, "review", "log.jsonl"), line);
+  const dav = fakeWebdav();
+  const service = createBackupService({ dataDir, notesRoot, fetchImpl: dav.fetchImpl });
+
+  const first = await service.run();
+  const day = first.snapshotDay!;
+  assert.equal(dav.files.get(`latest/${REVIEW_BACKUP_PATH}`), line);
+  assert.ok(dav.files.has(`snapshots/${day}/${REVIEW_BACKUP_PATH}`));
+  assert.ok(dav.files.has(`monthly/${day.slice(0, 7)}/${REVIEW_BACKUP_PATH}`));
+  assert.ok(!service.snapshotFiles(day).some((f) => f.path === REVIEW_BACKUP_PATH));
+
+  // 复习后日志变了：下次备份重传
+  fs.appendFileSync(path.join(dataDir, "review", "log.jsonl"), line);
+  const second = await service.run();
+  assert.equal(second.uploaded, 1);
+  assert.equal(dav.files.get(`latest/${REVIEW_BACKUP_PATH}`), line + line);
 });

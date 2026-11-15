@@ -21,6 +21,9 @@ data/groups.json
 # 计划执行期的本地工作区
 .superpowers/
 
+# 知识简卡的复习记录（srs-001）是个人数据
+data/review/
+
 # 会话记录是本机聊天数据（含工具调用细节），不进 git
 data/chats/
 

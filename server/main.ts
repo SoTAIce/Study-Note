@@ -7,6 +7,7 @@ import { createApi } from "./api.ts";
 import { createBackupService } from "./backup.ts";
 import { openDb } from "./db.ts";
 import { Indexer } from "./indexer.ts";
+import { ReviewLog } from "./review.ts";
 import { NoteStore, TRASH_RETENTION_DAYS } from "./store.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -21,6 +22,9 @@ const store = new NoteStore({
 });
 const db = openDb(path.join(dataDir, "index.db"));
 const indexer = new Indexer({ db, store });
+// 知识简卡的复习记录要在启动索引之前就绪：关着应用时在别的编辑器里改了卡片标题，启动时也能认回原卡
+const review = new ReviewLog({ dataDir });
+indexer.onCardRenamed((newId, oldId) => review.alias(newId, oldId));
 const built = indexer.reindexAll();
 indexer.watch();
 
@@ -39,7 +43,7 @@ purgeTrash();
 const trashTick = setInterval(purgeTrash, 6 * 60 * 60 * 1000);
 
 const port = Number(process.env.STUDY_PORT ?? 7777);
-const app = createApp({ dataDir, notesRoot, api: createApi({ store, indexer, db, dataDir, backup }) });
+const app = createApp({ dataDir, notesRoot, api: createApi({ store, indexer, db, dataDir, backup, review }) });
 const server = http.createServer(app);
 
 // 备份定时器：每分钟醒一次做纯本地判断（不发请求），真正到点才备份。
