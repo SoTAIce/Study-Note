@@ -9,13 +9,18 @@ export type SearchHit = {
   updated: string;
 };
 
+/** 候选行：只带打分要用的字段，正文等排完序再按 rowid 取 */
 type CandidateRow = {
+  fts_rowid: number;
   id: string;
   path: string;
   title: string;
   updated: string;
-  body: string;
+  /** 该笔记的标签，用 \x1f 连接（没有标签时为 null） */
+  tags: string | null;
 };
+
+const TAG_SEP = "\x1f";
 
 const RECENT_DAYS = 7;
 
@@ -32,32 +37,29 @@ function charLength(text: string): number {
 }
 
 /**
- * 候选集：≥3 字符走 FTS5 trigram（中英文都能子串匹配），不足 3 字符走 LIKE 兜底。
- * FTS 的 bm25 只用于预筛，最终排序在这里重新加权。
+ * 候选集（一次查询）：≥3 字符走 FTS5 trigram（中英文都能子串匹配），不足 3 字符或 FTS 没结果时走 LIKE 兜底。
+ * 同一条 SQL 里带出标题、更新时间和标签（标签筛选也在 SQL 里做），不取正文——正文只给最终要显示的几条取。
  */
-function candidateIds(db: DatabaseSync, needle: string): string[] {
-  const ids: string[] = [];
+function candidates(db: DatabaseSync, needle: string, tag: string | undefined): CandidateRow[] {
+  const select = `SELECT f.rowid AS fts_rowid, n.id AS id, n.path AS path, n.title AS title, n.updated AS updated,
+            (SELECT group_concat(t.tag, char(31)) FROM tags t WHERE t.note_id = n.id) AS tags
+       FROM notes_fts f JOIN notes n ON n.id = f.note_id`;
+  const tagWhere = tag ? " AND EXISTS (SELECT 1 FROM tags t2 WHERE t2.note_id = n.id AND t2.tag = ?)" : "";
+  const tagParams = tag ? [tag] : [];
+
   if (charLength(needle) >= 3) {
     const phrase = `"${needle.replace(/"/g, '""')}"`;
     try {
-      const rows = db
-        .prepare("SELECT note_id AS id FROM notes_fts WHERE notes_fts MATCH ?")
-        .all(phrase) as Array<{ id: string }>;
-      for (const row of rows) ids.push(row.id);
+      const rows = db.prepare(`${select} WHERE notes_fts MATCH ?${tagWhere}`).all(phrase, ...tagParams) as CandidateRow[];
+      if (rows.length > 0) return rows;
     } catch {
       // trigram 解析不了的查询直接落回 LIKE
     }
   }
-  if (ids.length === 0) {
-    const pattern = likePattern(needle);
-    const rows = db
-      .prepare(
-        "SELECT note_id AS id FROM notes_fts WHERE title LIKE ? ESCAPE '\\' OR body LIKE ? ESCAPE '\\'",
-      )
-      .all(pattern, pattern) as Array<{ id: string }>;
-    for (const row of rows) ids.push(row.id);
-  }
-  return [...new Set(ids)];
+  const pattern = likePattern(needle);
+  return db
+    .prepare(`${select} WHERE (f.title LIKE ? ESCAPE '\\' OR f.body LIKE ? ESCAPE '\\')${tagWhere}`)
+    .all(pattern, pattern, ...tagParams) as CandidateRow[];
 }
 
 function makeSnippet(body: string, needle: string, radius = 30): string {
@@ -83,42 +85,38 @@ export function search(
   if (!needle) return [];
   const limit = opts.limit ?? 20;
   const now = opts.now ?? new Date();
-  const ids = candidateIds(db, needle);
-  if (ids.length === 0) return [];
+  const rows = candidates(db, needle, opts.tag);
+  if (rows.length === 0) return [];
 
-  const noteStmt = db.prepare(
-    `SELECT n.id AS id, n.path AS path, n.title AS title, n.updated AS updated, f.body AS body
-       FROM notes n JOIN notes_fts f ON f.note_id = n.id
-      WHERE n.id = ?`,
-  );
-  const tagStmt = db.prepare("SELECT tag FROM tags WHERE note_id = ?");
   const lowerNeedle = needle.toLowerCase();
   const recentCutoff = now.getTime() - RECENT_DAYS * 24 * 60 * 60 * 1000;
 
-  const hits: SearchHit[] = [];
-  for (const id of ids) {
-    const row = noteStmt.get(id) as CandidateRow | undefined;
-    if (!row) continue;
-    const tags = (tagStmt.all(id) as Array<{ tag: string }>).map((t) => t.tag);
-    if (opts.tag && !tags.includes(opts.tag)) continue;
-
+  // 先打分、排序、截断（只用标题 / 标签 / 时间），再给留下的几条取正文做片段
+  const seen = new Set<string>();
+  const scored: Array<{ row: CandidateRow; score: number }> = [];
+  for (const row of rows) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    const tags = row.tags ? row.tags.split(TAG_SEP) : [];
     const titleHit = row.title.toLowerCase().includes(lowerNeedle);
-    const tagHit = tags.some((tag) => tag.toLowerCase().includes(lowerNeedle));
+    const tagHit = tags.some((t) => t.toLowerCase().includes(lowerNeedle));
     let score = titleHit ? 3 : tagHit ? 2 : 1;
-    if (tagHit && titleHit) score = 3;
     const updatedAt = Date.parse(row.updated);
     if (!Number.isNaN(updatedAt) && updatedAt >= recentCutoff) score *= 1.2;
+    scored.push({ row, score: Number(score.toFixed(3)) });
+  }
+  scored.sort((a, b) => b.score - a.score || b.row.updated.localeCompare(a.row.updated));
 
-    hits.push({
+  const bodyStmt = db.prepare("SELECT body FROM notes_fts WHERE rowid = ?");
+  return scored.slice(0, limit).map(({ row, score }) => {
+    const body = (bodyStmt.get(row.fts_rowid) as { body: string } | undefined)?.body ?? "";
+    return {
       id: row.id,
       relPath: row.path,
       title: row.title,
-      snippet: makeSnippet(row.body, needle),
-      score: Number(score.toFixed(3)),
+      snippet: makeSnippet(body, needle),
+      score,
       updated: row.updated,
-    });
-  }
-
-  hits.sort((a, b) => b.score - a.score || b.updated.localeCompare(a.updated));
-  return hits.slice(0, limit);
+    };
+  });
 }

@@ -15,5 +15,5 @@
     "jsx": "react-jsx",
     "types": ["node"]
   },
-  "include": ["server/**/*.ts", "web/src/**/*.ts", "web/src/**/*.tsx", "vite.config.ts"]
+  "include": ["server/**/*.ts", "scripts/**/*.ts", "web/src/**/*.ts", "web/src/**/*.tsx", "vite.config.ts"]
 }

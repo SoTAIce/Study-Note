@@ -36,6 +36,8 @@ echo "==> 类型检查"
 "${RUN[@]}" typecheck
 echo "==> 单元 / 接口测试"
 "${RUN[@]}" test
+echo "==> 搜索基准（1 万篇，每种查询 < 200ms）"
+"${RUN[@]}" run bench:search
 echo "==> 构建前端"
 "${RUN[@]}" build
 

@@ -1,6 +1,6 @@
 {
   "project": "study-notes",
-  "last_updated": "2026-11-14",
+  "last_updated": "2026-11-15",
   "rules": {
     "single_active_feature": true,
     "passing_requires_evidence": true,
@@ -467,13 +467,33 @@
       "area": "perf",
       "title": "全文搜索查询优化",
       "user_visible_behavior": "搜索合并为少量查询、先排序截断再生成片段；1 万篇笔记时搜索 < 200ms。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "search.test.ts 全部通过",
         "基准脚本：大库搜索耗时"
       ],
+      "evidence": [
+        "原因：旧实现对每个候选笔记单独查 2 次（正文 + 标签），取正文时按 notes_fts.note_id 关联，而这一列没有索引，每次都扫整张全文表——耗时随笔记数平方增长：1000 篇时常用词搜索约 340ms，1 万篇约半分钟",
+        "改法（server/search.ts）：一条 SQL 取出候选的标题 / 时间 / 标签（标签筛选也在 SQL 里）→ 在内存里打分、排序、截断到 limit → 只给留下的条目按 FTS rowid 取正文做片段；打分规则不变",
+        "node scripts/bench-search.ts 10000（pnpm bench:search，已加进 ./init.sh，中位数超过 200ms 失败）：常用词 48ms、英文 50ms、两个字 LIKE 47ms、罕见词 0.3ms、带标签筛选 23ms、查不到 43ms；同一脚本 1000 篇时旧实现 330~346ms、新实现 2.5~9ms",
+        "node --test server/tests/search.test.ts 9 条通过（新增 3 条：改过 / 删过笔记后片段仍来自各自正文、两个字 + 标签筛选与同分按时间排序、多标签命中打分）",
+        "./init.sh 全绿：455 个测试 + 搜索基准 + E2E 23 步（2026-11-15）"
+      ],
+      "notes": "发现但没做：启动时会把每个文件都重新索引，每篇都按没有索引的 note_id 删全文行，1 万篇时启动可能要一分多钟，已记为 perf-006。"
+    },
+    {
+      "id": "perf-006",
+      "priority": 12,
+      "area": "perf",
+      "title": "启动索引提速：没变的文件跳过，全文表按 rowid 删除",
+      "user_visible_behavior": "笔记很多（1 万篇）时，启动服务不用等一分多钟；只有改过的文件才重新索引。",
+      "status": "not_started",
+      "verification": [
+        "基准：1 万篇的库二次启动 reindexAll 耗时",
+        "indexer.test.ts：内容没变时不重写索引，变了照常更新"
+      ],
       "evidence": [],
-      "notes": ""
+      "notes": "2026-11-15 做 perf-003 时测得：notes_fts 按 note_id 删除一行在 1 万篇时约 10ms（note_id 是 UNINDEXED 列，整表扫描）；reindexAll 对每个文件都调 indexFile，已有索引时每篇都会删一次。"
     },
     {
       "id": "perf-004",

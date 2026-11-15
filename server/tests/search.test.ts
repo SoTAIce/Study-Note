@@ -97,3 +97,50 @@ test("limit 生效，结果带 id 与相对路径", () => {
   assert.ok(hits[0].relPath.endsWith(".md"));
   db.close();
 });
+
+test("改过、删过笔记后片段仍取自各自的正文（perf-003：正文按 FTS rowid 取）", () => {
+  const { store, db, indexer } = mk();
+  const a = store.create({ title: "甲篇", body: "甲篇正文提到梯度下降。", tags: [] });
+  const b = store.create({ title: "乙篇", body: "乙篇正文也提到梯度下降。", tags: [] });
+  const c = store.create({ title: "丙篇", body: "丙篇正文同样梯度下降。", tags: [] });
+  indexer.reindexAll();
+  // 改甲、删丙：FTS 里的行会删了重插，rowid 变了
+  const cur = store.read(a.relPath);
+  store.save(a.relPath, "甲篇改过的正文，还是梯度下降。", cur.hash);
+  indexer.indexFile(a.relPath);
+  store.moveToTrash(c.relPath);
+  indexer.removeFile(c.relPath);
+
+  const hits = search(db, "梯度下降");
+  assert.deepEqual(hits.map((h) => h.title).sort(), ["乙篇", "甲篇"]);
+  for (const hit of hits) {
+    const own = hit.title === "甲篇" ? "甲篇改过的正文" : "乙篇正文";
+    assert.ok(hit.snippet.includes(own), `${hit.title} 的片段应来自自己的正文：${hit.snippet}`);
+  }
+  void b;
+  db.close();
+});
+
+test("两个字的查询也能按标签筛选；同分按更新时间新的在前（perf-003 后行为不变）", () => {
+  const { store, db, indexer } = mk();
+  store.create({ title: "旧的", body: "讲矩阵的旧笔记", tags: ["数学"] });
+  store.create({ title: "新的", body: "讲矩阵的新笔记", tags: ["数学"] });
+  store.create({ title: "别的", body: "也讲矩阵", tags: ["杂项"] });
+  indexer.reindexAll();
+  const now = new Date(2030, 0, 1); // 都不算最近，只按时间排
+  assert.deepEqual(search(db, "矩阵", { tag: "数学", now }).map((h) => h.title), ["新的", "旧的"]);
+  assert.deepEqual(search(db, "矩阵", { tag: "没有的标签", now }), []);
+  db.close();
+});
+
+test("标签命中排在只有正文命中之前；多个标签都能参与打分", () => {
+  const { store, db, indexer } = mk();
+  store.create({ title: "笔记一", body: "提到复习方法", tags: [] });
+  store.create({ title: "笔记二", body: "提到复习方法", tags: ["随笔", "复习方法论"] });
+  indexer.reindexAll();
+  const hits = search(db, "复习方法", { now: new Date(2030, 0, 1) });
+  assert.equal(hits[0].title, "笔记二");
+  assert.equal(hits[0].score, 2);
+  assert.equal(hits[1].score, 1);
+  db.close();
+});
