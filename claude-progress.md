@@ -6,8 +6,8 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-15，497 个单元/接口测试 + 三个基准 + E2E 25 步（本机 + GitHub Actions 的 Linux、Windows）
-- 优先级最高的未完成功能：group-002（子项目，方案 2026-11-18-project-book-view-design.md 等用户批准后才开工）；srs-002、blog-001 为 blocked，见 docs/待实现.md
+- 最近一次全绿：2026-11-18，515 个单元/接口测试 + 三个基准 + E2E 26 步（本机；GitHub Actions 结果见会话 025）
+- 优先级最高的未完成功能：book-001（连读，方案 2026-11-18-project-book-view-design.md 已批准）；srs-002、blog-001 为 blocked，见 docs/待实现.md
 - 当前阻塞：无
 
 ## 会话记录
@@ -229,3 +229,12 @@
 - 博客想法录为 blog-001（blocked，用户还没回答写什么、托管在哪等）。
 - 没有改代码，没有跑 init.sh（上次全绿是 2026-11-15）。
 - 下一步：等用户批准方案后从 group-002 开工。
+
+### 会话 025 · 2026-11-18 · 子项目（group-002）
+
+- 用户批准方案 2026-11-18-project-book-view-design.md，按分期先做 group-002。
+- 后端：组名允许一个 `/`（父分组/子项目，最多两层，每段单独校验，斜杠两边空白去掉；parse.ts 读入时就规整）；`?group=父分组` 在笔记列表、简卡墙、AI list_notes 三处都包含子项目（LIKE 转义 % _）；/api/groups 增加 total 并补出只有子项目的父分组；改父分组名 / 删除父分组连带子项目和 groups.json 条目；有子项目的分组不能改成子项目。
+- 前端：左栏分组变两层树（箭头折叠，状态存 localStorage `study.groupTreeCollapsed`）；父分组行悬停有「+ 新建子项目」；父分组列表里子项目笔记标子项目名；删除父分组的确认框写明连带几个子项目、共几篇。
+- 旧测试 4 处用 `Go/学习` 作非法组名，按方案改成仍非法的写法（见 group-002 证据）。
+- 验证：./init.sh 515 + 三个基准 + E2E 26 步全绿。
+- 下一步：book-001（连读）。点子项目目前是筛选列表，book-001 改成进连读。

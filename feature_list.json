@@ -851,14 +851,19 @@
       "area": "groups",
       "title": "子项目：分组下再分一层（group: agent/looprun）",
       "user_visible_behavior": "组名可写成「父分组/子项目」；左栏显示成可展开的树；点父分组的列表包含子项目的笔记并标出子项目名；父分组改名、删除时子项目跟着变，确认框列出影响范围。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "单测：带斜杠组名的校验与规整、父分组前缀匹配转义",
         "接口测试：?group=父分组 包含子项目；改名 / 删除连带",
         "E2E：建子项目后左栏出现树"
       ],
-      "evidence": [],
-      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（草案，等用户批准后才开工）。 方案第九节第 1 期。"
+      "evidence": [
+        "pnpm test：515 通过。新增 server/tests/groups.test.ts 4 条（带斜杠组名规整与校验、每段单独校验、parentGroup / isInGroup / replaceGroupPrefix、groupFilterSql 匹配子项目且转义 LIKE 通配符）；groups-api.test.ts 6 条（?group=父分组 含子项目、/api/groups 的 total 与补出父分组、改父分组名连带子项目与 groups.json、有子项目不能改成子项目、删除父分组连带、三层组名 400）；review-api.test.ts 1 条、agent-tools.test.ts 1 条（简卡墙与 AI list_notes 按父分组含子项目）；web/src/lib/group-tree.test.ts 6 条",
+        "旧测试里用 \"Go/学习\" 当非法组名的 4 处改为 \"Go/学习/进阶\" 或 \"Go:学习\"：斜杠按已批准方案变成合法分隔符，断言本身没有放宽",
+        "pnpm e2e：26 步通过；新步骤「子项目」：悬停父分组点 + 建子项目、左栏缩进显示、点子项目新建时分组栏预填完整路径、父分组列表含子项目笔记并标子项目名、折叠后刷新仍折叠、改父分组名后子项目与笔记 group 跟着换前缀；截图 e2e-artifacts/21-subprojects.png",
+        "./init.sh 全绿（2026-11-18）：515 测试 + 三个基准 + E2E 26 步"
+      ],
+      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（已批准 2026-11-18）。 方案第九节第 1 期。 实现：server/groups.ts（GROUP_SEP、isInGroup、replaceGroupPrefix、groupFilterSql）、groups-api.ts 连带改名 / 删除、parse.ts 读入时规整组名；前端 web/src/lib/group-tree.ts、Sidebar 树。点子项目暂时是筛选列表，book-001 改成进连读。"
     },
     {
       "id": "book-001",
@@ -874,7 +879,7 @@
         "基准：100 章项目首屏 ≤ 1 秒"
       ],
       "evidence": [],
-      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（草案，等用户批准后才开工）。 方案第九节第 2 期，依赖 group-002。"
+      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（已批准 2026-11-18）。 方案第九节第 2 期，依赖 group-002。"
     },
     {
       "id": "book-002",
@@ -888,7 +893,7 @@
         "E2E：双击一章修改后 Esc，文件已改；新建一章后目录多一行"
       ],
       "evidence": [],
-      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（草案，等用户批准后才开工）。 方案第九节第 3 期，依赖 book-001。"
+      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（已批准 2026-11-18）。 方案第九节第 3 期，依赖 book-001。"
     },
     {
       "id": "book-003",
@@ -901,7 +906,7 @@
         "E2E：导出整本 PDF，检查书签数"
       ],
       "evidence": [],
-      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（草案，等用户批准后才开工）。 方案第九节第 4 期；完成后 export-002 只剩按标签导出。"
+      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（已批准 2026-11-18）。 方案第九节第 4 期；完成后 export-002 只剩按标签导出。"
     },
     {
       "id": "tpl-001",

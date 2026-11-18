@@ -5,11 +5,15 @@ import os from "node:os";
 import path from "node:path";
 import {
   MAX_GROUP_NAME,
+  groupFilterSql,
+  isInGroup,
   mergeGroupList,
   normalizeGroupName,
+  parentGroup,
   readGroups,
   removeGroupEntry,
   renameGroupEntry,
+  replaceGroupPrefix,
   sameGroup,
   upsertGroup,
   validateGroupName,
@@ -31,7 +35,11 @@ test("validateGroupName 拒绝空名、超长、非法字符和保留名", () =>
   assert.equal(validateGroupName("").ok, false);
   assert.equal(validateGroupName("   ").ok, false);
   assert.equal(validateGroupName("组".repeat(MAX_GROUP_NAME + 1)).ok, false);
-  assert.equal(validateGroupName("Go/学习").ok, false);
+  // `/` 是父分组与子项目的分隔符（group-002），但最多两层、两边都要有名字
+  assert.equal(validateGroupName("Go/学习/进阶").ok, false);
+  assert.equal(validateGroupName("/学习").ok, false);
+  assert.equal(validateGroupName("Go/").ok, false);
+  assert.equal(validateGroupName("Go\\学习").ok, false);
   assert.equal(validateGroupName("Go:学习").ok, false);
   assert.equal(validateGroupName("Go\u0007学习").ok, false);
   assert.equal(validateGroupName("未分组").ok, false);
@@ -129,4 +137,48 @@ test("mergeGroupList 保留空组，并补上只在笔记里出现的组", () =>
 
   const withEmpty = mergeGroupList([{ name: "Go 学习", order: 1 }], []);
   assert.deepEqual(withEmpty, [{ name: "Go 学习", order: 1, empty: true }]);
+});
+
+// ---- 子项目（group-002）----
+
+test("validateGroupName 接受「父分组/子项目」，并去掉斜杠两边的空白", () => {
+  const result = validateGroupName("  agent  /  looprun ");
+  assert.equal(result.ok, true);
+  assert.equal(result.ok && result.name, "agent/looprun");
+  assert.equal(normalizeGroupName("agent\u3000/\u3000loop run"), "agent/loop run");
+});
+
+test("validateGroupName 对每一段单独校验：保留名、长度", () => {
+  assert.equal(validateGroupName("agent/未分组").ok, false);
+  assert.equal(validateGroupName("none/looprun").ok, false);
+  assert.equal(validateGroupName(`agent/${"组".repeat(MAX_GROUP_NAME)}`).ok, true);
+  assert.equal(validateGroupName(`agent/${"组".repeat(MAX_GROUP_NAME + 1)}`).ok, false);
+});
+
+test("parentGroup / isInGroup / replaceGroupPrefix", () => {
+  assert.equal(parentGroup("agent/looprun"), "agent");
+  assert.equal(parentGroup("agent"), null);
+  assert.equal(isInGroup("agent/looprun", "Agent"), true);
+  assert.equal(isInGroup("agent", "agent"), true);
+  assert.equal(isInGroup("agents", "agent"), false);
+  assert.equal(isInGroup("agent/looprun", "agent/loop"), false);
+  assert.equal(isInGroup(null, "agent"), false);
+  assert.equal(replaceGroupPrefix("agent/looprun", "Agent", "ai-agent"), "ai-agent/looprun");
+  assert.equal(replaceGroupPrefix("agent", "agent", "ai-agent"), "ai-agent");
+});
+
+test("groupFilterSql 匹配本组与子项目，LIKE 通配符被转义", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const db = new DatabaseSync(":memory:");
+  db.exec("CREATE TABLE n (g TEXT)");
+  for (const g of ["a_b", "a_b/x", "axb/y", "a_bc", "A_B/Z", "other", null]) {
+    db.prepare("INSERT INTO n (g) VALUES (?)").run(g);
+  }
+  const filter = groupFilterSql("g", "a_b");
+  const rows = db.prepare(`SELECT g FROM n WHERE ${filter.sql} ORDER BY g`).all(...filter.params) as Array<{ g: string }>;
+  assert.deepEqual(
+    rows.map((row) => row.g),
+    ["A_B/Z", "a_b", "a_b/x"],
+  );
+  db.close();
 });

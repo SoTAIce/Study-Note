@@ -274,6 +274,26 @@ test("list_notes 可以按组过滤，group=none 只列未分组", async () => {
   }
 });
 
+test("list_notes 按父分组过滤时包含子项目，名字相近的别组不算", async () => {
+  const ctx = makeCtx();
+  try {
+    const parent = ctx.store.create({ title: "父组直接", body: "正文", group: "agent" });
+    const child = ctx.store.create({ title: "子项目里", body: "正文", group: "agent/looprun" });
+    const other = ctx.store.create({ title: "相近的别组", body: "正文", group: "agents" });
+    for (const note of [parent, child, other]) ctx.indexer.indexFile(note.relPath);
+    const tools = createTools({ db: ctx.db, store: ctx.store, notesRoot: ctx.notesRoot, readRoots: [ctx.notesRoot] });
+
+    const all = JSON.parse((await tools.run("list_notes", { group: "Agent" })).content) as Array<{ path: string }>;
+    assert.deepEqual(all.map((item) => item.path).sort(), [parent.relPath, child.relPath].sort());
+    const sub = JSON.parse((await tools.run("list_notes", { group: "agent/looprun" })).content) as Array<{
+      path: string;
+    }>;
+    assert.deepEqual(sub.map((item) => item.path), [child.relPath]);
+  } finally {
+    ctx.cleanup();
+  }
+});
+
 test("read_note 的返回里带当前组", async () => {
   const ctx = makeCtx();
   try {

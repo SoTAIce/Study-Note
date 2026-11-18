@@ -222,7 +222,7 @@ test("create 带 group 会被写进计划；非法组名判 BAD_OP", () => {
     assert.equal(
       codeOf(() =>
         normalizePlan(
-          { summary: "非法组", ops: [{ kind: "create", title: "接口", body: "正文", group: "Go/学习" }] },
+          { summary: "非法组", ops: [{ kind: "create", title: "接口", body: "正文", group: "Go/学习/进阶" }] },
           { store, notesRoot: store.notesRoot },
         ),
       ),

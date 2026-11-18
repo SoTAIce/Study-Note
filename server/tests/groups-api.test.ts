@@ -72,13 +72,13 @@ test("POST /api/groups 建组，重复建是幂等的", async () => {
 });
 
 test("POST /api/groups 拒绝非法组名，且不落盘", async () => {
-  const bad = await call("POST", "/api/groups", { name: "Go/学习" });
+  const bad = await call("POST", "/api/groups", { name: "Go:学习" });
   assert.equal(bad.status, 400);
   assert.match(bad.json.error, /字符/);
 
   const empty = await call("POST", "/api/groups", { name: "   " });
   assert.equal(empty.status, 400);
-  assert.equal(readGroups(tmp).some((group) => group.name === "Go/学习"), false);
+  assert.equal(readGroups(tmp).some((group) => group.name === "Go:学习"), false);
 });
 
 test("GET /api/groups 带上计数、空组与未分组数", async () => {
@@ -302,4 +302,84 @@ test("?group=none 大小写都表示未分组；叫 none 的组被拒绝", async
   const created = await call("POST", "/api/groups", { name: "none" });
   assert.equal(created.status, 400);
   assert.ok(store.read(grouped.relPath).parsed.meta.group);
+});
+
+
+// ---- 子项目（group-002）----
+
+test("子项目：?group=父分组 包含子项目的笔记，?group=子项目 只含自己", async () => {
+  newNote("父组直接的", "项目甲");
+  newNote("looprun 实现", "项目甲/looprun");
+  newNote("trace 实现", "项目甲 / trace");
+  newNote("名字相近的别组", "项目甲乙");
+
+  const parent = await call("GET", `/api/notes?group=${encodeURIComponent("项目甲")}`);
+  const titles = (parent.json.items as Array<{ title: string; group: string }>).map((item) => item.title).sort();
+  assert.deepEqual(titles, ["looprun 实现", "trace 实现", "父组直接的"].sort());
+  // 手写的「项目甲 / trace」被规整成「项目甲/trace」
+  assert.ok((parent.json.items as Array<{ group: string }>).some((item) => item.group === "项目甲/trace"));
+
+  const child = await call("GET", `/api/notes?group=${encodeURIComponent("项目甲/looprun")}`);
+  assert.deepEqual(
+    (child.json.items as Array<{ title: string }>).map((item) => item.title),
+    ["looprun 实现"],
+  );
+});
+
+test("子项目：GET /api/groups 给出 total，并补出只有子项目的父分组", async () => {
+  newNote("只在子项目里", "孤父/子一");
+  newNote("也在子项目里", "孤父/子二");
+  const res = await call("GET", "/api/groups");
+  const items = res.json.items as Array<{ name: string; count: number; total: number; empty: boolean }>;
+  const parent = items.find((item) => item.name === "孤父");
+  assert.ok(parent, JSON.stringify(items.map((item) => item.name)));
+  assert.equal(parent.count, 0);
+  assert.equal(parent.total, 2);
+  assert.equal(parent.empty, false);
+  const child = items.find((item) => item.name === "孤父/子一");
+  assert.equal(child?.count, 1);
+  assert.equal(child?.total, 1);
+});
+
+test("子项目：改父分组名，子项目跟着改；groups.json 里的子项目条目也改", async () => {
+  const direct = newNote("改名父直接", "改名父");
+  const sub = newNote("改名子项目里", "改名父/子");
+  await call("POST", "/api/groups", { name: "改名父/空子" });
+
+  const res = await call("PATCH", `/api/groups/${encodeURIComponent("改名父")}`, { name: "新父" });
+  assert.equal(res.status, 200);
+  assert.equal(res.json.renamed, 2);
+  assert.equal(store.read(direct.relPath).parsed.meta.group, "新父");
+  assert.equal(store.read(sub.relPath).parsed.meta.group, "新父/子");
+  const names = readGroups(tmp).map((group) => group.name);
+  assert.ok(names.includes("新父/空子"), JSON.stringify(names));
+  assert.equal(names.some((name) => name.startsWith("改名父")), false);
+});
+
+test("子项目：有子项目的分组不能改成子项目，也不能改进自己下面", async () => {
+  newNote("深度检查", "深父/子");
+  const deeper = await call("PATCH", `/api/groups/${encodeURIComponent("深父")}`, { name: "别的/深父" });
+  assert.equal(deeper.status, 400);
+  const self = await call("PATCH", `/api/groups/${encodeURIComponent("深父")}`, { name: "深父/内" });
+  assert.equal(self.status, 400);
+  // 子项目自己改名 / 挪到别的父分组下都可以
+  const ok = await call("PATCH", `/api/groups/${encodeURIComponent("深父/子")}`, { name: "别的父/子" });
+  assert.equal(ok.status, 200);
+});
+
+test("子项目：删除父分组，子项目的笔记也退回未分组，条目一起删", async () => {
+  const sub = newNote("删父子项目里", "删父/子");
+  await call("POST", "/api/groups", { name: "删父/空子" });
+  const res = await call("DELETE", `/api/groups/${encodeURIComponent("删父")}`);
+  assert.equal(res.status, 200);
+  assert.equal(res.json.ungrouped, 1);
+  assert.equal(store.read(sub.relPath).parsed.meta.group, undefined);
+  assert.equal(readGroups(tmp).some((group) => group.name.startsWith("删父")), false);
+});
+
+test("子项目：新建笔记时组名带斜杠可以，三层被拒", async () => {
+  const ok = await call("POST", "/api/notes", { title: "两层", body: "x", group: "建父/建子" });
+  assert.equal(ok.status, 201);
+  const bad = await call("POST", "/api/notes", { title: "三层", body: "x", group: "a/b/c" });
+  assert.equal(bad.status, 400);
 });

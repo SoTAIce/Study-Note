@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { NoteStore } from "./store.ts";
 import { search } from "./search.ts";
 import type { ToolSpec } from "./providers/types.ts";
+import { groupFilterSql } from "./groups.ts";
 
 /** 工具层错误：带上 code，便于测试与上层区分"模型参数错"和"库坏了"。 */
 export class ToolError extends Error {
@@ -137,7 +138,7 @@ export function createTools(deps: {
         properties: {
           tag: { type: "string", description: "只列出带该标签的笔记" },
           type: { type: "string", enum: ["note", "idea", "source"] },
-          group: { type: "string", description: "只列出该分组的笔记；传 none 表示未分组" },
+          group: { type: "string", description: "只列出该分组的笔记（父分组包含其子项目，如 agent 包含 agent/looprun）；传 none 表示未分组" },
           limit: { type: "number", description: "最多返回多少条，默认 50" },
         },
       },
@@ -230,11 +231,12 @@ export function createTools(deps: {
             AND (?2 IS NULL OR EXISTS (SELECT 1 FROM tags t WHERE t.note_id = n.id AND lower(t.tag) = lower(?2)))
             AND (?4 IS NULL
                  OR (?4 = 'none' AND (n.group_name IS NULL OR n.group_name = ''))
-                 OR (?4 <> 'none' AND lower(n.group_name) = lower(?4)))
+                 OR (?4 <> 'none' AND (lower(n.group_name) = lower(?4)
+                                       OR lower(n.group_name) LIKE lower(?5) ESCAPE '\\')))
           ORDER BY n.updated DESC
           LIMIT ?3`,
       )
-      .all(type ?? null, tag ?? null, limit, group ?? null) as Array<{
+      .all(type ?? null, tag ?? null, limit, group ?? null, group ? groupFilterSql("n.group_name", group).params[1] : null) as Array<{
       path: string;
       title: string | null;
       type: string | null;

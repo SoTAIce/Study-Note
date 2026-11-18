@@ -214,7 +214,7 @@ test("setGroup 拒绝非法组名，且不动文件", () => {
   const { store } = mkStore();
   const created = store.create({ title: "笔记", body: "正文" });
   const before = store.read(created.relPath);
-  assert.throws(() => store.setGroup(created.relPath, "Go/学习"), /参数错误：/);
+  assert.throws(() => store.setGroup(created.relPath, "Go/学习/进阶"), /参数错误：/);
   assert.equal(store.read(created.relPath).hash, before.hash);
 });
 

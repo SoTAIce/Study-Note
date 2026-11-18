@@ -7,29 +7,82 @@ export const MAX_GROUP_NAME = 40;
 /** 仅用于界面展示的「未分组」标签，不是真实的组名。 */
 export const UNGROUPED_LABEL = "未分组";
 
-/** 组名里不允许出现的字符（跨平台文件名保留字符 + 分隔符）。 */
-const BAD_CHARS = /[/\\:*?"<>|]/;
+/** 组名里不允许出现的字符（跨平台文件名保留字符）。`/` 另有用途：父分组与子项目的分隔符。 */
+const BAD_CHARS = /[\\:*?"<>|]/;
+
+/** 父分组与子项目的分隔符：`agent/looprun`。最多两层（group-002）。 */
+export const GROUP_SEP = "/";
+export const MAX_GROUP_DEPTH = 2;
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
 
 export type GroupEntry = { name: string; order: number };
 export type MergedGroup = { name: string; order: number; empty: boolean };
 
-/** 去首尾空白，内部连续空白（含全角空格）压成一个半角空格。 */
+/** 去首尾空白，内部连续空白（含全角空格）压成一个半角空格；`/` 两边的空白去掉。 */
 export function normalizeGroupName(raw: string): string {
-  return raw.replace(/[\s\u3000]+/g, " ").trim();
+  return raw
+    .replace(/[\s\u3000]+/g, " ")
+    .split(GROUP_SEP)
+    .map((part) => part.trim())
+    .join(GROUP_SEP)
+    .trim();
+}
+
+/** 父分组名；顶层分组返回 null。 */
+export function parentGroup(name: string): string | null {
+  const at = name.lastIndexOf(GROUP_SEP);
+  return at > 0 ? name.slice(0, at) : null;
+}
+
+/** `name` 是否就是 `ancestor`，或在它下面（子项目）。不区分大小写。 */
+export function isInGroup(name: string | null | undefined, ancestor: string): boolean {
+  const left = normalizeGroupName(name ?? "").toLowerCase();
+  const right = normalizeGroupName(ancestor).toLowerCase();
+  if (!left || !right) return false;
+  return left === right || left.startsWith(right + GROUP_SEP);
+}
+
+/** 把 `name` 里的祖先前缀 `from` 换成 `to`（改父分组名时，子项目跟着改）。 */
+export function replaceGroupPrefix(name: string, from: string, to: string): string {
+  const rest = normalizeGroupName(name).slice(normalizeGroupName(from).length);
+  return normalizeGroupName(to) + rest;
+}
+
+/**
+ * SQL 片段：列 `column` 属于分组 `name`（含其子项目）。
+ * LIKE 里的 % _ \ 要转义，否则组名里的下划线会当通配符。
+ */
+export function groupFilterSql(column: string, name: string): { sql: string; params: string[] } {
+  const norm = normalizeGroupName(name);
+  const pattern = `${norm.replace(/[\\%_]/g, (ch) => `\\${ch}`)}${GROUP_SEP}%`;
+  return {
+    sql: `(lower(${column}) = lower(?) OR lower(${column}) LIKE lower(?) ESCAPE '\\')`,
+    params: [norm, pattern],
+  };
+}
+
+function validateSegment(name: string): string | null {
+  if (name === UNGROUPED_LABEL) return `「${UNGROUPED_LABEL}」是保留名字，换一个吧`;
+  // `?group=none` 是「只看未分组」的哨兵，叫 none 的组永远筛不出来，所以禁掉
+  if (name.toLowerCase() === "none") return "「none」是保留名字（表示未分组），换一个吧";
+  if ([...name].length > MAX_GROUP_NAME) return `分组名太长，最多 ${MAX_GROUP_NAME} 个字`;
+  if (BAD_CHARS.test(name)) return '分组名里不能有 \\ : * ? " < > | 这些字符';
+  if (CONTROL_CHARS.test(name)) return "分组名里有不可见控制字符";
+  return null;
 }
 
 export function validateGroupName(raw: string): { ok: true; name: string } | { ok: false; error: string } {
   const name = normalizeGroupName(raw);
   if (!name) return { ok: false, error: "分组名不能为空" };
-  if (name === UNGROUPED_LABEL) return { ok: false, error: `「${UNGROUPED_LABEL}」是保留名字，换一个吧` };
-  // `?group=none` 是「只看未分组」的哨兵，叫 none 的组永远筛不出来，所以禁掉
-  if (name.toLowerCase() === "none") return { ok: false, error: "「none」是保留名字（表示未分组），换一个吧" };
-  if ([...name].length > MAX_GROUP_NAME) {
-    return { ok: false, error: `分组名太长，最多 ${MAX_GROUP_NAME} 个字` };
+  const parts = name.split(GROUP_SEP);
+  if (parts.length > MAX_GROUP_DEPTH) {
+    return { ok: false, error: "最多两层：父分组/子项目（只能有一个 /）" };
   }
-  if (BAD_CHARS.test(name)) return { ok: false, error: '分组名里不能有 / \\ : * ? " < > | 这些字符' };
-  if (CONTROL_CHARS.test(name)) return { ok: false, error: "分组名里有不可见控制字符" };
+  if (parts.some((part) => !part)) return { ok: false, error: "「/」两边都要有名字，例如 agent/looprun" };
+  for (const part of parts) {
+    const error = validateSegment(part);
+    if (error) return { ok: false, error };
+  }
   return { ok: true, name };
 }
 

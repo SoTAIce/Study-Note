@@ -84,7 +84,7 @@ test("组名会被校验（非法字符 / 保留名 / 超长）", async () => {
   try {
     // validateGroupName 在 main() 里调用；这里直接验证它拦得住这些名字
     const { validateGroupName } = await import("../groups.ts");
-    assert.equal(validateGroupName("Go/学习").ok, false);
+    assert.equal(validateGroupName("Go/学习/进阶").ok, false);
     assert.equal(validateGroupName("未分组").ok, false);
     assert.equal(validateGroupName("none").ok, false);
     assert.equal(validateGroupName("一".repeat(41)).ok, false);

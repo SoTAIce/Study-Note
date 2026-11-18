@@ -27,6 +27,7 @@ import type { ExportPrefs } from "./lib/export.ts";
 import BackupPanel from "./components/BackupPanel.tsx";
 import HistoryPanel from "./components/HistoryPanel.tsx";
 import NoteTabs from "./components/NoteTabs.tsx";
+import { isInGroup, replacePrefix } from "./lib/group-tree.ts";
 import * as groupsApi from "./groups-api.ts";
 import type { GroupView } from "./groups-api.ts";
 import { resolveKey } from "./lib/keyboard.ts";
@@ -616,7 +617,7 @@ export default function App() {
     setComposeError(null);
     // 在当前分组里新建就留在这个分组；其他情况回到全部笔记
     const nextFilter: Filter =
-      input.group && filter.kind === "group" && filter.name.toLowerCase() === input.group.toLowerCase()
+      input.group && filter.kind === "group" && isInGroup(input.group, filter.name)
         ? filter
         : { kind: "all" };
     try {
@@ -655,8 +656,11 @@ export default function App() {
       const res = await groupsApi.renameGroup(from, to);
       const failed = res.failed.length;
       // 当前正开着这个组里的笔记：跟着改筛选，别让用户看着空列表
+      // 改父分组名时，正在看的子项目也跟着换前缀
       const followUp: Filter =
-        filter.kind === "group" && filter.name.toLowerCase() === from.toLowerCase() ? { kind: "group", name: to } : filter;
+        filter.kind === "group" && isInGroup(filter.name, from)
+          ? { kind: "group", name: replacePrefix(filter.name, from, to) }
+          : filter;
       if (followUp !== filter) setFilter(followUp);
       await Promise.all([loadList(followUp), refreshSidebar()]);
       if (current) await refreshCurrentNote();
@@ -672,8 +676,7 @@ export default function App() {
   async function handleDeleteGroup(name: string): Promise<void> {
     try {
       const res = await groupsApi.deleteGroup(name);
-      const followUp: Filter =
-        filter.kind === "group" && filter.name.toLowerCase() === name.toLowerCase() ? { kind: "all" } : filter;
+      const followUp: Filter = filter.kind === "group" && isInGroup(filter.name, name) ? { kind: "all" } : filter;
       if (followUp !== filter) setFilter(followUp);
       await Promise.all([loadList(followUp), refreshSidebar()]);
       if (current) await refreshCurrentNote();

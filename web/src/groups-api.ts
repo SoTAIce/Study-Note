@@ -1,6 +1,7 @@
 import { jsonBody, request } from "./api.ts";
 
-export type GroupView = { name: string; count: number; empty: boolean };
+/** count：直接属于该组的篇数；total：连同子项目（group-002，旧服务端没有这个字段）。 */
+export type GroupView = { name: string; count: number; total?: number; empty: boolean };
 
 export type GroupsOverview = { items: GroupView[]; ungrouped: number };
 

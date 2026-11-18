@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
+import { normalizeGroupName } from "./groups.ts";
 
 export type NoteType = "note" | "idea" | "source";
 
@@ -245,9 +246,9 @@ function yamlList(values: string[]): string {
   return `[${values.map(yamlValue).join(", ")}]`;
 }
 
-/** 组名比较：去空白 + 不区分大小写（与 server/groups.ts 的 sameGroup 同义，避免循环依赖）。 */
+/** 组名比较：规整空白（含 `/` 两边）+ 不区分大小写，与 server/groups.ts 的 sameGroup 同义。 */
 function sameGroupName(a: string, b: string): boolean {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+  return normalizeGroupName(a).toLowerCase() === normalizeGroupName(b).toLowerCase();
 }
 
 export function serializeNote(meta: NoteMeta, body: string): string {
@@ -347,7 +348,8 @@ export function parseNote(
     tags: parseTags(data.tags),
   };
   if (data.source) meta.source = unquote(data.source).trim();
-  const group = data.group ? unquote(data.group).trim() : "";
+  // 手写的 `agent / looprun` 规整成 `agent/looprun`，索引和筛选只认一种写法
+  const group = data.group ? normalizeGroupName(unquote(data.group)) : "";
   if (group) meta.group = group;
   return { meta, body, hadFrontmatter: fm !== null };
 }

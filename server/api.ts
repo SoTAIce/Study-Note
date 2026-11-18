@@ -29,7 +29,7 @@ import { runTurn, type StreamTurn } from "./agent.ts";
 import { createTools } from "./agent-tools.ts";
 import { readSection, patchSection } from "./config.ts";
 import { createGroup, deleteGroup, GroupsHttpError, groupsOverview, renameGroup } from "./groups-api.ts";
-import { upsertGroup, validateGroupName } from "./groups.ts";
+import { groupFilterSql, upsertGroup, validateGroupName } from "./groups.ts";
 import { loadProviders, maskProviders, runtimeOf, saveProviders, streamTurn } from "./providers/index.ts";
 import { sseStart } from "./sse.ts";
 import { ChangeBatcher } from "./events.ts";
@@ -230,8 +230,10 @@ export function createApi(deps: ApiDeps) {
           if (rawGroup && rawGroup.trim().toLowerCase() === "none") {
             where.push("(n.group_name IS NULL OR n.group_name = '')");
           } else if (rawGroup) {
-            where.push("lower(n.group_name) = lower(?)");
-            params.push(rawGroup);
+            // 父分组包含它的子项目（agent → agent/looprun）
+            const filter = groupFilterSql("n.group_name", rawGroup);
+            where.push(filter.sql);
+            params.push(...filter.params);
           }
           const rows = db
             .prepare(

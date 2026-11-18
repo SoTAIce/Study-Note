@@ -74,6 +74,20 @@ test("卡片墙：列出全部简卡，带来源笔记和熟练度；按分组 /
   assert.deepEqual((await call("GET", "/api/cards?q=噪声")).json.items.map((c: any) => c.title), ["过拟合"]);
 });
 
+test("卡片墙按父分组筛选时包含子项目里的简卡", async () => {
+  const sub = store.create({ title: "子项目笔记", body: "looprun :: 主循环\n", tags: [], group: "数学/统计" });
+  indexer.indexFile(sub.relPath);
+  try {
+    const parent = (await call("GET", "/api/cards?group=数学")).json.items.map((c: any) => c.title).sort();
+    assert.deepEqual(parent, ["looprun", "贝叶斯"].sort());
+    const child = (await call("GET", "/api/cards?group=数学/统计")).json.items.map((c: any) => c.title);
+    assert.deepEqual(child, ["looprun"]);
+  } finally {
+    store.moveToTrash(sub.relPath);
+    indexer.removeFile(sub.relPath);
+  }
+});
+
 test("今日复习：队列带四档的到期时间；打分后熟练度变化、队列变短；撤回恢复", async () => {
   const queue = await call("GET", "/api/review/queue?group=AI");
   assert.equal(queue.status, 200);

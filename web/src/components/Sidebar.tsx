@@ -3,6 +3,7 @@ import type { BackupStatus, NoteSummary, TagCount, TimelineItem } from "../api.t
 import type { GroupView } from "../groups-api.ts";
 import { dayKey, groupByDay, relativeTime } from "../lib/time.ts";
 import { filterLabel, sameFilter, type Filter } from "../lib/nav.ts";
+import { buildGroupTree, leafName, readCollapsedGroups, writeCollapsedGroups } from "../lib/group-tree.ts";
 import { THEME_LABEL, type ThemePref } from "../lib/theme.ts";
 import { useConfirm } from "./ConfirmDialog.tsx";
 import Icon, { type IconName } from "./Icon.tsx";
@@ -103,7 +104,26 @@ export default function Sidebar({
   const confirm = useConfirm();
   const [groupsOpen, setGroupsOpen] = useState(true);
   const [showAllTags, setShowAllTags] = useState(false);
-  const [editing, setEditing] = useState<{ mode: "create" } | { mode: "rename"; from: string } | null>(null);
+  // create 带 parent = 在该父分组下新建子项目（group-002）
+  const [editing, setEditing] = useState<
+    { mode: "create"; parent?: string } | { mode: "rename"; from: string } | null
+  >(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() =>
+    readCollapsedGroups(typeof window === "undefined" ? null : window.localStorage),
+  );
+  const groupTree = useMemo(() => buildGroupTree(groups), [groups]);
+  const hasSubprojects = groupTree.some((node) => node.children.length > 0);
+
+  function toggleGroupCollapsed(name: string): void {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      const key = name.toLowerCase();
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      writeCollapsedGroups(typeof window === "undefined" ? null : window.localStorage, next);
+      return next;
+    });
+  }
   const [nameDraft, setNameDraft] = useState("");
   const nameInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -117,7 +137,7 @@ export default function Sidebar({
     const current = editing;
     setEditing(null);
     if (!current || !value) return;
-    if (current.mode === "create") onCreateGroup(value);
+    if (current.mode === "create") onCreateGroup(current.parent ? `${current.parent}/${value}` : value);
     else if (value !== current.from) onRenameGroup(current.from, value);
   }
   const dayGroups = useMemo(() => groupByDay(timeline), [timeline]);
@@ -144,6 +164,105 @@ export default function Sidebar({
     : !backupStatus.configured
       ? "WebDAV 备份：还没设置服务"
       : `WebDAV 备份 · 待备份 ${backupStatus.pending} 篇 · 点开看详情`;
+
+  function renderGroupRow(
+    group: GroupView,
+    options: { child?: boolean; childCount?: number; collapsed?: boolean },
+  ) {
+    const active = filter.kind === "group" && sameFilter(filter, { kind: "group", name: group.name });
+    const childCount = options.childCount ?? 0;
+    const total = group.total ?? group.count;
+    const label = options.child ? leafName(group.name) : group.name;
+    return (
+      <li
+        key={group.name}
+        className={`group-row${options.child ? " group-row--child" : ""}${active ? " is-active" : ""}`}
+      >
+        {!options.child && hasSubprojects ? (
+          childCount > 0 ? (
+            <button
+              type="button"
+              className="group-row__toggle"
+              aria-expanded={!options.collapsed}
+              aria-label={`${options.collapsed ? "展开" : "收起"}「${group.name}」的子项目`}
+              title={options.collapsed ? "展开子项目" : "收起子项目"}
+              onClick={() => toggleGroupCollapsed(group.name)}
+            >
+              <Icon name={options.collapsed ? "chevronRight" : "chevronDown"} size={11} strokeWidth={2.2} />
+            </button>
+          ) : (
+            <span className="group-row__toggle" aria-hidden="true" />
+          )
+        ) : null}
+        <button
+          type="button"
+          className="group-row__main"
+          onClick={() => onFilter({ kind: "group", name: group.name })}
+          title={`${group.name}：${total} 篇${childCount > 0 ? `（含 ${childCount} 个子项目）` : ""}${group.empty ? "（空组）" : ""}`}
+          aria-current={active ? "page" : undefined}
+        >
+          <Icon name={active ? "folderOpen" : "folder"} size={15} />
+          <span className="group-row__name">{label}</span>
+          <span className="group-row__count">{total}</span>
+        </button>
+        <span className="group-row__actions">
+          {!options.child ? (
+            <button
+              type="button"
+              className="icon-btn"
+              title="新建子项目"
+              aria-label={`在「${group.name}」下新建子项目`}
+              onClick={() => {
+                setNameDraft("");
+                setEditing({ mode: "create", parent: group.name });
+                setCollapsedGroups((prev) => {
+                  if (!prev.has(group.name.toLowerCase())) return prev;
+                  const next = new Set(prev);
+                  next.delete(group.name.toLowerCase());
+                  writeCollapsedGroups(typeof window === "undefined" ? null : window.localStorage, next);
+                  return next;
+                });
+              }}
+            >
+              <Icon name="plus" size={12} />
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="icon-btn"
+            title="改分组名"
+            aria-label={`改分组名：${group.name}`}
+            onClick={() => {
+              setNameDraft(group.name);
+              setEditing({ mode: "rename", from: group.name });
+            }}
+          >
+            <Icon name="pen" size={12} />
+          </button>
+          <button
+            type="button"
+            className="icon-btn icon-btn--danger"
+            title="删除分组（笔记退回未分组，不会被删）"
+            aria-label={`删除分组：${group.name}`}
+            onClick={async () => {
+              const ok = await confirm({
+                title: `删除分组「${group.name}」？`,
+                message:
+                  childCount > 0
+                    ? `连同 ${childCount} 个子项目一起删除，共 ${total} 篇笔记会退回「未分组」，笔记本身不会被删除。`
+                    : `组里的 ${total} 篇笔记会退回「未分组」，笔记本身不会被删除。`,
+                confirmLabel: "删除分组",
+                danger: true,
+              });
+              if (ok) onDeleteGroup(group.name);
+            }}
+          >
+            <Icon name="x" size={12} />
+          </button>
+        </span>
+      </li>
+    );
+  }
 
   function renderRow(note: {
     id: string;
@@ -173,6 +292,12 @@ export default function Sidebar({
             <span className="note-row__group">
               <Icon name="folder" size={11} />
               {note.group}
+            </span>
+          ) : note.group && filter.kind === "group" && note.group.toLowerCase() !== filter.name.toLowerCase() ? (
+            // 看父分组时，子项目里的笔记标出子项目名
+            <span className="note-row__group">
+              <Icon name="folder" size={11} />
+              {leafName(note.group)}
             </span>
           ) : null}
         </span>
@@ -422,8 +547,16 @@ export default function Sidebar({
                     setEditing(null);
                   }
                 }}
-                placeholder={editing.mode === "create" ? "新分组名，例如 Go 学习" : "新的分组名"}
-                aria-label={editing.mode === "create" ? "新分组名" : "新的分组名"}
+                placeholder={
+                  editing.mode === "rename"
+                    ? "新的分组名（父分组/子项目）"
+                    : editing.parent
+                      ? `「${editing.parent}」下的子项目名`
+                      : "新分组名，例如 Go 学习"
+                }
+                aria-label={
+                  editing.mode === "rename" ? "新的分组名" : editing.parent ? `${editing.parent} 的子项目名` : "新分组名"
+                }
                 spellCheck={false}
               />
               <button type="submit" className="icon-btn" title="确定" aria-label="确定">
@@ -445,57 +578,22 @@ export default function Sidebar({
               {groups.length === 0 ? (
                 <li className="empty-hint empty-hint--tiny">还没有分组。建一个，比如「Go 学习」。</li>
               ) : (
-                groups.map((group) => {
-                  const active = filter.kind === "group" && sameFilter(filter, { kind: "group", name: group.name });
-                  return (
-                    <li key={group.name} className={`group-row${active ? " is-active" : ""}`}>
-                      <button
-                        type="button"
-                        className="group-row__main"
-                        onClick={() => onFilter({ kind: "group", name: group.name })}
-                        title={`${group.name}：${group.count} 篇${group.empty ? "（空组）" : ""}`}
-                        aria-current={active ? "page" : undefined}
-                      >
-                        <Icon name={active ? "folderOpen" : "folder"} size={15} />
-                        <span className="group-row__name">{group.name}</span>
-                        <span className="group-row__count">{group.count}</span>
-                      </button>
-                      <span className="group-row__actions">
-                        <button
-                          type="button"
-                          className="icon-btn"
-                          title="改分组名"
-                          aria-label={`改分组名：${group.name}`}
-                          onClick={() => {
-                            setNameDraft(group.name);
-                            setEditing({ mode: "rename", from: group.name });
-                          }}
-                        >
-                          <Icon name="pen" size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-btn icon-btn--danger"
-                          title="删除分组（笔记退回未分组，不会被删）"
-                          aria-label={`删除分组：${group.name}`}
-                          onClick={async () => {
-                            const ok = await confirm({
-                              title: `删除分组「${group.name}」？`,
-                              message: `组里的 ${group.count} 篇笔记会退回「未分组」，笔记本身不会被删除。`,
-                              confirmLabel: "删除分组",
-                              danger: true,
-                            });
-                            if (ok) onDeleteGroup(group.name);
-                          }}
-                        >
-                          <Icon name="x" size={12} />
-                        </button>
-                      </span>
-                    </li>
-                  );
+                groupTree.flatMap((node) => {
+                  const collapsed = collapsedGroups.has(node.group.name.toLowerCase());
+                  const rows = [
+                    renderGroupRow(node.group, {
+                      childCount: node.children.length,
+                      collapsed,
+                    }),
+                  ];
+                  if (!collapsed) {
+                    for (const child of node.children) rows.push(renderGroupRow(child, { child: true }));
+                  }
+                  return rows;
                 })
               )}
               <li className={`group-row group-row--none${filter.kind === "none" ? " is-active" : ""}`}>
+                {hasSubprojects ? <span className="group-row__toggle" aria-hidden="true" /> : null}
                 <button type="button" className="group-row__main" onClick={() => onFilter({ kind: "none" })}>
                   <Icon name="folder" size={15} />
                   <span className="group-row__name">未分组</span>

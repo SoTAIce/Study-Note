@@ -1173,6 +1173,58 @@ try {
     await page.locator(".sidebar").getByRole("button", { name: /全部笔记/ }).first().click();
   });
 
+  await step("子项目：分组下新建子项目、左栏成树、父分组包含子项目笔记、折叠刷新后保持、改父分组名子项目跟着变", async () => {
+    await page.locator(".sidebar").waitFor();
+    const parentRow = page.locator(".group-row:not(.group-row--child)", { hasText: "冒烟" }).first();
+    await parentRow.hover();
+    await parentRow.getByRole("button", { name: "在「冒烟」下新建子项目" }).click();
+    await page.getByLabel("冒烟 的子项目名").fill("looprun");
+    await page.keyboard.press("Enter");
+    const childRow = page.locator(".group-row--child", { hasText: "looprun" });
+    await childRow.waitFor({ timeout: 5000 });
+
+    // 点子项目再新建：分组栏预填完整的「冒烟/looprun」
+    await childRow.locator(".group-row__main").click();
+    await page.locator(".new-note-entry").click();
+    const groupInput = page.locator(".compose__group-input");
+    await groupInput.waitFor();
+    expect((await groupInput.inputValue()) === "冒烟/looprun", `分组栏应预填「冒烟/looprun」，实际「${await groupInput.inputValue()}」`);
+    await page.locator(".compose__title").fill("子项目里的笔记");
+    await page.keyboard.press("Control+Enter");
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "子项目里的笔记", null, { timeout: 5000 });
+    const made = (await api("/api/notes")).items.find((n) => n.title === "子项目里的笔记");
+    expect(made && made.group === "冒烟/looprun", `新笔记应在「冒烟/looprun」，实际 ${made && made.group}`);
+
+    // 点父分组：列表包含子项目里的笔记，并标出子项目名
+    await parentRow.locator(".group-row__main").click();
+    const subNote = page.locator(".note-row", { hasText: "子项目里的笔记" });
+    await subNote.waitFor({ timeout: 5000 });
+    expect((await subNote.locator(".note-row__group").innerText()).trim() === "looprun", "父分组列表里应标出子项目名");
+    const inParent = (await api(`/api/notes?group=${encodeURIComponent("冒烟")}`)).items.map((n) => n.title);
+    expect(inParent.includes("子项目里的笔记") && inParent.includes("分组里新建"), `父分组应包含子项目：${inParent.join("、")}`);
+    await page.screenshot({ path: path.join(artifacts, "21-subprojects.png") });
+
+    // 折叠子项目，刷新后仍折叠
+    await page.getByRole("button", { name: "收起「冒烟」的子项目" }).click();
+    await childRow.waitFor({ state: "detached" });
+    await page.reload();
+    await page.locator(".sidebar").waitFor();
+    await page.getByRole("button", { name: "展开「冒烟」的子项目" }).waitFor();
+    expect((await page.locator(".group-row--child", { hasText: "looprun" }).count()) === 0, "刷新后子项目应仍折叠");
+    await page.getByRole("button", { name: "展开「冒烟」的子项目" }).click();
+    await childRow.waitFor();
+
+    // 改父分组名：子项目和里面的笔记跟着换前缀
+    await parentRow.hover();
+    await parentRow.getByRole("button", { name: "改分组名：冒烟" }).click();
+    await page.getByLabel("新的分组名").fill("冒烟测试");
+    await page.keyboard.press("Enter");
+    await page.locator(".group-row:not(.group-row--child)", { hasText: "冒烟测试" }).waitFor({ timeout: 5000 });
+    await childRow.waitFor();
+    const renamed = (await api("/api/notes")).items.find((n) => n.title === "子项目里的笔记");
+    expect(renamed && renamed.group === "冒烟测试/looprun", `改名后应为「冒烟测试/looprun」，实际 ${renamed && renamed.group}`);
+  });
+
   await step("主题切换并在刷新后保持", async () => {
     const toggle = page.getByLabel(/切换主题/);
     await toggle.click(); // system → light

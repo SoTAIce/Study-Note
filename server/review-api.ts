@@ -11,6 +11,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { readSection, patchSection } from "./config.ts";
 import { mastery, preview, type Grade } from "./fsrs.ts";
 import { buildQueue, type ReviewLog } from "./review.ts";
+import { groupFilterSql } from "./groups.ts";
 
 export class ReviewHttpError extends Error {
   readonly status: number;
@@ -61,8 +62,9 @@ export function createReviewRoutes(deps: ReviewDeps) {
     const params: string[] = [];
     if (f.group === "none") where.push("n.group_name IS NULL");
     else if (f.group) {
-      where.push("lower(n.group_name) = lower(?)");
-      params.push(f.group);
+      const filter = groupFilterSql("n.group_name", f.group);
+      where.push(filter.sql);
+      params.push(...filter.params);
     }
     if (f.tag) {
       where.push("EXISTS (SELECT 1 FROM tags t WHERE t.note_id = n.id AND t.tag = ?)");
