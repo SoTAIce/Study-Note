@@ -1,6 +1,6 @@
 {
   "project": "study-notes",
-  "last_updated": "2026-11-15",
+  "last_updated": "2026-11-18",
   "rules": {
     "single_active_feature": true,
     "passing_requires_evidence": true,
@@ -844,6 +844,103 @@
       ],
       "evidence": [],
       "notes": "方案第九节第 5 条；用户 2026-11-14 决定先手动传。"
+    },
+    {
+      "id": "group-002",
+      "priority": 2,
+      "area": "groups",
+      "title": "子项目：分组下再分一层（group: agent/looprun）",
+      "user_visible_behavior": "组名可写成「父分组/子项目」；左栏显示成可展开的树；点父分组的列表包含子项目的笔记并标出子项目名；父分组改名、删除时子项目跟着变，确认框列出影响范围。",
+      "status": "not_started",
+      "verification": [
+        "单测：带斜杠组名的校验与规整、父分组前缀匹配转义",
+        "接口测试：?group=父分组 包含子项目；改名 / 删除连带",
+        "E2E：建子项目后左栏出现树"
+      ],
+      "evidence": [],
+      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（草案，等用户批准后才开工）。 方案第九节第 1 期。"
+    },
+    {
+      "id": "book-001",
+      "priority": 3,
+      "area": "book",
+      "title": "连读：一个项目的笔记按目录顺序连成一篇长文阅读",
+      "user_visible_behavior": "点左栏子项目进入连读：目录笔记（type: index）的正文作为总览，其中 [[链接]] 的顺序就是章节顺序；左侧目录含各章小标题、滚动高亮、点击跳转；章间链接在本页滚动；别的项目的章节标出来源；未写进目录的笔记列在最后，可一键加入；没有目录时可一键生成。",
+      "status": "not_started",
+      "verification": [
+        "单测：目录解析（顺序、去重、忽略自身、标题兜底、多篇目录）",
+        "接口测试：GET /api/book 各种情况",
+        "E2E：连读顺序与目录一致、目录跳转、本页链接跳转",
+        "基准：100 章项目首屏 ≤ 1 秒"
+      ],
+      "evidence": [],
+      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（草案，等用户批准后才开工）。 方案第九节第 2 期，依赖 group-002。"
+    },
+    {
+      "id": "book-002",
+      "priority": 4,
+      "area": "book",
+      "title": "连读里就地编辑、在此后新建一章",
+      "user_visible_behavior": "双击或点「编辑」让这一章原地变成编辑框（快捷键、贴图、[[ 补全都能用），Esc / 点别处保存；同一时间只编辑一章；冲突走现有流程；「在此后新建一章」自动归入项目并插入目录。",
+      "status": "not_started",
+      "verification": [
+        "接口测试：POST /api/book/chapters 正常与冲突",
+        "E2E：双击一章修改后 Esc，文件已改；新建一章后目录多一行"
+      ],
+      "evidence": [],
+      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（草案，等用户批准后才开工）。 方案第九节第 3 期，依赖 book-001。"
+    },
+    {
+      "id": "book-003",
+      "priority": 5,
+      "area": "export",
+      "title": "连读整本导出 PDF",
+      "user_visible_behavior": "连读页「导出整本」：书名 + 目录页，每章新起一页，书签两级（章 → 小标题），书内链接可跳转。",
+      "status": "not_started",
+      "verification": [
+        "E2E：导出整本 PDF，检查书签数"
+      ],
+      "evidence": [],
+      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（草案，等用户批准后才开工）。 方案第九节第 4 期；完成后 export-002 只剩按标签导出。"
+    },
+    {
+      "id": "tpl-001",
+      "priority": 6,
+      "area": "editor",
+      "title": "统一笔记模板（新建预填 / 复制成提示词 / 粘贴后 AI 规整）",
+      "user_visible_behavior": "同一套模板（如「实现详情」：背景 / 设计 / 关键代码 / 踩坑 / 待办）三个入口：新建笔记时选模板预填骨架；一键复制成给 Claude / GPT / Gemini 的提示词；粘贴进来的 AI 回答点「按模板规整」，应用内 AI 重排结构不增删事实，先出差异、批准后写入、可撤销。",
+      "status": "not_started",
+      "verification": [
+        "待方案确定"
+      ],
+      "evidence": [],
+      "notes": "用户 2026-11-18 提出：笔记大多由各家 AI 生成，结构不统一。需先写方案。排在连读之后。"
+    },
+    {
+      "id": "help-001",
+      "priority": 7,
+      "area": "onboarding",
+      "title": "内置使用手册 + 快捷键 / 语法速查面板",
+      "user_visible_behavior": "一键生成「使用手册」分组的示例笔记，每篇讲一个功能且能当场动手试（可用连读阅读，练完整组删除）；按 ? 或点帮助弹出速查表：全部快捷键与 [!card]、::、![[图|300]] 等语法。",
+      "status": "not_started",
+      "verification": [
+        "待方案确定"
+      ],
+      "evidence": [],
+      "notes": "用户 2026-11-18 提出：功能多了没有互动演示。需先写方案，排在模板之后（要覆盖连读与模板）。"
+    },
+    {
+      "id": "blog-001",
+      "priority": 8,
+      "area": "publish",
+      "title": "个人博客：把标记发布的笔记生成静态网站",
+      "user_visible_behavior": "笔记标 publish: true，点「生成博客」在 data/site/ 生成静态 HTML（首页、文章、标签、RSS），本地预览后由用户上传到 GitHub Pages 等；只发布标记过的笔记，未发布笔记的链接变纯文字。",
+      "status": "blocked",
+      "verification": [
+        "待方案确定"
+      ],
+      "evidence": [],
+      "notes": "2026-11-18 初步讨论，用户还没回答：写什么（整理笔记 / 专门文章）、托管在哪、简卡怎么显示、外观。等用户决定。"
     }
   ]
 }

@@ -7,7 +7,7 @@
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
 - 最近一次全绿：2026-11-15，497 个单元/接口测试 + 三个基准 + E2E 25 步（本机 + GitHub Actions 的 Linux、Windows）
-- 优先级最高的未完成功能：`perf-004`（srs-002 已标 blocked：用户先试用知识简卡几天再定，见 docs/待实现.md）
+- 优先级最高的未完成功能：group-002（子项目，方案 2026-11-18-project-book-view-design.md 等用户批准后才开工）；srs-002、blog-001 为 blocked，见 docs/待实现.md
 - 当前阻塞：无
 
 ## 会话记录
@@ -220,3 +220,12 @@
 - 验证：./init.sh 497 + 三个基准 + E2E 25 步全绿；GitHub Actions 运行 43714744910 两个系统 success。
 - 下一步：srs-002（AI 提炼简卡）。
 
+
+### 会话 024 · 2026-11-18 · 需求讨论：子项目 + 连读、模板、演示、博客（只写方案，未改代码）
+
+- 用户提出：项目开发笔记（如 agent 分组下的 looprun）想在一个窗口里连着读多篇。四轮问答后定为：`group: agent/looprun` 子项目；项目里一篇 `type: index` 目录笔记，链接顺序即章节顺序，正文即总览；连读页点哪章改哪章；目录含小标题、本页跳转、整本导出 PDF。
+- 写了方案 `docs/superpowers/specs/2026-11-18-project-book-view-design.md`（草案，等批准），分四期：group-002 → book-001 → book-002 → book-003。
+- 同一轮另提两件：AI 生成的笔记结构不统一 → tpl-001（三个入口都要）；没有互动演示 → help-001（手册 + 速查面板）。顺序：连读 → 模板 → 演示。
+- 博客想法录为 blog-001（blocked，用户还没回答写什么、托管在哪等）。
+- 没有改代码，没有跑 init.sh（上次全绿是 2026-11-15）。
+- 下一步：等用户批准方案后从 group-002 开工。
