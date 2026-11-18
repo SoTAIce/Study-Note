@@ -823,14 +823,14 @@
       "id": "export-002",
       "priority": 30,
       "area": "export",
-      "title": "多篇合并导出一本 PDF（分组 / 标签）",
-      "user_visible_behavior": "整个分组或标签导出成一本带目录页的 PDF，书签与本书内双链可跳转。",
+      "title": "按标签合并导出一本 PDF",
+      "user_visible_behavior": "某个标签下的笔记导出成一本带目录页的 PDF，书签与本书内双链可跳转。（按分组 / 子项目导出已由 book-003 的「连读 → 导出整本」完成）",
       "status": "not_started",
       "verification": [
-        "E2E：导出分组 PDF，检查书签数"
+        "E2E：导出标签 PDF，检查书签数"
       ],
       "evidence": [],
-      "notes": "方案第八节第 3 期；用户 2026-11-14 决定暂不做。"
+      "notes": "方案第八节第 3 期；用户 2026-11-14 决定暂不做。 2026-11-18：分组部分由 book-003 完成，只剩按标签；可复用 server/export.ts 的 buildBookExportHtml。"
     },
     {
       "id": "export-003",
@@ -912,12 +912,18 @@
       "area": "export",
       "title": "连读整本导出 PDF",
       "user_visible_behavior": "连读页「导出整本」：书名 + 目录页，每章新起一页，书签两级（章 → 小标题），书内链接可跳转。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "E2E：导出整本 PDF，检查书签数"
       ],
-      "evidence": [],
-      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（已批准 2026-11-18）。 方案第九节第 4 期；完成后 export-002 只剩按标签导出。"
+      "evidence": [
+        "2026-11-18 node --test server/tests/export.test.ts：新增 3 项（rewriteBookLinks 书内链接变 #ch-N、书外变文字；demoteHeadings 章内标题降一级并收集 # / ## 进目录；buildBookExportHtml 封面 + 总览、目录页、每章 break-before: page、章为 h1、来源标记、原始 HTML 转义）",
+        "2026-11-18 node --test server/tests/book.test.ts：POST /api/export/book/html 按目录顺序导出、缺章与未排入目录不进、书内链接指向章锚点；没有章节 / 版式不对 / 缺 group 返回 400",
+        "2026-11-18 用 Chromium 实打：2 章示例 8 页，书签 7 条（封面、目录、章 → 小标题嵌套），9 个文档内链接；浅色、深色逐页看过",
+        "2026-11-18 pnpm e2e 第「连读整本导出 PDF」步：编辑中的章先保存再导出；文件名 looprun.pdf、A4 纸张、页数 ≥ 章数 + 2、书签 ≥ 章数 + 3 且有两级、文档内链接 ≥ 章数（24-book-export.pdf）",
+        "2026-11-18 ./init.sh 全绿：537 个测试、四项基准、E2E 29 步"
+      ],
+      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（已批准 2026-11-18）。 方案第九节第 4 期；完成后 export-002 只剩按标签导出。 实现记录见方案第十一节 book-003。"
     },
     {
       "id": "tpl-001",

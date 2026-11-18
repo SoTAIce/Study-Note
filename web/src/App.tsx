@@ -24,6 +24,7 @@ import BookView from "./components/BookView.tsx";
 import AiChatPage from "./components/AiChatPage.tsx";
 import ReadingMode from "./components/ReadingMode.tsx";
 import ExportDialog from "./components/ExportDialog.tsx";
+import { downloadBlob, printHtml } from "./lib/download.ts";
 import type { ExportPrefs } from "./lib/export.ts";
 import BackupPanel from "./components/BackupPanel.tsx";
 import HistoryPanel from "./components/HistoryPanel.tsx";
@@ -1074,15 +1075,7 @@ export default function App() {
     const request = { id, ...prefs };
     try {
       const { blob, fileName } = await api.exportPdf(request);
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = fileName;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      // 下载开始前就回收地址会让部分浏览器下载失败：稍后再回收
-      window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      downloadBlob(blob, fileName);
       showToast(`已导出：${fileName}`, "ok");
       return null;
     } catch (err) {
@@ -1096,22 +1089,6 @@ export default function App() {
     } catch (err) {
       return api.errorMessage(err);
     }
-  }
-
-  function printHtml(html: string): void {
-    const frame = document.createElement("iframe");
-    frame.className = "print-frame";
-    frame.setAttribute("aria-hidden", "true");
-    frame.srcdoc = html;
-    frame.onload = () => {
-      frame.contentWindow?.focus();
-      frame.contentWindow?.print();
-      // 打印对话框关掉以后再拿掉（拿不到 afterprint 就一分钟后拿掉）
-      const remove = () => frame.remove();
-      frame.contentWindow?.addEventListener("afterprint", remove);
-      window.setTimeout(remove, 60_000);
-    };
-    document.body.appendChild(frame);
   }
 
   // —— 历史版本 ——

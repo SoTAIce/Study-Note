@@ -257,3 +257,28 @@ test("POST /api/book/chapters：没有目录时先生成；目录过期返回 40
   assert.equal((await call("POST", "/api/book/chapters", { group: "新章/无目录", title: "无目录甲" })).status, 400);
   assert.equal((await call("POST", "/api/book/chapters", { group: "新章/无目录", title: "x", after: "不存在" })).status, 400);
 });
+
+test("POST /api/export/book/html：按连读顺序导出，缺章和未排入目录的不进；没有章节 400", async () => {
+  note("导出甲", "导出/项目", "# 导出甲\n\n去看 [[导出乙]]\n");
+  note("导出乙", "导出/项目", "乙的正文\n");
+  note("没排进", "导出/项目");
+  note("项目 目录", "导出/项目", "总览文字\n\n- [[导出乙]]\n- [[还没写的]]\n- [[导出甲]]\n", "index");
+  const res = await fetch(`${base}/api/export/book/html`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ group: "导出/项目", layout: "phone" }),
+  });
+  assert.equal(res.status, 200);
+  const html = await res.text();
+  assert.match(html, /<h1 class="export__title book-cover__title">项目<\/h1>/);
+  assert.match(html, /总览文字/);
+  const order = [...html.matchAll(/<section class="book-chapter" id="(ch-\d+)">\n<h1 class="export__title">([^<]+)<\/h1>/g)].map((m) => m[2]);
+  assert.deepEqual(order, ["1. 导出乙", "2. 导出甲"]);
+  assert.match(html, /<a class="wikilink" href="#ch-1">导出乙<\/a>/);
+  assert.ok(!html.includes("没排进") && !html.includes("还没写的</h1>"));
+
+  note("空的 目录", "导出/空", "- [[不存在]]\n", "index");
+  assert.equal((await call("POST", "/api/export/book/html", { group: "导出/空" })).status, 400);
+  assert.equal((await call("POST", "/api/export/book/html", { group: "导出/项目", layout: "letter" })).status, 400);
+  assert.equal((await call("POST", "/api/export/book/pdf", {})).status, 400);
+});

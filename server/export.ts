@@ -15,6 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { escapeHtml, renderMarkdown, type ImageContext } from "../web/src/lib/markdown.ts";
+import { stripLeadingTitle } from "../web/src/lib/book.ts";
 import { servedFile } from "./attachments.ts";
 import type { NoteStore } from "./store.ts";
 
@@ -144,40 +145,44 @@ export const EXPORT_IMAGE_BUDGET = 50 * 1024 * 1024;
 /**
  * 导出时把笔记库里的图片读出来嵌成 data: 地址（media-001）：
  * PDF 页面的内容安全策略只放行 data: 图片，不需要放宽。
+ * 返回「按笔记取图片上下文」的函数：同一次导出里各篇共用一个总量上限和缓存（整本导出，book-003）。
  * 依次尝试候选位置；读不到、或超出总量的返回 null。
  */
-export function inlineImages(store: NoteStore, notePath: string, budget = EXPORT_IMAGE_BUDGET): ImageContext {
+export function imageInliner(store: NoteStore, budget = EXPORT_IMAGE_BUDGET): (notePath: string) => ImageContext {
   let used = 0;
   const cache = new Map<string, string | null>();
-  return {
-    notePath,
-    localSrc: (candidates) => {
-      for (const rel of candidates) {
-        if (cache.has(rel)) {
-          const hit = cache.get(rel);
-          if (hit) return hit;
-          continue;
-        }
-        let file: { abs: string; type: string } | null = null;
-        try {
-          file = servedFile(store, rel);
-        } catch {
-          file = null;
-        }
-        if (!file) {
-          cache.set(rel, null);
-          continue;
-        }
-        const data = fs.readFileSync(file.abs);
-        if (used + data.length > budget) return null;
-        used += data.length;
-        const uri = `data:${file.type};base64,${data.toString("base64")}`;
-        cache.set(rel, uri);
-        return uri;
+  const localSrc = (candidates: string[]): string | null => {
+    for (const rel of candidates) {
+      if (cache.has(rel)) {
+        const hit = cache.get(rel);
+        if (hit) return hit;
+        continue;
       }
-      return null;
-    },
+      let file: { abs: string; type: string } | null = null;
+      try {
+        file = servedFile(store, rel);
+      } catch {
+        file = null;
+      }
+      if (!file) {
+        cache.set(rel, null);
+        continue;
+      }
+      const data = fs.readFileSync(file.abs);
+      if (used + data.length > budget) return null;
+      used += data.length;
+      const uri = `data:${file.type};base64,${data.toString("base64")}`;
+      cache.set(rel, uri);
+      return uri;
+    }
+    return null;
   };
+  return (notePath) => ({ notePath, localSrc });
+}
+
+/** 单篇导出用（export-001） */
+export function inlineImages(store: NoteStore, notePath: string, budget = EXPORT_IMAGE_BUDGET): ImageContext {
+  return imageInliner(store, budget)(notePath);
 }
 
 /** 生成导出用的完整 HTML（纯函数：样式由调用方传入；images 决定本地图片怎么嵌） */
@@ -221,6 +226,203 @@ ${options.meta && metaParts.length > 0 ? `<p class="export__meta">${escapeHtml(m
 <div class="preview reading">
 ${body}
 </div>
+</article>
+</body>
+</html>
+`;
+}
+
+// —— 整本导出（book-003）——
+
+export type ExportBookChapter = {
+  title: string;
+  body: string;
+  path: string;
+  /** 来自别的分组时是那个分组名 */
+  from: string | null;
+};
+
+export type ExportBook = {
+  /** 书名（子项目名） */
+  title: string;
+  group: string;
+  /** 目录笔记的正文（总览）；没有目录时为 null */
+  overview: { body: string; path: string; title: string } | null;
+  chapters: ExportBookChapter[];
+  /** 封面上的导出日期，YYYY-MM-DD */
+  date: string;
+};
+
+export type BookTocEntry = { id: string; text: string; depth: 0 | 1 };
+
+const WIKILINK_RE = /<a class="wikilink(?: is-missing)?" data-target="([^"]*)"(?: title="[^"]*")?>([\s\S]*?)<\/a>/g;
+
+/**
+ * 书内的 [[链接]] → 文档内跳转（href="#ch-N"），书外的 → 普通文字（PDF 里没地方可去）。
+ * anchors 的键是转义过的标题（与 data-target 一致）；先精确匹配，再不区分大小写。
+ */
+export function rewriteBookLinks(html: string, anchors: Map<string, string>): string {
+  const lower = new Map<string, string>();
+  for (const [title, id] of anchors) if (!lower.has(title.toLowerCase())) lower.set(title.toLowerCase(), id);
+  return html.replace(WIKILINK_RE, (_all, target: string, display: string) => {
+    const id = anchors.get(target) ?? lower.get(target.toLowerCase());
+    return id ? `<a class="wikilink" href="#${id}">${display}</a>` : `<span class="wikilink wikilink--out">${display}</span>`;
+  });
+}
+
+/**
+ * 章里的标题整体降一级（# → h2 …，h6 封顶），这样 PDF 书签是「章（h1）→ 小标题」；
+ * 顺便给每个标题加 id，收集原来是 # / ## 的进书前目录。
+ */
+export function demoteHeadings(html: string, prefix: string): { html: string; toc: BookTocEntry[] } {
+  const toc: BookTocEntry[] = [];
+  let n = 0;
+  const out = html.replace(/<h([1-6])(\s[^>]*)?>([\s\S]*?)<\/h\1>/g, (_all, level: string, attrs: string | undefined, inner: string) => {
+    const from = Number(level);
+    const to = Math.min(6, from + 1);
+    n += 1;
+    const id = `${prefix}-h${n}`;
+    const text = inner.replace(/<[^>]+>/g, "").trim();
+    if (from <= 2 && text) toc.push({ id, text, depth: 1 });
+    const rest = (attrs ?? "").replace(/\sid="[^"]*"/, "");
+    return `<h${to} id="${id}"${rest}>${inner}</h${to}>`;
+  });
+  return { html: out, toc };
+}
+
+function bookPageCss(): string {
+  return `
+.book-cover__title {
+  font-size: 2.1em;
+  margin-top: 1.2em;
+}
+.book-toc,
+.book-chapter {
+  break-before: page;
+}
+.book-toc__title {
+  margin: 0 0 0.8em;
+  font-family: var(--font-display);
+  font-size: 1.4em;
+  font-weight: 600;
+}
+.book-toc ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.book-toc li {
+  margin: 0.25em 0;
+  break-inside: avoid;
+}
+.book-toc a {
+  color: inherit;
+  text-decoration: none;
+}
+.book-toc .book-toc__chapter > a {
+  font-weight: 600;
+}
+.book-toc .book-toc__sub {
+  padding-left: 1.4em;
+  font-size: 0.9em;
+  color: var(--text-dim);
+}
+.book-chapter__from {
+  margin: -0.2em 0 1em;
+  font-size: 0.78em;
+  color: var(--text-faint);
+}
+/* 书内链接能点：用强调色；书外的只留文字 */
+.export .preview.reading a.wikilink[href] {
+  color: var(--accent);
+  text-decoration: none;
+}
+.export .preview.reading .wikilink--out {
+  color: inherit;
+}
+`;
+}
+
+/** 整本导出的 HTML：封面（书名 + 总览）、目录页、每章新起一页；书签由标题层级生成 */
+export function buildBookExportHtml(
+  book: ExportBook,
+  options: Pick<ExportOptions, "layout" | "dark">,
+  css: { global: string; content: string; reading: string },
+  imagesFor?: (notePath: string) => ImageContext,
+): string {
+  const anchors = new Map<string, string>();
+  book.chapters.forEach((chapter, i) => {
+    const key = escapeHtml(chapter.title.trim());
+    if (!anchors.has(key)) anchors.set(key, `ch-${i + 1}`);
+  });
+
+  const toc: BookTocEntry[] = [];
+  const sections = book.chapters.map((chapter, i) => {
+    const id = `ch-${i + 1}`;
+    const rendered = renderMarkdown(stripLeadingTitle(chapter.body, chapter.title), {
+      images: imagesFor ? imagesFor(chapter.path) : undefined,
+    });
+    const demoted = demoteHeadings(rewriteBookLinks(rendered, anchors), id);
+    const heading = `${i + 1}. ${chapter.title}`;
+    toc.push({ id, text: escapeHtml(heading), depth: 0 }, ...demoted.toc);
+    return `<section class="book-chapter" id="${id}">
+<h1 class="export__title">${escapeHtml(heading)}</h1>
+${chapter.from ? `<p class="book-chapter__from">来自 ${escapeHtml(chapter.from)}</p>` : ""}
+<div class="preview reading">
+${demoted.html}
+</div>
+</section>`;
+  });
+
+  const overview = book.overview
+    ? demoteHeadings(
+        rewriteBookLinks(
+          renderMarkdown(stripLeadingTitle(book.overview.body, book.overview.title), {
+            images: imagesFor ? imagesFor(book.overview.path) : undefined,
+          }),
+          anchors,
+        ),
+        "overview",
+      ).html
+    : "";
+
+  const tocItems = toc
+    .map((entry) =>
+      entry.depth === 0
+        ? `<li class="book-toc__chapter"><a href="#${entry.id}">${entry.text}</a></li>`
+        : `<li class="book-toc__sub"><a href="#${entry.id}">${entry.text}</a></li>`,
+    )
+    .join("\n");
+  const meta = [book.group, `${book.chapters.length} 章`, `${book.date} 导出`].join(" · ");
+
+  return `<!doctype html>
+<html lang="zh-CN" data-theme="${options.dark ? "dark" : "light"}">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data: http: https:; font-src data:">
+<title>${escapeHtml(book.title)}</title>
+<style>
+${css.global}
+${css.content}
+${css.reading}
+${pageCss({ ...options, meta: true }, css)}
+${bookPageCss()}
+</style>
+</head>
+<body>
+<article class="export export-book">
+<section class="book-cover">
+<h1 class="export__title book-cover__title">${escapeHtml(book.title)}</h1>
+<p class="export__meta">${escapeHtml(meta)}</p>
+${overview ? `<div class="preview reading">\n${overview}\n</div>` : ""}
+</section>
+<nav class="book-toc" aria-label="目录">
+<h1 class="book-toc__title">目录</h1>
+<ol>
+${tocItems}
+</ol>
+</nav>
+${sections.join("\n")}
 </article>
 </body>
 </html>

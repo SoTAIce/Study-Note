@@ -1410,6 +1410,44 @@ try {
     await waitFile(taskFile, "- [x] 待办甲", "点任务框");
   });
 
+  await step("连读整本导出 PDF：先保存正在编辑的章，封面 + 目录页，每章新起一页，书签两级，书内链接可跳", async () => {
+    const G = "冒烟测试/looprun";
+    await page.locator(".group-row--child", { hasText: "looprun" }).locator(".group-row__main").click();
+    await page.locator(".book__chapter-title", { hasText: "第二章" }).waitFor();
+    const chapter = (title) => page.locator(".book__chapter", { has: page.locator(".book__chapter-title", { hasText: title }) });
+    // 正在编辑的改动要先存，导出的才是最新内容
+    await chapter("外来章").getByRole("button", { name: /^编辑：/ }).click();
+    await page.locator(".book__editor").waitFor();
+    await page.keyboard.type("\n导出前刚写的一句");
+    await page.locator(".book").getByRole("button", { name: "导出整本 PDF" }).click();
+    const dialog = page.getByRole("dialog", { name: "导出整本 PDF" });
+    await dialog.waitFor();
+    expect((await dialog.getByText("标题下显示更新日期").count()) === 0, "整本导出不该有元信息选项");
+    await dialog.getByText("A4").click();
+    const [download] = await Promise.all([page.waitForEvent("download", { timeout: 60000 }), dialog.getByRole("button", { name: "导出" }).click()]);
+    expect(download.suggestedFilename() === "looprun.pdf", `文件名应为 looprun.pdf，实际 ${download.suggestedFilename()}`);
+    const pdfPath = path.join(artifacts, "24-book-export.pdf");
+    await download.saveAs(pdfPath);
+    const raw = fs.readFileSync(pdfPath).toString("latin1");
+    expect(raw.startsWith("%PDF"), "下载的应是 PDF");
+    const box = /MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/.exec(raw);
+    expect(box && Math.abs(Number(box[1]) - 595) < 2, `应是 A4（595pt 宽），实际 ${box && box[1]}`);
+    const b = await api(`/api/book?group=${encodeURIComponent(G)}`);
+    const chapters = b.chapters.filter((c) => c.kind === "note").length;
+    const pages = (raw.match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+    expect(pages >= chapters + 2, `每章新起一页：至少 ${chapters + 2} 页，实际 ${pages}`);
+    // 书签：封面、目录、每章各一条，章下面还有小标题（第二章的「小节甲」）→ 至少章数 + 3 条；有嵌套（/Count 不止一个）
+    const bookmarks = (raw.match(/\/Title\s*[(<]/g) ?? []).length - 1; // 减去文档信息里的标题
+    expect(bookmarks >= chapters + 3, `书签至少 ${chapters + 3} 条，实际 ${bookmarks}`);
+    expect((raw.match(/\/Count -?\d+/g) ?? []).length >= 2, "书签应有两级");
+    // 书内链接：目录页每章一个，加上正文里的 [[链接]]
+    const links = (raw.match(/\/Subtype\s*\/Link/g) ?? []).length;
+    expect(links >= chapters, `书内链接至少 ${chapters} 个，实际 ${links}`);
+    await page.getByText("已导出：looprun.pdf").waitFor({ timeout: 5000 });
+    const foreign = b.chapters.find((c) => c.title === "外来章");
+    expect(fs.readFileSync(path.join(notesDir, foreign.path), "utf8").includes("导出前刚写的一句"), "导出前应先保存正在编辑的章");
+  });
+
   await step("主题切换并在刷新后保持", async () => {
     const toggle = page.getByLabel(/切换主题/);
     await toggle.click(); // system → light

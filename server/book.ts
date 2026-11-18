@@ -140,14 +140,15 @@ export type BookDeps = {
   reindex: (relPath: string) => void;
 };
 
-function groupParam(raw: unknown): string {
+export function groupParam(raw: unknown): string {
   if (typeof raw !== "string" || !raw.trim()) throw new BookHttpError(400, "参数错误：需要 group");
   const check = validateGroupName(raw);
   if (!check.ok) throw new BookHttpError(400, `参数错误：${check.error}`);
   return check.name;
 }
 
-export function createBookRoutes(deps: BookDeps) {
+/** 连读的读写逻辑：路由和整本导出（book-003）共用 */
+export function createBookService(deps: BookDeps) {
   const { db, store } = deps;
 
   function projectRows(group: string): Row[] {
@@ -329,6 +330,13 @@ export function createBookRoutes(deps: BookDeps) {
     }
   }
 
+  return { buildBook, writeIndex, createChapter };
+}
+
+export type BookService = ReturnType<typeof createBookService>;
+
+export function createBookRoutes(deps: BookDeps, service: BookService = createBookService(deps)) {
+  const { buildBook, writeIndex, createChapter } = service;
   return async function handle(
     method: string,
     route: string[],

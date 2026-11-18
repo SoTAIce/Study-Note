@@ -744,11 +744,14 @@ export function restoreFromSnapshot(day: string, relPath: string, baseHash: stri
 
 export type ExportRequest = { id: string; layout: ExportLayout; dark: boolean; meta: boolean };
 
-/** 后台生成 PDF。找不到浏览器时抛 ApiError(503)，payload.code === "no-browser" */
-export async function exportPdf(input: ExportRequest): Promise<{ blob: Blob; fileName: string }> {
+/**
+ * 后台生成 PDF 的通用请求（单篇 /export/pdf、整本 /export/book/pdf）。
+ * 找不到浏览器时抛 ApiError(503)，payload.code === "no-browser"
+ */
+export async function requestPdf(path: string, input: unknown, fallbackName: string): Promise<{ blob: Blob; fileName: string }> {
   let res: Response;
   try {
-    res = await fetch("/api/export/pdf", {
+    res = await fetch(`/api${path}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(input),
@@ -766,18 +769,26 @@ export async function exportPdf(input: ExportRequest): Promise<{ blob: Blob; fil
     const message = isRecord(payload) && typeof payload.error === "string" ? payload.error : `导出失败（HTTP ${res.status}）`;
     throw new ApiError(res.status, message, payload);
   }
-  return { blob: await res.blob(), fileName: fileNameFromDisposition(res.headers.get("content-disposition"), "笔记.pdf") };
+  return { blob: await res.blob(), fileName: fileNameFromDisposition(res.headers.get("content-disposition"), fallbackName) };
 }
 
 /** 导出用的自包含 HTML：找不到浏览器时交给浏览器的打印对话框 */
-export async function exportHtml(input: ExportRequest): Promise<string> {
-  const res = await fetch("/api/export/html", {
+export async function requestExportHtml(path: string, input: unknown): Promise<string> {
+  const res = await fetch(`/api${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
   if (!res.ok) throw new ApiError(res.status, `导出失败（HTTP ${res.status}）`);
   return res.text();
+}
+
+export function exportPdf(input: ExportRequest): Promise<{ blob: Blob; fileName: string }> {
+  return requestPdf("/export/pdf", input, "笔记.pdf");
+}
+
+export function exportHtml(input: ExportRequest): Promise<string> {
+  return requestExportHtml("/export/html", input);
 }
 
 export function isNoBrowser(err: unknown): boolean {

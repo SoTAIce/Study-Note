@@ -1,4 +1,5 @@
-import { jsonBody, request } from "./api.ts";
+import { jsonBody, request, requestExportHtml, requestPdf } from "./api.ts";
+import type { ExportLayout } from "./lib/export.ts";
 
 /** 连读（book-001），字段与 server/book.ts 对齐 */
 export type BookNote = {
@@ -42,4 +43,16 @@ export function createBookChapter(input: {
   baseHash?: string;
 }): Promise<{ note: { id: string; hash: string; title: string }; index: { id: string; hash: string; created: boolean } }> {
   return request("/book/chapters", { method: "POST", body: jsonBody(input) });
+}
+
+export type BookExportRequest = { group: string; layout: ExportLayout; dark: boolean };
+
+/** 整本导出 PDF（book-003）：封面 + 目录页，每章新起一页，书签两级，书内链接可跳 */
+export function exportBookPdf(input: BookExportRequest): Promise<{ blob: Blob; fileName: string }> {
+  return requestPdf("/export/book/pdf", input, "连读.pdf");
+}
+
+/** 找不到浏览器时：同样的版式交给打印对话框 */
+export function exportBookHtml(input: BookExportRequest): Promise<string> {
+  return requestExportHtml("/export/book/html", input);
 }

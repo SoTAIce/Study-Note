@@ -6,8 +6,8 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-18，533 个单元/接口测试 + 四个基准 + E2E 28 步（本机；GitHub Actions 见会话 027）
-- 优先级最高的未完成功能：book-003（连读整本导出 PDF）；srs-002、blog-001 为 blocked，见 docs/待实现.md
+- 最近一次全绿：2026-11-18，537 个单元/接口测试 + 四个基准 + E2E 29 步（本机；GitHub Actions 见会话 028）
+- 优先级最高的未完成功能：连读方案四期已全部完成；下一件是 tpl-001（统一笔记模板，需先写方案并经用户批准）；srs-002、blog-001 为 blocked，见 docs/待实现.md
 - 当前阻塞：无
 
 ## 会话记录
@@ -259,3 +259,13 @@
 - 与方案的出入写进方案第十一节 book-002（总览不能就地编辑；未排入目录的章没有 +；保存是连读自己的一份流程）。
 - 验证：./init.sh 533 + 四个基准 + E2E 28 步全绿。
 - 下一步：book-003（整本导出 PDF）。
+
+### 会话 028 · 2026-11-18 · 连读整本导出 PDF（book-003）
+
+- 用户说「可以开始继续做吧」，按方案做 book-003（连读方案的最后一期）。
+- 后端：`server/export.ts` 新增 `buildBookExportHtml`（封面 + 总览、目录页、每章 `break-before: page`、章为 h1 且章内标题降一级 → 书签「章 → 小标题」、书内 [[链接]] 变 `#ch-N`、书外变文字）、`rewriteBookLinks`、`demoteHeadings`、`imageInliner`（各章共用图片总量）。`POST /api/export/book/{pdf,html}`；单篇与整本共用 `sendExport`。`book.ts` 抽出 `createBookService` 让导出复用 `buildBook`。
+- 前端：连读顶部下载图标 →「导出整本 PDF」面板（`ExportDialog` 的 `book` 模式，无元信息选项，写明未排入目录的不导出）；导出前先保存正在编辑的章；没浏览器时走打印对话框。下载 / 打印逻辑从 App 抽到 `lib/download.ts`，API 的 PDF 请求抽成 `requestPdf` / `requestExportHtml`。
+- 用 Chromium 实打并逐页看过浅色 / 深色；E2E 新增一步检查页数、书签数与层级、文档内链接数。
+- export-002 的分组部分由本期完成，条目描述改成只剩「按标签导出」。
+- 验证：./init.sh 537 + 四个基准 + E2E 29 步全绿。
+- 下一步：tpl-001（统一笔记模板）需先写方案、经用户批准；help-001 在它之后；blog-001、srs-002 仍等用户。

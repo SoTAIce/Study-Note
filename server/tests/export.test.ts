@@ -3,7 +3,18 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { buildExportHtml, exportFileName, findBrowser, inlineImages, loadExportCss, tokenValue, type ExportNote } from "../export.ts";
+import {
+  buildBookExportHtml,
+  buildExportHtml,
+  demoteHeadings,
+  exportFileName,
+  findBrowser,
+  inlineImages,
+  loadExportCss,
+  rewriteBookLinks,
+  tokenValue,
+  type ExportNote,
+} from "../export.ts";
 import { NoteStore } from "../store.ts";
 
 const css = loadExportCss();
@@ -125,4 +136,62 @@ test("导出：笔记库里的图片嵌成 data:，读不到的显示缺失，�
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+// —— 整本导出（book-003）——
+
+test("rewriteBookLinks：书内链接变文档内跳转（不区分大小写兜底），书外的变成文字", () => {
+  const anchors = new Map([["梯度下降", "ch-1"], ["Loop &amp; Run", "ch-2"]]);
+  const html =
+    '<p><a class="wikilink" data-target="梯度下降">看这里</a> <a class="wikilink" data-target="loop &amp; run">L</a> ' +
+    '<a class="wikilink is-missing" data-target="书外" title="还没有这篇笔记，点击新建">书外</a></p>';
+  assert.equal(
+    rewriteBookLinks(html, anchors),
+    '<p><a class="wikilink" href="#ch-1">看这里</a> <a class="wikilink" href="#ch-2">L</a> <span class="wikilink wikilink--out">书外</span></p>',
+  );
+});
+
+test("demoteHeadings：标题降一级（h6 封顶）、加 id，# / ## 进书前目录", () => {
+  const { html, toc } = demoteHeadings('<h1 id="x">甲 <code>a</code></h1><h2>乙</h2><h3>丙</h3><h6>丁</h6>', "ch-3");
+  assert.equal(html, '<h2 id="ch-3-h1">甲 <code>a</code></h2><h3 id="ch-3-h2">乙</h3><h4 id="ch-3-h3">丙</h4><h6 id="ch-3-h4">丁</h6>');
+  assert.deepEqual(toc, [
+    { id: "ch-3-h1", text: "甲 a", depth: 1 },
+    { id: "ch-3-h2", text: "乙", depth: 1 },
+  ]);
+});
+
+test("整本导出 HTML：封面 + 总览、目录页、每章新起一页，章是 h1，书内链接可跳，原始 HTML 被转义", () => {
+  const html = buildBookExportHtml(
+    {
+      title: "looprun",
+      group: "agent/looprun",
+      overview: { title: "looprun 目录", body: "# looprun 目录\n\n循环的总览。\n\n1. [[实现]]\n2. [[踩坑]]\n", path: "a.md" },
+      chapters: [
+        { title: "实现", body: "# 实现\n\n## 主循环\n\n见 [[踩坑]] 和 [[书外的笔记]] <script>x</script>\n", path: "b.md", from: null },
+        { title: "踩坑", body: "### 小坑\n\n回到 [[实现#主循环]]\n", path: "c.md", from: "agent/trace" },
+      ],
+      date: "2026-11-18",
+    },
+    { layout: "a4", dark: false },
+    css,
+  );
+  assert.match(html, /size: 210mm 297mm/);
+  assert.match(html, /\.book-toc,\n\.book-chapter \{\n  break-before: page;/);
+  assert.match(html, /<h1 class="export__title book-cover__title">looprun<\/h1>/);
+  assert.match(html, /agent\/looprun · 2 章 · 2026-11-18 导出/);
+  assert.match(html, /循环的总览/);
+  assert.ok(!html.includes("looprun 目录</h"), "总览开头和目录同名的标题不再重复");
+  // 章：h1 + 编号；章内 ## 降成 h3；### 降成 h4
+  assert.match(html, /<section class="book-chapter" id="ch-1">\n<h1 class="export__title">1\. 实现<\/h1>/);
+  assert.match(html, /<h3 id="ch-1-h1">主循环<\/h3>/);
+  assert.match(html, /<h4 id="ch-2-h1">小坑<\/h4>/);
+  assert.match(html, /<p class="book-chapter__from">来自 agent\/trace<\/p>/);
+  // 链接
+  assert.match(html, /<a class="wikilink" href="#ch-2">踩坑<\/a>/);
+  assert.match(html, /<a class="wikilink" href="#ch-1">实现#主循环<\/a>/);
+  assert.match(html, /<span class="wikilink wikilink--out">书外的笔记<\/span>/);
+  assert.ok(!html.includes("<script>x</script>") && html.includes("&lt;script&gt;"));
+  // 书前目录：章 + 原来的 # / ##（### 不进）
+  assert.match(html, /<li class="book-toc__chapter"><a href="#ch-1">1\. 实现<\/a><\/li>\n<li class="book-toc__sub"><a href="#ch-1-h1">主循环<\/a><\/li>\n<li class="book-toc__chapter"><a href="#ch-2">2\. 踩坑<\/a><\/li>/);
+  assert.ok(!/<script\b/.test(html));
 });

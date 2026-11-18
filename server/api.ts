@@ -34,9 +34,11 @@ import { loadProviders, maskProviders, runtimeOf, saveProviders, streamTurn } fr
 import { sseStart } from "./sse.ts";
 import { ChangeBatcher } from "./events.ts";
 import {
+  buildBookExportHtml,
   buildExportHtml,
   defaultBrowser,
   exportFileName,
+  imageInliner,
   inlineImages,
   loadExportCss,
   printPdf,
@@ -58,7 +60,7 @@ import { isValidVersionId } from "./history.ts";
 import { AttachmentError, MAX_UPLOAD_BODY, saveAttachment, servedFile } from "./attachments.ts";
 import { ReviewLog } from "./review.ts";
 import { createReviewRoutes, ReviewHttpError } from "./review-api.ts";
-import { BookHttpError, createBookRoutes } from "./book.ts";
+import { BookHttpError, createBookRoutes, createBookService, groupParam } from "./book.ts";
 
 const MAX_BODY = 5 * 1024 * 1024;
 
@@ -154,6 +156,40 @@ export function createApi(deps: ApiDeps) {
   const { store, indexer, db } = deps;
   const dataDir = deps.dataDir ?? path.dirname(store.notesRoot);
 
+  function exportLayout(raw: unknown): ExportLayout {
+    const layout = raw ?? "phone";
+    if (layout !== "phone" && layout !== "a4") throw new HttpError(400, "layout 只能是 phone 或 a4");
+    return layout;
+  }
+
+  /** 导出的出口：html 直接回（打印对话框兜底）；pdf 交给后台浏览器打印，找不到浏览器回 503 */
+  async function sendExport(res: ServerResponse, kind: string, html: string, filename: string, timeoutMs?: number): Promise<void> {
+    if (kind === "html") {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
+      res.end(html);
+      return;
+    }
+    const browser = (deps.findPdfBrowser ?? defaultBrowser)();
+    if (!browser) {
+      sendJson(res, 503, { error: "没找到 Edge 或 Chrome，没法在后台生成 PDF", code: "no-browser" });
+      return;
+    }
+    let pdf: Buffer;
+    try {
+      pdf = await printPdf(browser, html, timeoutMs ? { timeoutMs } : {});
+    } catch (err) {
+      sendJson(res, 500, { error: `生成 PDF 失败：${(err as Error).message}`, code: "print-failed" });
+      return;
+    }
+    res.writeHead(200, {
+      "content-type": "application/pdf",
+      "content-length": String(pdf.length),
+      "content-disposition": `attachment; filename="note.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+      "cache-control": "no-store",
+    });
+    res.end(pdf);
+  }
+
   function findNote(id: string): NoteRow {
     const row = db
       .prepare(
@@ -196,7 +232,8 @@ export function createApi(deps: ApiDeps) {
   const reviewLog = deps.review ?? new ReviewLog({ dataDir });
   indexer.onCardRenamed((newId, oldId) => reviewLog.alias(newId, oldId));
   const reviewRoutes = createReviewRoutes({ db, log: reviewLog, dataDir });
-  const bookRoutes = createBookRoutes({ db, store, reindex });
+  const bookService = createBookService({ db, store, reindex });
+  const bookRoutes = createBookRoutes({ db, store, reindex }, bookService);
   /** 每次进程启动不同：前端重连后发现它变了，就知道服务重启过，整体刷新一次 */
   const bootId = randomUUID();
 
@@ -487,10 +524,8 @@ export function createApi(deps: ApiDeps) {
         const payload = await readJson(req);
         const id = typeof payload.id === "string" ? payload.id : "";
         if (!id) throw new HttpError(400, "缺少 id");
-        const layout = payload.layout ?? "phone";
-        if (layout !== "phone" && layout !== "a4") throw new HttpError(400, "layout 只能是 phone 或 a4");
         const options: ExportOptions = {
-          layout: layout as ExportLayout,
+          layout: exportLayout(payload.layout),
           dark: payload.dark === true,
           meta: payload.meta !== false,
         };
@@ -503,34 +538,36 @@ export function createApi(deps: ApiDeps) {
           loadExportCss(),
           inlineImages(store, row.path),
         );
-        if (route[1] === "html") {
-          res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-          res.end(html);
-          return true;
-        }
-        const browser = (deps.findPdfBrowser ?? defaultBrowser)();
-        if (!browser) {
-          sendJson(res, 503, {
-            error: "没找到 Edge 或 Chrome，没法在后台生成 PDF",
-            code: "no-browser",
-          });
-          return true;
-        }
-        let pdf: Buffer;
-        try {
-          pdf = await printPdf(browser, html);
-        } catch (err) {
-          sendJson(res, 500, { error: `生成 PDF 失败：${(err as Error).message}`, code: "print-failed" });
-          return true;
-        }
-        const filename = exportFileName(meta.title);
-        res.writeHead(200, {
-          "content-type": "application/pdf",
-          "content-length": String(pdf.length),
-          "content-disposition": `attachment; filename="note.pdf"; filename*=UTF-8''${encodeURIComponent(filename)}`,
-          "cache-control": "no-store",
-        });
-        res.end(pdf);
+        await sendExport(res, route[1], html, exportFileName(meta.title));
+        return true;
+      }
+
+      // —— 整本导出（book-003）：连读的章节顺序，封面 + 目录页 + 每章新起一页 ——
+      if (route[0] === "export" && route.length === 3 && route[1] === "book" && (route[2] === "pdf" || route[2] === "html") && method === "POST") {
+        const payload = await readJson(req);
+        const group = groupParam(payload.group);
+        const book = bookService.buildBook(group);
+        const chapters = book.chapters.flatMap((chapter) =>
+          chapter.kind === "note"
+            ? [{ title: chapter.title, body: chapter.body, path: chapter.path, from: chapter.foreign ? chapter.group : null }]
+            : [],
+        );
+        if (chapters.length === 0) throw new HttpError(400, "这个项目还没有可导出的章节");
+        const title = group.includes("/") ? group.slice(group.indexOf("/") + 1) : group;
+        const html = buildBookExportHtml(
+          {
+            title,
+            group,
+            overview: book.index ? { body: book.index.body, path: book.index.path, title: book.index.title } : null,
+            chapters,
+            date: toLocalIso((deps.now ?? (() => new Date()))()).slice(0, 10),
+          },
+          { layout: exportLayout(payload.layout), dark: payload.dark === true },
+          loadExportCss(),
+          imageInliner(store),
+        );
+        // 整本可能上百页：比单篇多给些时间
+        await sendExport(res, route[2], html, exportFileName(title), 120_000);
         return true;
       }
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import * as api from "../api.ts";
-import { createBookChapter, getBook, writeBookIndex, type Book, type BookNote } from "../book-api.ts";
+import { createBookChapter, exportBookHtml, exportBookPdf, getBook, writeBookIndex, type Book, type BookNote } from "../book-api.ts";
 import { activeOutlineIndex } from "../lib/reading.ts";
 import {
   buildBookToc,
@@ -13,9 +13,12 @@ import {
   type BookTocItem,
 } from "../lib/book.ts";
 import { caretCoords } from "../lib/caret-coords.ts";
+import { downloadBlob, printHtml } from "../lib/download.ts";
+import type { ExportPrefs } from "../lib/export.ts";
 import { leafName } from "../lib/group-tree.ts";
 import { toggleTask } from "../lib/markdown.ts";
 import { autosaveDelay } from "../lib/save-plan.ts";
+import ExportDialog from "./ExportDialog.tsx";
 import Icon from "./Icon.tsx";
 import MarkdownTextarea from "./MarkdownTextarea.tsx";
 import Preview from "./Preview.tsx";
@@ -99,6 +102,7 @@ export default function BookView({ group, tick, knownTitles, onOpenNote, onOpenT
   const pendingCaret = useRef<number | null>(null);
   const [adding, setAdding] = useState<Adding | null>(null);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const setEditing = useCallback((next: Editing | null | ((prev: Editing | null) => Editing | null)) => {
     const value = typeof next === "function" ? next(editingRef.current) : next;
@@ -518,6 +522,27 @@ export default function BookView({ group, tick, knownTitles, onOpenNote, onOpenT
       return `已新建「${title}」`;
     });
 
+  /** 整本导出（book-003）：先把正在编辑的那章存好，导出的是磁盘上的最新内容 */
+  async function exportBook(prefs: ExportPrefs): Promise<string | null> {
+    if (editingRef.current && !(await saveEdit(true))) return "正在编辑的那一章还没保存成功，先处理它再导出";
+    const request = { group, layout: prefs.layout, dark: prefs.dark };
+    try {
+      const { blob, fileName } = await exportBookPdf(request);
+      downloadBlob(blob, fileName);
+      onToast(`已导出：${fileName}`, "ok");
+      return null;
+    } catch (err) {
+      if (!api.isNoBrowser(err)) return api.errorMessage(err);
+    }
+    try {
+      printHtml(await exportBookHtml(request));
+      onToast("没找到 Edge 或 Chrome，已打开打印对话框：目标选「另存为 PDF」", "ok");
+      return null;
+    } catch (err) {
+      return api.errorMessage(err);
+    }
+  }
+
   function renderAdding() {
     if (!adding) return null;
     return (
@@ -597,6 +622,17 @@ export default function BookView({ group, tick, knownTitles, onOpenNote, onOpenT
               >
                 <Icon name="menu" size={16} />
               </button>
+              {book && sections.some((section) => section.note && !section.unlisted) ? (
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => setExportOpen(true)}
+                  title="导出整本 PDF"
+                  aria-label="导出整本 PDF"
+                >
+                  <Icon name="download" size={16} />
+                </button>
+              ) : null}
               {book?.index ? (
                 <button type="button" className="btn btn--small" onClick={() => onOpenNote(book.index!.id)}>
                   编辑目录
@@ -830,6 +866,13 @@ export default function BookView({ group, tick, knownTitles, onOpenNote, onOpenT
           })}
         </article>
       </div>
+      <ExportDialog
+        open={exportOpen}
+        book
+        title={`${name}（${book ? book.chapters.filter((chapter) => chapter.kind === "note").length : 0} 章${book && book.unlisted.length ? `，未排入目录的 ${book.unlisted.length} 篇不导出` : ""}）`}
+        onClose={() => setExportOpen(false)}
+        onExport={exportBook}
+      />
     </div>
   );
 }

@@ -4357,6 +4357,13 @@ button.stat-card:hover {
   white-space: nowrap;
 }
 
+.export-dialog__hint {
+  margin: -4px 0 14px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-faint);
+}
+
 .export-dialog__group {
   display: flex;
   flex-direction: column;

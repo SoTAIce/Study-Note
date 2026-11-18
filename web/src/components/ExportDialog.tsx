@@ -28,13 +28,16 @@ const LAYOUTS: Array<{ value: ExportLayout; label: string; hint: string }> = [
 type Props = {
   open: boolean;
   title: string;
+  /** 整本导出（book-003）：标题叫「导出整本 PDF」，不显示「标题下元信息」（封面上总是有） */
+  book?: boolean;
   onClose: () => void;
   /** 导出；成功返回 null，失败返回要显示的原因 */
   onExport: (prefs: ExportPrefs) => Promise<string | null>;
 };
 
 /** 导出 PDF 的小面板（export-001）：版式、深色、是否带标题信息；记住上次的选择 */
-export default function ExportDialog({ open, title, onClose, onExport }: Props) {
+export default function ExportDialog({ open, title, book = false, onClose, onExport }: Props) {
+  const heading = book ? "导出整本 PDF" : "导出 PDF";
   const dialogFocusRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogFocusRef, open);
   const [prefs, setPrefs] = useState<ExportPrefs>(loadPrefs);
@@ -88,10 +91,10 @@ export default function ExportDialog({ open, title, onClose, onExport }: Props) 
         className="export-dialog"
         ref={dialogFocusRef} role="dialog"
         aria-modal="true"
-        aria-label="导出 PDF"
+        aria-label={heading}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <h2 className="export-dialog__title">导出 PDF</h2>
+        <h2 className="export-dialog__title">{heading}</h2>
         <p className="export-dialog__note" title={title}>
           {title || "无标题"}
         </p>
@@ -112,10 +115,15 @@ export default function ExportDialog({ open, title, onClose, onExport }: Props) 
           ))}
         </fieldset>
 
+        {book ? (
+          <p className="export-dialog__hint">第一页是书名和总览，第二页是目录；每章新起一页，书签按「章 → 小标题」，书内链接点了能跳。</p>
+        ) : null}
+        {book ? null : (
         <label className="export-dialog__check">
           <input type="checkbox" checked={prefs.meta} onChange={(event) => update({ meta: event.target.checked })} />
           标题下显示更新日期、分组、标签
         </label>
+        )}
         <label className="export-dialog__check">
           <input type="checkbox" checked={prefs.dark} onChange={(event) => update({ dark: event.target.checked })} />
           深色（适合夜里读）
