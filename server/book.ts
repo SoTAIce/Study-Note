@@ -95,6 +95,43 @@ export function appendIndexLinks(body: string, titles: string[], selfTitle: stri
   return `${trimmed}${eol}${lines}${eol}`;
 }
 
+/** 目录里一行的列表前缀：`  - `、`* `、`3. ` 之类；不是列表项返回 null。 */
+function listPrefix(line: string): { indent: string; marker: string } | null {
+  const m = /^(\s*)([-*+]|\d+[.)])\s+/.exec(line);
+  if (!m) return null;
+  const marker = /^\d/.test(m[2]) ? `${Number.parseInt(m[2], 10) + 1}${m[2].slice(-1)}` : m[2];
+  return { indent: m[1], marker };
+}
+
+/**
+ * 「在此后新建一章」（book-002）：把 `[[title]]` 插在目录里第一次链到 `afterTitle` 的那一行之后，
+ * 沿用那一行的缩进和列表符号（有序列表序号 +1，后面的序号不动，Markdown 渲染照样连续）。
+ * 找不到 `afterTitle`（或没给）就追加到末尾；已经在目录里的不重复加。
+ */
+export function insertIndexLinkAfter(body: string, afterTitle: string | null, title: string, selfTitle: string): string {
+  if (indexLinkTitles(body, selfTitle).includes(title)) return body;
+  const eol = body.includes("\r\n") ? "\r\n" : "\n";
+  const lines = body.split(/\r?\n/);
+  const after = afterTitle?.trim() ?? "";
+  const at = after
+    ? lines.findIndex((line) => extractLinks(line).some((link) => link.title.trim() === after))
+    : -1;
+  if (at < 0) return appendIndexLinks(body, [title], selfTitle);
+  const prefix = listPrefix(lines[at]);
+  const line = prefix ? `${prefix.indent}${prefix.marker} [[${title}]]` : `- [[${title}]]`;
+  lines.splice(at + 1, 0, line);
+  return lines.join(eol);
+}
+
+/** 新章节标题：要能放进 [[链接]]，所以不能有 ] | # 和换行 */
+function chapterTitle(raw: unknown): string {
+  const title = typeof raw === "string" ? raw.trim() : "";
+  if (!title) throw new BookHttpError(400, "参数错误：需要 title");
+  if (/[\]\[|#\r\n]/.test(title)) throw new BookHttpError(400, "标题里不能有 [ ] | # 或换行（会弄坏目录里的链接）");
+  if (title.length > 120) throw new BookHttpError(400, "标题太长了（最多 120 字）");
+  return title;
+}
+
 // ---- 接口 ----
 
 export type BookDeps = {
@@ -239,6 +276,59 @@ export function createBookRoutes(deps: BookDeps) {
     }
   }
 
+  /**
+   * 在此后新建一章：先建笔记（归入该组），再在目录里 `after` 那一章之后插入链接；没有目录就先生成一篇。
+   * 两次写入：目录那次冲突时笔记已经建好，返回 409 并带上新笔记，界面说明「笔记已建好，目录没改上」。
+   */
+  function createChapter(payload: Record<string, unknown>): {
+    note: { id: string; hash: string; title: string };
+    index: { id: string; hash: string; created: boolean };
+  } {
+    const group = groupParam(payload.group);
+    const title = chapterTitle(payload.title);
+    const project = projectRows(group);
+    if (project.some((row) => row.title.trim() === title)) {
+      throw new BookHttpError(400, `这个项目里已经有《${title}》了`);
+    }
+    const afterId = typeof payload.after === "string" && payload.after ? payload.after : null;
+    const afterRow = afterId
+      ? ((db.prepare(`SELECT title FROM notes WHERE id = ?`).get(afterId) as { title: string } | undefined) ?? null)
+      : null;
+    if (afterId && !afterRow) throw new BookHttpError(400, "参数错误：after 指向的笔记不存在");
+    const { index } = pickIndex(project);
+    if (index && index.title.trim() === title) throw new BookHttpError(400, "新章节不能和目录同名");
+    const baseHash = typeof payload.baseHash === "string" && payload.baseHash ? payload.baseHash : null;
+
+    const created = store.create({ title, type: "note", group, body: `# ${title}\n` });
+    deps.reindex(created.relPath);
+    const note = { id: created.id, hash: created.hash, title };
+
+    if (!index) {
+      const leaf = group.includes("/") ? group.slice(group.indexOf("/") + 1) : group;
+      const indexTitle = `${leaf} ${INDEX_TITLE}`;
+      const body = insertIndexLinkAfter(indexBody(project.map((row) => row.title)), afterRow?.title ?? null, title, indexTitle);
+      const made = store.create({ title: indexTitle, type: "index", group, body });
+      deps.reindex(made.relPath);
+      return { note, index: { id: made.id, hash: made.hash, created: true } };
+    }
+
+    const current = store.read(index.path);
+    const next = insertIndexLinkAfter(current.parsed.body, afterRow?.title ?? null, title, index.title);
+    try {
+      const saved = store.save(index.path, next, baseHash ?? current.hash);
+      deps.reindex(index.path);
+      return { note, index: { id: index.id, hash: saved.hash, created: false } };
+    } catch (err) {
+      if (err instanceof ConflictError) {
+        throw new BookHttpError(409, `《${title}》已建好，但目录刚被改过，没插进去；刷新后点「加入目录」`, {
+          currentHash: current.hash,
+          note,
+        });
+      }
+      throw err;
+    }
+  }
+
   return async function handle(
     method: string,
     route: string[],
@@ -248,6 +338,7 @@ export function createBookRoutes(deps: BookDeps) {
     if (route[0] !== "book") return undefined;
     if (route.length === 1 && method === "GET") return buildBook(groupParam(url.searchParams.get("group")));
     if (route.length === 2 && route[1] === "index" && method === "POST") return writeIndex(await body());
+    if (route.length === 2 && route[1] === "chapters" && method === "POST") return createChapter(await body());
     return undefined;
   };
 }

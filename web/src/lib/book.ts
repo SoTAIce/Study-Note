@@ -52,3 +52,37 @@ export function stepChapter(chapterTops: number[], scrollTop: number, dir: 1 | -
   if (dir === -1 && current === -1) return -1;
   return next >= 0 && next < chapterTops.length ? next : -1;
 }
+
+/**
+ * 双击渲染好的一章进入编辑时，光标放在哪（book-002）。
+ * 预览渲染的是去掉开头标题后的正文（stripLeadingTitle），块上的 data-line 是那段文字里的行号；
+ * 换算回整篇正文里的字符位置。行号不合法时放在正文末尾。
+ */
+export function caretForLine(body: string, shown: string, line: number | null): number {
+  if (line === null || !Number.isInteger(line) || line < 0) return body.length;
+  const skipped = body.length - shown.length;
+  let offset = 0;
+  for (let i = 0; i < line; i += 1) {
+    const next = shown.indexOf("\n", offset);
+    if (next < 0) return body.length;
+    offset = next + 1;
+  }
+  return Math.min(body.length, skipped + offset);
+}
+
+export type EditingSync = "keep" | "adopt" | "conflict";
+
+/**
+ * 连读整本重取后，正在就地编辑的那一章怎么办（book-002）：
+ * - 磁盘版本就是编辑起点，或是自己刚存的：keep；
+ * - 别处改了、而这里还没动过：adopt（换成磁盘上的新内容，继续编辑）；
+ * - 别处改了、这里也改了：conflict（走冲突提示，不自动覆盖任何一边）。
+ */
+export function syncEditing(
+  editing: { baseHash: string; draft: string; original: string },
+  disk: { hash: string },
+  ownHashes: ReadonlySet<string>,
+): EditingSync {
+  if (disk.hash === editing.baseHash || ownHashes.has(disk.hash)) return "keep";
+  return editing.draft === editing.original ? "adopt" : "conflict";
+}

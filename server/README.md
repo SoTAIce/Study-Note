@@ -24,7 +24,7 @@ data/notes/*.md  ──(唯一真源)──►  store.ts  ──►  indexer.ts 
 | `groups.ts` / `groups-api.ts` / `migrate-groups.ts` | 分组（frontmatter 的 `group:`）；`父分组/子项目` 两层，父分组筛选 / 改名 / 删除连带子项目（`groupFilterSql`、`isInGroup`） | 设计：`docs/superpowers/specs/2026-11-02-note-groups-design.md`、子项目见 `2026-11-18-project-book-view-design.md` |
 | `ai.ts` / `agent*.ts` / `providers/` | 右栏 AI 动作、AI 对话代理（计划 → 人审批 → 执行 → 可撤销） | 改笔记必须走计划审批；执行前快照到 `.history/batches/` |
 | `backup.ts` / `webdav.ts` | WebDAV 单向备份与快照恢复；图片附件按二进制只传 `latest/`，不进每日快照 / 月度归档 | 免费额度每 30 分钟 600 次请求 |
-| `book.ts` | 连读（book-001）：`GET /api/book?group=` 按组里 `type: index` 目录笔记的 [[链接]] 顺序组装整本（外来章、缺章、未排入目录）；`POST /api/book/index` 生成目录 / 追加章节（带 baseHash） | 正文从 store 读，数据库只用来找有哪些笔记；设计：`2026-11-18-project-book-view-design.md` |
+| `book.ts` | 连读（book-001）：`GET /api/book?group=` 按组里 `type: index` 目录笔记的 [[链接]] 顺序组装整本（外来章、缺章、未排入目录）；`POST /api/book/index` 生成目录 / 追加章节（带 baseHash）；`POST /api/book/chapters` 在某章之后新建一章（book-002，`insertIndexLinkAfter` 沿用那一行的列表样式） | 正文从 store 读，数据库只用来找有哪些笔记；设计：`2026-11-18-project-book-view-design.md` |
 | `cards.ts` / `fsrs.ts` / `review.ts` / `review-api.ts` | 知识简卡（srs-001）：从正文解析 `> [!card] 标题` 和 `概念 :: 解释`（索引进 `cards` 表）；FSRS 调度；`data/review/log.jsonl` 只追加的复习日志（打分 / 撤回 / 别名），启动重放算状态；卡片墙、今日队列、打分接口 | 复习状态只在日志里，SQLite 只放可重建的卡片；卡片 id 不写进笔记，改标题靠别名接上记录 |
 | `attachments.ts` | 图片附件：按文件头认类型（PNG / JPEG / GIF / WebP）、起名（带内容指纹，去重）、原子写到 `attachments/`；读文件接口的白名单 | 不收 SVG；读文件只限库内图片、隐藏目录不给，越界一律 404 |
 | `config.ts` / `net.ts` / `sse.ts` | 配置读写、网络错误翻译、SSE | |

@@ -1326,6 +1326,90 @@ try {
     await page.waitForFunction(() => document.querySelector(".book__title")?.textContent === "冒烟测试", null, { timeout: 5000 });
   });
 
+  await step("连读就地编辑：双击改一章 Esc 保存、同时只编辑一章、点别处保存、外部改动走冲突、在此后新建一章、[[ 补全、任务框改源文件", async () => {
+    const G = "冒烟测试/looprun";
+    const bookOf = () => api(`/api/book?group=${encodeURIComponent(G)}`);
+    const fileOf = async (title) => {
+      const b = await bookOf();
+      const ch = [...b.chapters, ...b.unlisted].find((c) => c.title === title);
+      return path.join(notesDir, ch.path);
+    };
+    const waitFile = async (file, text, label) => {
+      for (let i = 0; i < 50; i += 1) {
+        if (fs.readFileSync(file, "utf8").includes(text)) return;
+        await page.waitForTimeout(100);
+      }
+      throw new Error(`${label}：文件里没有「${text}」`);
+    };
+    await page.locator(".group-row--child", { hasText: "looprun" }).locator(".group-row__main").click();
+    await page.locator(".book__chapter-title", { hasText: "第二章" }).waitFor();
+    const chapter = (title) => page.locator(".book__chapter", { has: page.locator(".book__chapter-title", { hasText: title }) });
+    const editors = page.locator(".book__editor");
+
+    // 双击正文：这一章原地变成编辑框，光标落在双击的那一段
+    await chapter("第二章").locator(".preview p", { hasText: "第 3 段，" }).dblclick();
+    await editors.waitFor();
+    const caretText = await editors.evaluate((el) => el.value.slice(el.selectionStart, el.selectionStart + 5));
+    expect(caretText === "第 3 段", `光标应落在双击的段落，实际「${caretText}」`);
+    await page.keyboard.press("End");
+    await page.keyboard.type("（就地改过）");
+    await page.keyboard.press("Escape");
+    await editors.waitFor({ state: "detached" });
+    await waitFile(await fileOf("第二章"), "第 3 段，撑开篇幅。（就地改过）", "Esc 保存");
+    await chapter("第二章").getByText("（就地改过）").waitFor();
+
+    // 同一时间只编辑一章：点另一章的「编辑」先保存当前这章
+    await chapter("子项目里的笔记").getByRole("button", { name: /^编辑：/ }).click();
+    await editors.waitFor();
+    await page.keyboard.type("\n第一章补一句。");
+    await chapter("外来章").getByRole("button", { name: /^编辑：/ }).click();
+    await chapter("外来章").locator(".book__editor").waitFor();
+    expect((await editors.count()) === 1, `同时只能有一个编辑框，实际 ${await editors.count()}`);
+    await waitFile(await fileOf("子项目里的笔记"), "第一章补一句。", "切换章节时保存");
+
+    // [[ 补全在就地编辑里也能用
+    await page.keyboard.type("\n见 [[第二");
+    await page.locator(".wikisuggest").getByRole("option", { name: "第二章" }).waitFor();
+    await page.keyboard.press("Enter");
+    // 点编辑框以外（本页正文里）：保存并恢复成渲染状态
+    await page.locator(".book__title").click();
+    await editors.waitFor({ state: "detached" });
+    await waitFile(await fileOf("外来章"), "见 [[第二章]]", "点别处保存");
+
+    // 正在编辑时外部改了这一章：停在编辑状态，提示冲突；以我的覆盖
+    await chapter("后加的").getByRole("button", { name: /^编辑：/ }).click();
+    await editors.waitFor();
+    await page.keyboard.type("\n这里的修改");
+    const extFile = await fileOf("后加的");
+    fs.writeFileSync(extFile, fs.readFileSync(extFile, "utf8").replace("外部改过的正文", "外部又改了一次"), "utf8");
+    await page.getByRole("alert").filter({ hasText: "这一章在别处被改过了" }).waitFor({ timeout: 8000 });
+    await page.screenshot({ path: path.join(artifacts, "23-book-edit.png") });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForTimeout(400); // 等按钮的颜色过渡走完
+    await page.screenshot({ path: path.join(artifacts, "23-book-edit-dark.png") });
+    await page.emulateMedia({ colorScheme: "light" });
+    await page.getByRole("button", { name: "以我的覆盖" }).click();
+    await editors.waitFor({ state: "detached" });
+    await waitFile(extFile, "这里的修改", "以我的覆盖");
+
+    // 在此后新建一章：插在第二章之后，建好直接编辑；Ctrl+S 保存
+    await chapter("第二章").getByRole("button", { name: /之后新建一章/ }).click();
+    await page.getByLabel("新一章的标题").fill("任务章");
+    await page.keyboard.press("Enter");
+    await chapter("任务章").locator(".book__editor").waitFor({ timeout: 5000 });
+    const order = (await bookOf()).chapters.map((c) => c.title);
+    expect(order.indexOf("任务章") === order.indexOf("第二章") + 1, `新章应在第二章之后：${order}`);
+    await page.keyboard.type("\n- [ ] 待办甲");
+    await page.keyboard.press("Control+s");
+    await editors.waitFor({ state: "detached" });
+    const taskFile = await fileOf("任务章");
+    await waitFile(taskFile, "- [ ] 待办甲", "Ctrl+S 保存");
+
+    // 任务框：点了改那一章的源文件
+    await chapter("任务章").locator("input.task-check").click();
+    await waitFile(taskFile, "- [x] 待办甲", "点任务框");
+  });
+
   await step("主题切换并在刷新后保持", async () => {
     const toggle = page.getByLabel(/切换主题/);
     await toggle.click(); // system → light

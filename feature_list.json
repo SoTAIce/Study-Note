@@ -893,13 +893,18 @@
       "area": "book",
       "title": "连读里就地编辑、在此后新建一章",
       "user_visible_behavior": "双击或点「编辑」让这一章原地变成编辑框（快捷键、贴图、[[ 补全都能用），Esc / 点别处保存；同一时间只编辑一章；冲突走现有流程；「在此后新建一章」自动归入项目并插入目录。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "接口测试：POST /api/book/chapters 正常与冲突",
         "E2E：双击一章修改后 Esc，文件已改；新建一章后目录多一行"
       ],
-      "evidence": [],
-      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（已批准 2026-11-18）。 方案第九节第 3 期，依赖 book-001。"
+      "evidence": [
+        "2026-11-18 node --test server/tests/book.test.ts：12 项通过（新增 insertIndexLinkAfter 文本改写；POST /api/book/chapters 在某章之后插入、不给 after 追加、没有目录先生成、目录过期 409 且笔记已建好、非法标题 / 重名 / after 不存在 400）",
+        "2026-11-18 node --test web/src/lib/book.test.ts：6 项通过（新增 caretForLine 双击定位、syncEditing 整本重取时编辑中那章的去留）",
+        "2026-11-18 pnpm e2e 第「连读就地编辑」步：双击第二章第 3 段光标落在该段、Esc 后文件已改；点另一章「编辑」先存当前章且只剩一个编辑框；[[ 补全；点本页别处保存；编辑中外部改文件出现冲突提示、以我的覆盖后文件含本地修改；在第二章之后新建「任务章」目录顺序正确、Ctrl+S 保存；点任务框文件变成 [x]（截图 23-book-edit.png / 23-book-edit-dark.png）",
+        "2026-11-18 ./init.sh 全绿：533 个测试、四项基准（bench:book 改为带源码行号 + 可点任务框渲染，79～102ms）、E2E 28 步"
+      ],
+      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（已批准 2026-11-18）。 方案第九节第 3 期，依赖 book-001。 实现记录见方案第十一节 book-002。"
     },
     {
       "id": "book-003",

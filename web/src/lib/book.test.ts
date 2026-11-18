@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildBookToc, findChapter, stepChapter, stripLeadingTitle } from "./book.ts";
+import { buildBookToc, caretForLine, findChapter, stepChapter, stripLeadingTitle, syncEditing } from "./book.ts";
 
 test("stripLeadingTitle 只去掉和章节标题相同的开头 # 标题", () => {
   assert.equal(stripLeadingTitle("# 实现\n\n正文\n", "实现"), "正文\n");
@@ -42,4 +42,23 @@ test("stepChapter：按当前所在章跳上一章 / 下一章，到头返回 -1
   assert.equal(stepChapter([200, 500], 0, -1), -1);
   assert.equal(stepChapter([200, 500], 0, 1), 0);
   assert.equal(stepChapter([], 0, 1), -1);
+});
+
+test("caretForLine：预览块的行号换算回整篇正文里的位置", () => {
+  const body = "# 实现\n\n第一段\n\n## 小节\n第二段\n";
+  const shown = stripLeadingTitle(body, "实现");
+  assert.equal(shown, "第一段\n\n## 小节\n第二段\n");
+  assert.equal(body.slice(caretForLine(body, shown, 0)), shown);
+  assert.equal(body.slice(caretForLine(body, shown, 2)), "## 小节\n第二段\n");
+  assert.equal(caretForLine(body, shown, 99), body.length);
+  assert.equal(caretForLine(body, shown, null), body.length);
+  assert.equal(caretForLine(body, body, 1), body.indexOf("\n") + 1);
+});
+
+test("syncEditing：自己存的 / 编辑起点不动；别处改了且没动过就换新；两边都改了是冲突", () => {
+  const editing = { baseHash: "h1", draft: "a", original: "a" };
+  assert.equal(syncEditing(editing, { hash: "h1" }, new Set()), "keep");
+  assert.equal(syncEditing(editing, { hash: "h2" }, new Set(["h2"])), "keep");
+  assert.equal(syncEditing(editing, { hash: "h3" }, new Set()), "adopt");
+  assert.equal(syncEditing({ ...editing, draft: "ab" }, { hash: "h3" }, new Set()), "conflict");
 });

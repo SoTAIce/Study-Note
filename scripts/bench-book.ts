@@ -77,7 +77,8 @@ for (let run = 0; run < 5; run += 1) {
   chars = 0;
   for (const chapter of book.chapters) {
     if (chapter.kind !== "note") continue;
-    chars += renderMarkdown(chapter.body, { images: { notePath: chapter.path } }).length;
+    // 与连读页一致：带源码行号（双击就地编辑定位用，book-002）、任务框可点
+    chars += renderMarkdown(chapter.body, { images: { notePath: chapter.path }, sourceLines: true, interactiveTasks: true }).length;
   }
   if (book.index) renderMarkdown(book.index.body, {});
   total.push(performance.now() - t0);

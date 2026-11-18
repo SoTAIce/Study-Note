@@ -9,7 +9,7 @@ import { createApi } from "../api.ts";
 import { openDb } from "../db.ts";
 import { Indexer } from "../indexer.ts";
 import { NoteStore } from "../store.ts";
-import { appendIndexLinks, indexBody, indexLinkTitles, pickIndex } from "../book.ts";
+import { appendIndexLinks, indexBody, indexLinkTitles, insertIndexLinkAfter, pickIndex } from "../book.ts";
 
 // ---- 纯函数 ----
 
@@ -39,6 +39,17 @@ test("indexBody / appendIndexLinks：追加到末尾、沿用换行符、已在�
   assert.equal(appendIndexLinks("", ["A"], "目录"), "- [[A]]\n");
   const same = "- [[A]]\n";
   assert.equal(appendIndexLinks(same, ["A"], "目录"), same);
+});
+
+test("insertIndexLinkAfter：插在链到 after 的那一行之后，沿用缩进和列表符号；找不到就追加；已有不重复", () => {
+  const body = "总览\n\n1. [[A]]\n2. [[B]]\n";
+  assert.equal(insertIndexLinkAfter(body, "A", "新", "目录"), "总览\n\n1. [[A]]\n2. [[新]]\n2. [[B]]\n");
+  assert.equal(insertIndexLinkAfter("- [[A]]\n  * [[A1|别名]]\n- [[B]]\n", "A1", "新", "目录"), "- [[A]]\n  * [[A1|别名]]\n  * [[新]]\n- [[B]]\n");
+  assert.equal(insertIndexLinkAfter("x\r\n- [[A]]\r\n- [[B]]\r\n", "A", "C", "目录"), "x\r\n- [[A]]\r\n- [[C]]\r\n- [[B]]\r\n");
+  assert.equal(insertIndexLinkAfter("先看 [[A]] 再说\n", "A", "C", "目录"), "先看 [[A]] 再说\n- [[C]]\n");
+  assert.equal(insertIndexLinkAfter("- [[A]]\n", "不在目录里", "C", "目录"), "- [[A]]\n- [[C]]\n");
+  assert.equal(insertIndexLinkAfter("- [[A]]\n", null, "C", "目录"), "- [[A]]\n- [[C]]\n");
+  assert.equal(insertIndexLinkAfter("- [[A]]\n- [[C]]\n", "A", "C", "目录"), "- [[A]]\n- [[C]]\n");
 });
 
 // ---- 接口 ----
@@ -197,4 +208,52 @@ test("参数错误：缺 group、三层组名、已有目录却不给 titles", a
   assert.equal((await book("a/b/c")).status, 400);
   const res = await call("POST", "/api/book/index", { group: "追加" });
   assert.equal(res.status, 400);
+});
+
+test("POST /api/book/chapters：在某章之后新建，归入该组并插进目录", async () => {
+  const a = note("新章甲", "新章/项目");
+  note("新章乙", "新章/项目");
+  note("项目 目录", "新章/项目", "总览\n\n1. [[新章甲]]\n2. [[新章乙]]\n", "index");
+  const before = await book("新章/项目");
+  const res = await call("POST", "/api/book/chapters", {
+    group: "新章/项目",
+    title: "插进来的",
+    after: a.id,
+    baseHash: before.json.index.hash,
+  });
+  assert.equal(res.status, 200);
+  assert.equal(res.json.index.created, false);
+  const after = await book("新章/项目");
+  assert.deepEqual(after.json.chapters.map((c: any) => c.title), ["新章甲", "插进来的", "新章乙"]);
+  assert.equal(after.json.chapters[1].id, res.json.note.id);
+  assert.equal(after.json.chapters[1].group, "新章/项目");
+  assert.equal(after.json.index.hash, res.json.index.hash);
+
+  // 不给 after：追加到末尾
+  await call("POST", "/api/book/chapters", { group: "新章/项目", title: "最后一章", baseHash: res.json.index.hash });
+  const tail = await book("新章/项目");
+  assert.equal(tail.json.chapters.at(-1).title, "最后一章");
+});
+
+test("POST /api/book/chapters：没有目录时先生成；目录过期返回 409 但笔记已建好；非法标题与重名 400", async () => {
+  const first = note("无目录甲", "新章/无目录");
+  note("无目录乙", "新章/无目录");
+  const made = await call("POST", "/api/book/chapters", { group: "新章/无目录", title: "夹在中间", after: first.id });
+  assert.equal(made.status, 200);
+  assert.equal(made.json.index.created, true);
+  const b = await book("新章/无目录");
+  assert.equal(b.json.index.title, "无目录 目录");
+  assert.deepEqual(b.json.chapters.map((c: any) => c.title), ["无目录甲", "夹在中间", "无目录乙"]);
+
+  const stale = await call("POST", "/api/book/chapters", { group: "新章/无目录", title: "冲突章", baseHash: "旧的" });
+  assert.equal(stale.status, 409);
+  assert.match(stale.json.error, /已建好/);
+  assert.ok(stale.json.note.id);
+  const afterStale = await book("新章/无目录");
+  assert.deepEqual(afterStale.json.unlisted.map((n: any) => n.title), ["冲突章"]);
+
+  assert.equal((await call("POST", "/api/book/chapters", { group: "新章/无目录", title: "坏[[标题" })).status, 400);
+  assert.equal((await call("POST", "/api/book/chapters", { group: "新章/无目录", title: "  " })).status, 400);
+  assert.equal((await call("POST", "/api/book/chapters", { group: "新章/无目录", title: "无目录甲" })).status, 400);
+  assert.equal((await call("POST", "/api/book/chapters", { group: "新章/无目录", title: "x", after: "不存在" })).status, 400);
 });

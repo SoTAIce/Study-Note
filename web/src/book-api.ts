@@ -33,3 +33,13 @@ export function writeBookIndex(input: {
 }): Promise<{ index: { id: string; hash: string }; created: boolean }> {
   return request("/book/index", { method: "POST", body: jsonBody(input) });
 }
+
+/** 在此后新建一章（book-002）：建笔记归入该组，并在目录里 after 那一章之后插入链接；没有目录就先生成。 */
+export function createBookChapter(input: {
+  group: string;
+  title: string;
+  after?: string;
+  baseHash?: string;
+}): Promise<{ note: { id: string; hash: string; title: string }; index: { id: string; hash: string; created: boolean } }> {
+  return request("/book/chapters", { method: "POST", body: jsonBody(input) });
+}

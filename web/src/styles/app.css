@@ -360,7 +360,8 @@ kbd {
 .agent-roots textarea,
 .agent__select,
 .ai__ask,
-.group-edit__input {
+.group-edit__input,
+.book__adding-input {
   background: var(--bg-raised);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
@@ -375,7 +376,8 @@ kbd {
 .agent-roots textarea:focus,
 .agent__select:focus,
 .ai__ask:focus,
-.group-edit__input:focus {
+.group-edit__input:focus,
+.book__adding-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.2);
 }
@@ -383,7 +385,8 @@ kbd {
 .capture__textarea::placeholder,
 .compose__group-input::placeholder,
 .agent__composer textarea::placeholder,
-.ai__ask::placeholder {
+.ai__ask::placeholder,
+.book__adding-input::placeholder {
   color: var(--text-faint);
 }
 
@@ -5003,6 +5006,67 @@ button.stat-card:hover {
   letter-spacing: 0.04em;
   color: var(--text-faint);
   border-top: 2px solid var(--line-strong);
+}
+/* 就地编辑（book-002）：编辑框跟着内容长高，在整页里滚动 */
+.book__chapter.is-editing {
+  border-top-color: var(--accent);
+}
+.book__editor {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  margin: 6px 0 12px;
+  padding: 12px 14px;
+  overflow: hidden;
+  resize: none;
+  background: var(--bg-raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  outline: none;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.75;
+  font-variant-ligatures: none;
+  tab-size: 2;
+  caret-color: var(--accent);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+.book__editor:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.2);
+}
+.book__editor::placeholder {
+  color: var(--text-faint);
+}
+.book__editor.is-dropping {
+  background: var(--accent-soft);
+  outline: 2px dashed rgba(var(--accent-rgb), 0.5);
+  outline-offset: -6px;
+}
+.book__conflict {
+  margin: 6px 0 8px;
+}
+.book__body[aria-busy="true"] {
+  opacity: 0.6;
+}
+.book__chapter-actions .save-state {
+  margin-right: 0;
+}
+.book__adding {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 12px;
+  padding: 10px 0;
+}
+.book__adding-input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 14px;
+  color: var(--text);
 }
 @media (max-width: 900px) {
   /* 窄屏：目录默认收起，点「目录」按钮后叠在正文上方 */
