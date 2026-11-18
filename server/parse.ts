@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { normalizeGroupName } from "./groups.ts";
 
-export type NoteType = "note" | "idea" | "source";
+/** index：连读的目录笔记（book-001），链接顺序就是章节顺序。 */
+export type NoteType = "note" | "idea" | "source" | "index";
 
 export type NoteMeta = {
   id: string;
@@ -338,7 +339,13 @@ export function parseNote(
   const declared = data.type ? unquote(data.type).trim() : "";
   const inInbox = /^inbox[\\/]/i.test(fallback.path);
   const type: NoteType =
-    declared === "idea" || (!declared && inInbox) ? "idea" : declared === "source" ? "source" : "note";
+    declared === "idea" || (!declared && inInbox)
+      ? "idea"
+      : declared === "source"
+        ? "source"
+        : declared === "index"
+          ? "index"
+          : "note";
   const meta: NoteMeta = {
     id: data.id ? unquote(data.id).trim() : (fallback.id ?? ""),
     title: titleFromData || deriveTitle(body, fallback.path),

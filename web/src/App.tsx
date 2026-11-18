@@ -20,6 +20,7 @@ import SearchPalette from "./components/SearchPalette.tsx";
 import CaptureModal from "./components/CaptureModal.tsx";
 import TrashView from "./components/TrashView.tsx";
 import ComposeView from "./components/ComposeView.tsx";
+import BookView from "./components/BookView.tsx";
 import AiChatPage from "./components/AiChatPage.tsx";
 import ReadingMode from "./components/ReadingMode.tsx";
 import ExportDialog from "./components/ExportDialog.tsx";
@@ -64,7 +65,7 @@ import "./styles/app.css";
 import "./styles/content.css";
 import "./styles/reading.css";
 
-type Screen = "notes" | "trash" | "compose" | "ai" | "cards";
+type Screen = "notes" | "trash" | "compose" | "ai" | "cards" | "book";
 type ToastKind = "info" | "ok" | "error";
 type Toast = { id: number; text: string; kind: ToastKind };
 
@@ -150,6 +151,17 @@ export default function App() {
   const reviewTodo = reviewSummary ? reviewSummary.due + reviewSummary.fresh : null;
   // 右栏简卡数只在保存后的正文里简卡相关的行变了时重新查
   const currentCardSig = useMemo(() => cardSignature(current?.body ?? ""), [current?.body]);
+  // 连读（book-001）：正在读哪个分组；外部改了笔记时递增 bookTick 让连读整本重取
+  const [bookGroup, setBookGroup] = useState<string | null>(null);
+  const [bookTick, setBookTick] = useState(0);
+  function openBook(group: string): void {
+    void doSave();
+    setNavOpen(false);
+    setBookGroup(group);
+    setBookTick((n) => n + 1);
+    setScreen("book");
+    setBacklinks(null);
+  }
   function openCards(review: boolean, note?: { id: string; title: string }): void {
     void doSave();
     setNavOpen(false);
@@ -600,8 +612,9 @@ export default function App() {
       return;
     }
     composeReturnRef.current = screen;
-    // 正在看某个分组时新建：默认放进这个分组（group-001）
-    composeGroupRef.current = filter.kind === "group" ? filter.name : "";
+    // 正在看某个分组时新建：默认放进这个分组（group-001）；连读里新建放进正在读的项目（book-001）
+    composeGroupRef.current =
+      screen === "book" && bookGroup ? bookGroup : filter.kind === "group" ? filter.name : "";
     setComposeError(null);
     setScreen("compose");
   }
@@ -1042,10 +1055,12 @@ export default function App() {
       const changes = dropOwnEchoes(incoming, own);
       if (changes.length === 0) return;
       scheduleLiveRefresh();
+      setBookTick((n) => n + 1);
       if (touchesNote(changes, noteIdRef.current, currentRef.current?.relPath ?? null)) queueExternalCheck();
     },
     onResync: () => {
       scheduleLiveRefresh();
+      setBookTick((n) => n + 1);
       if (noteIdRef.current) queueExternalCheck();
     },
   };
@@ -1351,6 +1366,8 @@ export default function App() {
         ? "回收站"
         : screen === "cards"
           ? "知识简卡"
+        : screen === "book"
+          ? `连读 · ${bookGroup ?? ""}`
         : screen === "compose"
           ? "新建笔记"
           : current
@@ -1385,6 +1402,8 @@ export default function App() {
         activeNoteId={current?.id ?? null}
         trashActive={screen === "trash"}
         cardsActive={screen === "cards"}
+        bookGroup={screen === "book" ? bookGroup : null}
+        onOpenBook={(group) => openBook(group)}
         reviewTodo={reviewTodo}
         onOpenCards={() => openCards(false)}
         reindexing={reindexing}
@@ -1483,6 +1502,29 @@ export default function App() {
                 void openTitle(title);
               }}
               onChanged={() => setReviewTick((n) => n + 1)}
+            />
+          ) : screen === "book" && bookGroup ? (
+            <BookView
+              group={bookGroup}
+              tick={bookTick}
+              knownTitles={knownTitles}
+              onOpenNote={(id) => {
+                setScreen("notes");
+                void openNote(id);
+              }}
+              onOpenTitle={(title) => {
+                setScreen("notes");
+                void openTitle(title);
+              }}
+              onFilterTag={(tag) => {
+                setScreen("notes");
+                setFilter({ kind: "tag", tag });
+              }}
+              onChanged={() => {
+                void refreshSidebar();
+                void loadList(filter);
+              }}
+              onToast={showToast}
             />
           ) : screen === "trash" ? (
             <TrashView onBack={() => setScreen("notes")} onRestored={(relPath) => void handleRestored(relPath)} />

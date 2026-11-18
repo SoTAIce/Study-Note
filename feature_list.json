@@ -871,15 +871,21 @@
       "area": "book",
       "title": "连读：一个项目的笔记按目录顺序连成一篇长文阅读",
       "user_visible_behavior": "点左栏子项目进入连读：目录笔记（type: index）的正文作为总览，其中 [[链接]] 的顺序就是章节顺序；左侧目录含各章小标题、滚动高亮、点击跳转；章间链接在本页滚动；别的项目的章节标出来源；未写进目录的笔记列在最后，可一键加入；没有目录时可一键生成。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "单测：目录解析（顺序、去重、忽略自身、标题兜底、多篇目录）",
         "接口测试：GET /api/book 各种情况",
         "E2E：连读顺序与目录一致、目录跳转、本页链接跳转",
         "基准：100 章项目首屏 ≤ 1 秒"
       ],
-      "evidence": [],
-      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（已批准 2026-11-18）。 方案第九节第 2 期，依赖 group-002。"
+      "evidence": [
+        "pnpm test：528 通过。新增 server/tests/book.test.ts 9 条（indexLinkTitles 顺序 / 去重 / 忽略自身与嵌入图；pickIndex 优先 type index、标题「目录」兜底、多篇目录；indexBody / appendIndexLinks 换行符与去重；GET /api/book 无目录按创建时间、有目录按链接顺序 + 外来章 foreign + 缺章占位 + unlisted + 父分组不含子项目；手写「目录」与多目录 otherIndexes；POST /api/book/index 生成与追加、baseHash 过期 409、参数错误 400）；web/src/lib/book.test.ts 4 条（去重复标题、目录项层级、按标题找章、翻章）",
+        "pnpm bench:book：100 章 × 3000 字，组装 + 渲染全部章节中位数 65～115ms（< 1 秒，已进 init.sh）",
+        "pnpm e2e：27 步通过；新步骤「连读」：点子项目进连读、无目录按创建时间、点「生成目录」、追加外来章与缺章后顺序正确、外来章标来源、缺章占位、左侧目录含「小节甲」、点目录滚到外来章、点书内 [[链接]] 留在连读并滚回第一章且焦点在章标题、] / [ 翻章、新建缺章归入本项目、未排入目录点「加入目录」、外部改文件后连读自动刷新、父分组列表顶部「连读」；截图 e2e-artifacts/22-book.png",
+        "人工看图：浅色 / 深色截图检查章标题与章内标题层级、代码块、任务列表、外链样式",
+        "./init.sh 全绿（2026-11-18）：528 测试 + 四个基准 + E2E 27 步"
+      ],
+      "notes": "方案：docs/superpowers/specs/2026-11-18-project-book-view-design.md（已批准 2026-11-18）。 方案第九节第 2 期，依赖 group-002。 实现：server/book.ts；web/src/components/BookView.tsx、lib/book.ts、book-api.ts；NoteType 新增 index。与方案的出入见方案第十一节（缺章内联在 chapters、没改地址栏 hash、复选框只读、同名歧义提示没做）。"
     },
     {
       "id": "book-002",

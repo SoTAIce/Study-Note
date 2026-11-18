@@ -18,7 +18,8 @@
     "bench:search": "node scripts/bench-search.ts",
     "bench:index": "node scripts/bench-index.ts",
     "bench:review": "node scripts/bench-review.ts",
-    "verify": "pnpm typecheck && pnpm test && pnpm bench:search && pnpm bench:index && pnpm bench:review && pnpm build && pnpm e2e"
+    "bench:book": "node scripts/bench-book.ts",
+    "verify": "pnpm typecheck && pnpm test && pnpm bench:search && pnpm bench:index && pnpm bench:review && pnpm bench:book && pnpm build && pnpm e2e"
   },
   "dependencies": {
     "marked": "^18.1.2",

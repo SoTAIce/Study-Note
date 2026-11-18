@@ -1183,7 +1183,7 @@ try {
     const childRow = page.locator(".group-row--child", { hasText: "looprun" });
     await childRow.waitFor({ timeout: 5000 });
 
-    // 点子项目再新建：分组栏预填完整的「冒烟/looprun」
+    // 点子项目（进连读）再新建：分组栏预填完整的「冒烟/looprun」
     await childRow.locator(".group-row__main").click();
     await page.locator(".new-note-entry").click();
     const groupInput = page.locator(".compose__group-input");
@@ -1223,6 +1223,107 @@ try {
     await childRow.waitFor();
     const renamed = (await api("/api/notes")).items.find((n) => n.title === "子项目里的笔记");
     expect(renamed && renamed.group === "冒烟测试/looprun", `改名后应为「冒烟测试/looprun」，实际 ${renamed && renamed.group}`);
+  });
+
+  await step("连读：点子项目进连读、生成目录、按目录顺序、外来章与缺章、左侧目录、本页跳转、[ ] 翻章、加入目录、新建缺章", async () => {
+    const post = (url, body) =>
+      page.evaluate(
+        async ([u, b]) => {
+          const res = await fetch(u, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+          return { status: res.status, json: await res.json() };
+        },
+        [url, body],
+      );
+    const G = "冒烟测试/looprun";
+    const long = Array.from({ length: 40 }, (_, i) => `第 ${i + 1} 段，撑开篇幅。`).join("\n\n");
+    expect((await post("/api/notes", { title: "第二章", body: `# 第二章\n\n## 小节甲\n\n${long}\n\n回看 [[子项目里的笔记]]。\n`, group: G })).status === 201, "建第二章");
+    expect((await post("/api/notes", { title: "外来章", body: `别的分组里的一篇。\n\n${long}\n`, group: "冒烟测试" })).status === 201, "建外来章");
+
+    await page.locator(".group-row--child", { hasText: "looprun" }).locator(".group-row__main").click();
+    const book = page.locator(".book");
+    await book.waitFor();
+    await book.getByText("还没有目录").waitFor();
+    const titles = () => page.locator(".book__chapter-title").allInnerTexts();
+    expect(JSON.stringify(await titles()) === JSON.stringify(["子项目里的笔记", "第二章"]), `无目录时按创建时间：${await titles()}`);
+
+    await book.getByRole("button", { name: "生成目录" }).click();
+    await book.getByRole("button", { name: "编辑目录" }).waitFor({ timeout: 5000 });
+    const made = await api(`/api/book?group=${encodeURIComponent(G)}`);
+    expect(made.index && made.index.title === "looprun 目录", `应生成「looprun 目录」，实际 ${made.index && made.index.title}`);
+
+    // 往目录里加一篇外来章和一篇还没写的
+    const add = await post("/api/book/index", { group: G, titles: ["外来章", "还没写"], baseHash: made.index.hash });
+    expect(add.status === 200, `追加目录应成功：${add.status}`);
+    await page.locator(".group-row--child", { hasText: "looprun" }).locator(".group-row__main").click();
+    await page.waitForFunction(() => document.querySelectorAll(".book__chapter-title").length === 4, null, { timeout: 5000 });
+    expect(
+      JSON.stringify(await titles()) === JSON.stringify(["子项目里的笔记", "第二章", "外来章", "还没写"]),
+      `应按目录顺序：${await titles()}`,
+    );
+    expect((await page.locator(".book__chapter", { hasText: "外来章" }).locator(".book__from").innerText()).includes("来自 冒烟测试"), "外来章应标来源");
+    expect((await page.locator(".book__chapter.is-missing", { hasText: "还没写" }).count()) === 1, "缺章应占位");
+
+    // 左侧目录含章内小标题
+    const toc = page.getByRole("navigation", { name: "连读目录" });
+    await toc.getByRole("button", { name: "小节甲" }).waitFor();
+    await page.screenshot({ path: path.join(artifacts, "22-book.png") });
+
+    const scroller = page.locator(".book__scroll");
+    // 滚动动画停下来再读位置（连续两次读数一样）
+    const settled = async () => {
+      let last = -1;
+      for (let i = 0; i < 40; i += 1) {
+        const now = await scroller.evaluate((el) => el.scrollTop);
+        if (now === last) return now;
+        last = now;
+        await page.waitForTimeout(100);
+      }
+      return last;
+    };
+
+    // 本页跳转：第二章里的 [[子项目里的笔记]] 不离开连读
+    await toc.getByRole("button", { name: "外来章" }).click();
+    const atForeign = await settled();
+    expect(atForeign > 200, `点目录「外来章」应滚下去，scrollTop=${atForeign}`);
+    await page.locator(".book__chapter", { hasText: "第二章" }).locator("a.wikilink", { hasText: "子项目里的笔记" }).click();
+    const atFirst = await settled();
+    expect(atFirst < atForeign, `点书内链接应滚回第一章，scrollTop=${atFirst}`);
+    const focused = await page.evaluate(() => document.activeElement?.textContent);
+    expect(focused === "子项目里的笔记", `焦点应在第一章标题上，实际「${focused}」`);
+    expect(await book.isVisible(), "点书内链接应留在连读里");
+
+    // ] 下一章、[ 上一章
+    await page.keyboard.press("]");
+    const atNext = await settled();
+    expect(atNext > atFirst + 20, `] 应翻到下一章：${atFirst} → ${atNext}`);
+    await page.keyboard.press("[");
+    const atPrev = await settled();
+    expect(atPrev < atNext, `[ 应翻回上一章：${atNext} → ${atPrev}`);
+
+    // 新建缺章
+    await page.locator(".book__chapter.is-missing", { hasText: "还没写" }).getByRole("button", { name: "新建" }).click();
+    await page.waitForFunction(() => document.querySelectorAll(".book__chapter.is-missing").length === 0, null, { timeout: 5000 });
+    const created = (await api("/api/notes")).items.find((n) => n.title === "还没写");
+    expect(created && created.group === G, `新建的缺章应在本项目：${created && created.group}`);
+
+    // 未排入目录 → 加入目录
+    expect((await post("/api/notes", { title: "后加的", body: "后加的正文", group: G })).status === 201, "建后加的");
+    await page.locator(".group-row--child", { hasText: "looprun" }).locator(".group-row__main").click();
+    const unlisted = page.locator(".book__chapter", { hasText: "后加的" });
+    await unlisted.getByRole("button", { name: "加入目录" }).click();
+    await page.locator(".book__divider").waitFor({ state: "detached", timeout: 5000 });
+    const final = await api(`/api/book?group=${encodeURIComponent(G)}`);
+    expect(final.chapters.map((c) => c.title).join("、") === "子项目里的笔记、第二章、外来章、还没写、后加的", `加入后目录：${final.chapters.map((c) => c.title)}`);
+
+    // 外部编辑器改了一章：连读自己刷新
+    const extPath = path.join(notesDir, final.chapters.find((c) => c.title === "后加的").path);
+    fs.writeFileSync(extPath, fs.readFileSync(extPath, "utf8").replace("后加的正文", "外部改过的正文"), "utf8");
+    await page.locator(".book__chapter", { hasText: "外部改过的正文" }).waitFor({ timeout: 8000 });
+
+    // 父分组：列表顶部的「连读」
+    await page.locator(".group-row:not(.group-row--child)", { hasText: "冒烟测试" }).locator(".group-row__main").click();
+    await page.locator(".sidebar__list").getByRole("button", { name: "连读" }).click();
+    await page.waitForFunction(() => document.querySelector(".book__title")?.textContent === "冒烟测试", null, { timeout: 5000 });
   });
 
   await step("主题切换并在刷新后保持", async () => {

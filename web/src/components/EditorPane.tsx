@@ -62,6 +62,7 @@ const TYPE_LABEL: Record<NoteDetail["meta"]["type"], string> = {
   note: "笔记",
   idea: "想法",
   source: "来源",
+  index: "目录",
 };
 
 type Props = {

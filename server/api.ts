@@ -58,6 +58,7 @@ import { isValidVersionId } from "./history.ts";
 import { AttachmentError, MAX_UPLOAD_BODY, saveAttachment, servedFile } from "./attachments.ts";
 import { ReviewLog } from "./review.ts";
 import { createReviewRoutes, ReviewHttpError } from "./review-api.ts";
+import { BookHttpError, createBookRoutes } from "./book.ts";
 
 const MAX_BODY = 5 * 1024 * 1024;
 
@@ -195,6 +196,7 @@ export function createApi(deps: ApiDeps) {
   const reviewLog = deps.review ?? new ReviewLog({ dataDir });
   indexer.onCardRenamed((newId, oldId) => reviewLog.alias(newId, oldId));
   const reviewRoutes = createReviewRoutes({ db, log: reviewLog, dataDir });
+  const bookRoutes = createBookRoutes({ db, store, reindex });
   /** 每次进程启动不同：前端重连后发现它变了，就知道服务重启过，整体刷新一次 */
   const bootId = randomUUID();
 
@@ -208,6 +210,11 @@ export function createApi(deps: ApiDeps) {
       const reviewResult = await reviewRoutes(method, route, url, () => readJson(req));
       if (reviewResult !== undefined) {
         sendJson(res, 200, reviewResult);
+        return true;
+      }
+      const bookResult = await bookRoutes(method, route, url, () => readJson(req));
+      if (bookResult !== undefined) {
+        sendJson(res, 200, bookResult);
         return true;
       }
 
@@ -265,7 +272,8 @@ export function createApi(deps: ApiDeps) {
             title: typeof body.title === "string" ? body.title : undefined,
             body: text,
             tags: Array.isArray(body.tags) ? body.tags.map(String) : undefined,
-            type: body.type === "idea" || body.type === "source" ? (body.type as NoteType) : "note",
+            type:
+              body.type === "idea" || body.type === "source" || body.type === "index" ? (body.type as NoteType) : "note",
             source: typeof body.source === "string" ? body.source : undefined,
             group,
           });
@@ -622,7 +630,8 @@ export function createApi(deps: ApiDeps) {
         const raw = (payload.meta ?? {}) as Record<string, unknown>;
         if (!relPath || body === null || typeof raw !== "object") throw new HttpError(400, "需要 relPath、meta、body");
         const str = (v: unknown, fallback = ""): string => (typeof v === "string" ? v : fallback);
-        const type = raw.type === "idea" || raw.type === "source" ? (raw.type as NoteType) : "note";
+        const type =
+          raw.type === "idea" || raw.type === "source" || raw.type === "index" ? (raw.type as NoteType) : "note";
         const meta: NoteMeta = {
           id: str(raw.id),
           title: str(raw.title, "未命名"),
@@ -1254,6 +1263,10 @@ export function createApi(deps: ApiDeps) {
     } catch (err) {
       if (err instanceof GroupsHttpError || err instanceof ReviewHttpError) {
         sendJson(res, err.status, { error: err.message });
+        return true;
+      }
+      if (err instanceof BookHttpError) {
+        sendJson(res, err.status, { error: err.message, ...err.extra });
         return true;
       }
       if (err instanceof HttpError) {

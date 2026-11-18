@@ -919,6 +919,10 @@ button.group-row__toggle:focus-visible {
   color: var(--accent);
   background: var(--accent-soft);
 }
+.badge--index {
+  color: var(--ok);
+  background: rgba(var(--ok-rgb), 0.12);
+}
 
 .daygroup__head {
   display: flex;
@@ -1119,6 +1123,10 @@ button.group-row__toggle:focus-visible {
 .type-badge--source {
   color: var(--accent);
   background: var(--accent-soft);
+}
+.type-badge--index {
+  color: var(--ok);
+  background: rgba(var(--ok-rgb), 0.12);
 }
 
 .editor__updated {
@@ -4834,5 +4842,180 @@ button.stat-card:hover {
   }
   .review-card__title {
     font-size: 22px;
+  }
+}
+
+/* ---- 连读（book-001）：目录 + 整个项目连成一篇 ---- */
+.book {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+.book__toc {
+  flex-basis: 232px;
+}
+.book__toc-chapter {
+  color: var(--text);
+  font-weight: 600;
+}
+.book__scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.book__paper {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 28px 28px 160px;
+}
+.book__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 16px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.book__heading {
+  min-width: 0;
+}
+.book__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+}
+.book__sub {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+.book__tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+.book__notice {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--text-dim);
+  background: var(--bg-sunken);
+}
+.book__notice--error {
+  color: var(--danger);
+  background: rgba(var(--danger-rgb), 0.08);
+}
+.book__overview {
+  padding: 8px 0 16px;
+}
+/* 预览自带的内边距是给单篇编辑页的；连读里和章标题对齐 */
+.book .preview {
+  padding: 0 0 12px;
+}
+/* 章里的标题要比章标题小一级，层级才不会倒过来 */
+.book__chapter .preview h1 {
+  font-size: 1.3em;
+}
+.book__chapter .preview h2 {
+  font-size: 1.15em;
+}
+.book__chapter .preview h3 {
+  font-size: 1.04em;
+}
+.book__chapter .preview > :first-child {
+  margin-top: 0.8em;
+}
+.book__chapter {
+  padding: 20px 0 8px;
+  border-top: 1px solid var(--line);
+}
+.book__chapter-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.book__chapter-num {
+  flex: none;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.book__chapter-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 25px;
+  font-weight: 700;
+  color: var(--text);
+  scroll-margin-top: 16px;
+}
+.book__chapter-title:focus {
+  outline: none;
+}
+.book__from {
+  flex: none;
+  font-size: 11.5px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  color: var(--text-dim);
+  background: var(--bg-hover-strong);
+}
+.book__chapter-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.book__chapter.is-missing .book__chapter-title {
+  color: var(--text-faint);
+}
+.book__empty {
+  margin: 4px 0 8px;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+.book__divider {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 32px;
+  padding: 8px 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  border-top: 2px solid var(--line-strong);
+}
+@media (max-width: 900px) {
+  /* 窄屏：目录默认收起，点「目录」按钮后叠在正文上方 */
+  .book {
+    flex-direction: column;
+  }
+  .book__toc {
+    flex: none;
+    max-height: 40vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .book__paper {
+    padding: 20px 16px 120px;
   }
 }

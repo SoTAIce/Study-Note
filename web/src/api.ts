@@ -6,7 +6,8 @@
 import { fileNameFromDisposition, type ExportLayout } from "./lib/export.ts";
 import type { IndexChanges } from "./lib/save-plan.ts";
 
-export type NoteType = "note" | "idea" | "source";
+/** index：连读的目录笔记（book-001） */
+export type NoteType = "note" | "idea" | "source" | "index";
 
 export type NoteSummary = {
   id: string;

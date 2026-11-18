@@ -48,13 +48,18 @@ type Props = {
   cardsActive: boolean;
   reviewTodo: number | null;
   onOpenCards: () => void;
+  /** 正在连读的分组（book-001）；没在连读时为 null */
+  bookGroup: string | null;
+  /** 打开某个分组的连读：点子项目、或父分组列表顶部的「连读」 */
+  onOpenBook: (group: string) => void;
   /** 宽屏收起左栏（ui-009，Ctrl+\） */
   onCollapse: () => void;
 };
 
 function TypeBadge({ type }: { type: NoteSummary["type"] }) {
   if (type === "note") return null;
-  return <span className={`badge badge--${type}`}>{type === "idea" ? "idea" : "source"}</span>;
+  const label = type === "idea" ? "idea" : type === "index" ? "目录" : "source";
+  return <span className={`badge badge--${type}`}>{label}</span>;
 }
 
 /** 摘要通常以标题开头（索引里把正文第一行 # 标题也算进去了），去掉重复部分。 */
@@ -100,6 +105,8 @@ export default function Sidebar({
   cardsActive,
   reviewTodo,
   onOpenCards,
+  bookGroup,
+  onOpenBook,
 }: Props) {
   const confirm = useConfirm();
   const [groupsOpen, setGroupsOpen] = useState(true);
@@ -169,7 +176,9 @@ export default function Sidebar({
     group: GroupView,
     options: { child?: boolean; childCount?: number; collapsed?: boolean },
   ) {
-    const active = filter.kind === "group" && sameFilter(filter, { kind: "group", name: group.name });
+    // 子项目点名字是连读（book-001），父分组点名字是筛选列表
+    const reading = bookGroup !== null && bookGroup.toLowerCase() === group.name.toLowerCase();
+    const active = reading || (bookGroup === null && filter.kind === "group" && sameFilter(filter, { kind: "group", name: group.name }));
     const childCount = options.childCount ?? 0;
     const total = group.total ?? group.count;
     const label = options.child ? leafName(group.name) : group.name;
@@ -197,8 +206,8 @@ export default function Sidebar({
         <button
           type="button"
           className="group-row__main"
-          onClick={() => onFilter({ kind: "group", name: group.name })}
-          title={`${group.name}：${total} 篇${childCount > 0 ? `（含 ${childCount} 个子项目）` : ""}${group.empty ? "（空组）" : ""}`}
+          onClick={() => (options.child ? onOpenBook(group.name) : onFilter({ kind: "group", name: group.name }))}
+          title={`${options.child ? "连读 " : ""}${group.name}：${total} 篇${childCount > 0 ? `（含 ${childCount} 个子项目）` : ""}${group.empty ? "（空组）" : ""}`}
           aria-current={active ? "page" : undefined}
         >
           <Icon name={active ? "folderOpen" : "folder"} size={15} />
@@ -646,6 +655,17 @@ export default function Sidebar({
         <section className="sidebar__list" aria-label={filterLabel(filter)}>
           <div className="section-head section-head--sticky">
             <span>{trashActive ? "回收站" : filterLabel(filter)}</span>
+            {!trashActive && filter.kind === "group" ? (
+              <button
+                type="button"
+                className="link-btn"
+                title="把这个分组的笔记按目录顺序连成一篇来读"
+                onClick={() => onOpenBook(filter.name)}
+              >
+                <Icon name="book" size={12} strokeWidth={2.2} />
+                连读
+              </button>
+            ) : null}
             {loading && notes.length > 0 ? <span className="section-head__hint">刷新中…</span> : null}
           </div>
           <div className="sidebar__scroller">{trashActive ? null : renderList()}</div>
