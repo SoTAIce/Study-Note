@@ -382,3 +382,28 @@ test("purgeTrash / emptyTrash：回收站目录不存在时不报错", () => {
   assert.deepEqual(store.purgeTrash(), { removed: 0 });
   assert.deepEqual(store.emptyTrash(), { removed: 0 });
 });
+
+test("save / 恢复历史版本：Obsidian 写的文件头（块状 tags、aliases、未知键）保存后都还在（data-001）", () => {
+  const { store, root } = mkStore();
+  const file = path.join(root, "notes", "obsidian.md");
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const raw = "---\ntitle: 外部写的\naliases:\n  - 别名\ntags:\n  - 读书\n  - 复习\ncssclass: wide\n---\n\n第一版\n";
+  fs.writeFileSync(file, raw, "utf8");
+  const first = store.read("obsidian.md");
+  assert.deepEqual(first.parsed.meta.tags, ["读书", "复习"]);
+
+  const saved = store.save("obsidian.md", "第二版\n", first.hash, {}, { checkpoint: "edit" });
+  const text = fs.readFileSync(file, "utf8");
+  for (const line of ["aliases:\n  - 别名", "tags:\n  - 读书\n  - 复习", "cssclass: wide"]) {
+    assert.ok(text.includes(line), `保存后应保留「${line}」：\n${text}`);
+  }
+  assert.ok(text.endsWith("---\n\n第二版\n"));
+  assert.deepEqual(saved.parsed.meta.tags, ["读书", "复习"]);
+
+  // 恢复到保存前的版本：未知键也还在
+  const version = store.listHistory(saved.id)[0];
+  store.restoreVersion("obsidian.md", version.versionId, saved.hash);
+  const restored = fs.readFileSync(file, "utf8");
+  assert.ok(restored.includes("cssclass: wide") && restored.includes("aliases:\n  - 别名"), restored);
+  assert.ok(restored.endsWith("\n第一版\n"));
+});

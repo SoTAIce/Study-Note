@@ -63,7 +63,15 @@ function normalizeInstant(value: string | undefined, fallback: string): string {
   return `${date}T${hm}:${sec ?? "00"}${offset ?? (offsetOf(fallback) || "Z")}`;
 }
 
-function parseTags(value: string | undefined): string[] {
+function parseTags(value: string | undefined, list?: string[]): string[] {
+  if (list) {
+    const out: string[] = [];
+    for (const item of list) {
+      const tag = item.trim();
+      if (tag && !out.includes(tag)) out.push(tag);
+    }
+    return out;
+  }
   if (!value) return [];
   let text = value.trim();
   if (text.startsWith("[") && text.endsWith("]")) text = text.slice(1, -1);
@@ -92,19 +100,66 @@ function looksLikeFrontmatter(block: string): boolean {
   return keys > 0;
 }
 
-function parseFrontmatter(raw: string): { data: Record<string, string>; body: string } | null {
+/**
+ * frontmatter 按「键」分组的行：一个顶格的 `key: value` 行，连同它下面的缩进行、`- ` 列表项
+ * （块状列表 `tags:\n  - a`、多行值）。空行和认不出的行单独成组（key 为 null）。
+ * 读（parseFrontmatter）和只改变了的键的写回（rewriteFrontmatter）共用这一份切法（data-001）。
+ */
+type FrontmatterEntry = { key: string | null; lines: string[] };
+
+const KEY_LINE_RE = /^([A-Za-z_][A-Za-z0-9_-]*)\s*:(.*)$/;
+
+function frontmatterEntries(lines: string[]): FrontmatterEntry[] {
+  const out: FrontmatterEntry[] = [];
+  for (const line of lines) {
+    const m = KEY_LINE_RE.exec(line);
+    if (m) {
+      out.push({ key: m[1], lines: [line] });
+      continue;
+    }
+    const last = out[out.length - 1];
+    if (last?.key && line.trim() && (/^\s/.test(line) || /^-(\s|$)/.test(line))) {
+      last.lines.push(line);
+      continue;
+    }
+    out.push({ key: null, lines: [line] });
+  }
+  return out;
+}
+
+/** 键这一行冒号后面的值（去首尾空白，不去引号） */
+function entryInline(entry: FrontmatterEntry): string {
+  const m = KEY_LINE_RE.exec(entry.lines[0]);
+  return m ? m[2].trim() : "";
+}
+
+/** 块状列表的各项：键这一行没写值，下面是 `- a` 这样的行 */
+function entryList(entry: FrontmatterEntry): string[] | null {
+  if (entryInline(entry)) return null;
+  const items: string[] = [];
+  for (const line of entry.lines.slice(1)) {
+    const m = /^\s*-\s+(.*)$/.exec(line);
+    if (m) items.push(unquote(m[1]));
+  }
+  return items.length ? items : null;
+}
+
+function parseFrontmatter(
+  raw: string,
+): { data: Record<string, string>; lists: Record<string, string[]>; body: string } | null {
   const fm = readFrontmatterBlock(raw);
   if (!fm) return null;
   const data: Record<string, string> = {};
-  for (const line of fm.lines) {
-    if (!line.trim() || line.trimStart().startsWith("#")) continue;
-    const idx = line.indexOf(":");
-    if (idx <= 0) continue;
-    const key = line.slice(0, idx).trim();
-    if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(key)) continue;
-    data[key] = line.slice(idx + 1).trim();
+  const lists: Record<string, string[]> = {};
+  // 只认顶格的键：缩进的（嵌套对象里的 title: 之类）不能顶替外层的同名键
+  for (const entry of frontmatterEntries(fm.lines)) {
+    if (!entry.key) continue;
+    data[entry.key] = entryInline(entry);
+    const items = entryList(entry);
+    if (items) lists[entry.key] = items;
+    else delete lists[entry.key];
   }
-  return { data, body: fm.body };
+  return { data, lists, body: fm.body };
 }
 
 export function deriveTitle(body: string, fallbackPath: string): string {
@@ -353,6 +408,74 @@ export function patchFrontmatterTemplate(raw: string, template: string | null): 
 
 const TEMPLATE_LINE_RE = /^template\s*:/;
 
+/**
+ * 保存时写回文件头（data-001）：只改值真的变了的那几个键，其它一律原样保留——
+ * 应用不认识的键（aliases、cssclass……）、原来的顺序、块状 tags 的写法、引号、换行风格、BOM。
+ * - 管的键：id、title、created、updated、type、tags、group、template、source；
+ * - 值没变（按解析后的含义比，不按字面）：那几行一个字不动；
+ * - 变了：换成一行标准写法（tags 变了就写成 `[a, b]` 一行）；该删的（移出分组等）整组删掉；
+ * - 缺的：插在前一个管的键后面（顺序同 serializeNote）。
+ * 原文没有 frontmatter 时退回 serializeNote。
+ */
+/** 文件头里的时间和 want 是不是同一时刻（只认合法写法；写坏的、空的都算不同，要改写） */
+function sameInstant(value: string, want: string): boolean {
+  const raw = unquote(value);
+  if (!INSTANT_RE.test(raw) && !DATE_ONLY_RE.test(raw)) return false;
+  return normalizeInstant(raw, want) === want;
+}
+
+export function rewriteFrontmatter(raw: string, meta: NoteMeta, body: string): string {
+  const fm = readFrontmatterBlock(raw);
+  if (!fm) return serializeNote(meta, body);
+  const eol = fm.block.includes("\r\n") ? "\r\n" : "\n";
+  const entries = frontmatterEntries(fm.lines);
+  const text = (entry: FrontmatterEntry) => unquote(entryInline(entry)).trim();
+  const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((item, at) => item === b[at]);
+
+  // [键, 想要的那一行（null = 不该有这个键）, 现有的值和想要的是否一样]
+  const plan: Array<[string, string | null, (entry: FrontmatterEntry) => boolean]> = [
+    ["id", `id: ${yamlValue(meta.id)}`, (e) => text(e) === meta.id],
+    ["title", `title: ${yamlValue(meta.title)}`, (e) => text(e) === meta.title],
+    ["created", `created: ${meta.created}`, (e) => sameInstant(entryInline(e), meta.created)],
+    ["updated", `updated: ${meta.updated}`, (e) => sameInstant(entryInline(e), meta.updated)],
+    ["type", `type: ${meta.type}`, (e) => text(e) === meta.type],
+    ["tags", `tags: ${yamlList(meta.tags)}`, (e) => sameList(parseTags(entryInline(e), entryList(e) ?? undefined), meta.tags)],
+    ["group", meta.group ? groupLine(meta.group) : null, (e) => !!meta.group && sameGroupName(text(e), meta.group)],
+    ["template", meta.template ? templateLine(meta.template) : null, (e) => text(e) === meta.template],
+    ["source", meta.source ? `source: ${yamlValue(meta.source)}` : null, (e) => text(e) === meta.source],
+  ];
+
+  let anchor = -1; // 上一个管的键所在的位置：缺的键插在它后面
+  for (const [key, line, same] of plan) {
+    // 同名键出现多次时解析取最后一个，这里也按最后一个改
+    let at = -1;
+    entries.forEach((entry, index) => {
+      if (entry.key === key) at = index;
+    });
+    if (line === null) {
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        if (entries[index].key === key) {
+          entries.splice(index, 1);
+          if (index <= anchor) anchor -= 1;
+        }
+      }
+      continue;
+    }
+    if (at >= 0) {
+      if (!same(entries[at])) entries[at] = { key, lines: [line] };
+      anchor = at;
+      continue;
+    }
+    const insertAt = anchor + 1;
+    entries.splice(insertAt, 0, { key, lines: [line] });
+    anchor = insertAt;
+  }
+
+  const lines = entries.flatMap((entry) => entry.lines);
+  const gap = /^\r?\n/.test(fm.body) ? eol : "";
+  return `${fm.bom}---${eol}${lines.join(eol)}${eol}---${eol}${gap}${body}`;
+}
+
 /** frontmatter 里 `group:` 行（行首、不缩进）。 */
 const GROUP_LINE_RE = /^group\s*:/;
 
@@ -437,7 +560,7 @@ export function parseNote(
     created: createdAt,
     updated: updatedAt,
     type,
-    tags: parseTags(data.tags),
+    tags: parseTags(data.tags, fm?.lists.tags),
   };
   if (data.source) meta.source = unquote(data.source).trim();
   // 手写的 `agent / looprun` 规整成 `agent/looprun`，索引和筛选只认一种写法

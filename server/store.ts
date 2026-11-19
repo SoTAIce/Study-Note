@@ -8,6 +8,7 @@ import {
   parseNote,
   patchFrontmatterGroup,
   patchFrontmatterTemplate,
+  rewriteFrontmatter,
   serializeNote,
   slugify,
   type NoteMeta,
@@ -314,7 +315,8 @@ export class NoteStore {
       else delete meta.template;
     }
     this.snapshot(current, opts.checkpoint);
-    this.writeAtomic(relPath, serializeNote(meta, body));
+    // 只改变了的文件头键，别的键（Obsidian 的 aliases、块状 tags……）原样保留（data-001）
+    this.writeAtomic(relPath, rewriteFrontmatter(current.raw, meta, body));
     return this.read(relPath);
   }
 
@@ -489,7 +491,7 @@ export class NoteStore {
       updated: toLocalIso(this.now()),
     };
     this.snapshot(current, "restore");
-    this.writeAtomic(relPath, serializeNote(meta, version.body));
+    this.writeAtomic(relPath, rewriteFrontmatter(current.raw, meta, version.body));
     return this.read(relPath);
   }
 
@@ -681,7 +683,7 @@ export class NoteStore {
       id: parsed.meta.id || randomUUID().slice(0, 8),
       updated: at,
     };
-    this.writeAtomic(relPath, serializeNote(meta, parsed.body));
+    this.writeAtomic(relPath, rewriteFrontmatter(raw, meta, parsed.body));
     return this.read(relPath);
   }
 

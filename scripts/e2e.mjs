@@ -1549,6 +1549,33 @@ try {
     await panel.waitFor({ state: "detached" });
   });
 
+  await step("外部编辑器写的文件头（块状 tags、aliases、未知键）在应用里编辑保存后原样保留", async () => {
+    const file = path.join(notesDir, "obsidian-style.md");
+    const head = "---\ntitle: Obsidian 写的笔记\naliases:\n  - 黑曜石\ntags:\n  - 读书\n  - 复习\ncssclass: wide\n---\n";
+    fs.writeFileSync(file, `${head}\n第一行正文\n`, "utf8");
+    // 等外部编辑同步把它收进索引
+    let made;
+    for (let i = 0; i < 50 && !made; i += 1) {
+      made = (await api("/api/notes")).items.find((n) => n.title === "Obsidian 写的笔记");
+      if (!made) await page.waitForTimeout(100);
+    }
+    expect(made && made.tags.includes("读书") && made.tags.includes("复习"), `块状 tags 应读出来：${JSON.stringify(made && made.tags)}`);
+    await page.keyboard.press("Control+k");
+    await page.getByLabel("搜索关键词").fill("Obsidian 写的笔记");
+    await page.locator(".hit", { hasText: "Obsidian 写的笔记" }).first().click();
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "Obsidian 写的笔记", null, { timeout: 5000 });
+    const ta = page.locator(".editor__textarea");
+    await ta.click();
+    await page.keyboard.press("Control+End");
+    await page.keyboard.type("在应用里加的一行");
+    await page.keyboard.press("Control+s");
+    await page.locator(".save-state--saved").waitFor({ timeout: 3000 });
+    const text = fs.readFileSync(file, "utf8");
+    for (const part of ["aliases:\n  - 黑曜石", "tags:\n  - 读书\n  - 复习", "cssclass: wide", "在应用里加的一行"]) {
+      expect(text.includes(part), `保存后文件里应有「${part}」：\n${text}`);
+    }
+  });
+
   await step("主题切换并在刷新后保持", async () => {
     const toggle = page.getByLabel(/切换主题/);
     await toggle.click(); // system → light

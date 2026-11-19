@@ -13,6 +13,7 @@ import {
   patchFrontmatterGroup,
   patchFrontmatterTemplate,
   stripHtmlComments,
+  rewriteFrontmatter,
 } from "../parse.ts";
 
 const fb = { path: "2026-10-30-位置编码.md", mtime: "2026-10-30T02:00:00Z" };
@@ -335,4 +336,102 @@ test("patchFrontmatterTemplate：只改这一行，正文与其它键逐字节�
   assert.deepEqual(patchFrontmatterTemplate(bare, null), { raw: bare, changed: false });
   // 带引号的值要转义
   assert.match(patchFrontmatterTemplate("---\nid: a\n---\nx", "a: b").raw, /template: "a: b"/);
+});
+
+// ---- 保存时保留文件头（data-001） ----
+
+const OBSIDIAN = [
+  "\uFEFF---",
+  "title: 手写 CRLF",
+  "aliases:",
+  "  - 别名甲",
+  "tags:",
+  "  - 手写",
+  "  - 'Go 学习'",
+  "cssclass: wide",
+  "group: agent",
+  "---",
+  "",
+  "正文 CRLF",
+  "",
+].join("\r\n");
+
+test("parseNote：块状 tags 读得出来（引号去掉）；缩进的嵌套键不顶替外层同名键", () => {
+  const { meta } = parseNote(OBSIDIAN, fb);
+  assert.deepEqual(meta.tags, ["手写", "Go 学习"]);
+  assert.equal(meta.title, "手写 CRLF");
+  assert.equal(meta.group, "agent");
+  const nested = parseNote("---\ntitle: 外层\nextra:\n  title: 里层\n---\n\nx", fb);
+  assert.equal(nested.meta.title, "外层");
+});
+
+test("rewriteFrontmatter：只改变了的键，未知键 / 块状 tags / 顺序 / CRLF / BOM / 空行原样保留", () => {
+  const { meta, body } = parseNote(OBSIDIAN, fb);
+  const next = { ...meta, id: "abc12345", updated: "2026-11-19T10:00:00+08:00" };
+  const out = rewriteFrontmatter(OBSIDIAN, next, `${body}改一句\r\n`);
+  assert.equal(
+    out,
+    [
+      "\uFEFF---",
+      "id: abc12345",
+      "title: 手写 CRLF",
+      `created: ${meta.created}`,
+      "updated: 2026-11-19T10:00:00+08:00",
+      "type: note",
+      "aliases:",
+      "  - 别名甲",
+      "tags:",
+      "  - 手写",
+      "  - 'Go 学习'",
+      "cssclass: wide",
+      "group: agent",
+      "---",
+      "",
+      "正文 CRLF",
+      "改一句",
+      "",
+    ].join("\r\n"),
+  );
+  // 写回去再读：标签、分组都还在
+  assert.deepEqual(parseNote(out, fb).meta.tags, ["手写", "Go 学习"]);
+});
+
+test("rewriteFrontmatter：tags 变了换成一行；移出分组删掉 group 行；原来没空行就不加", () => {
+  const raw = "---\nid: a\ntags:\n  - x\ngroup: g\nfoo: bar\n---\nbody";
+  const meta = parseNote(raw, fb).meta;
+  const out = rewriteFrontmatter(raw, { ...meta, tags: ["x", "y"], group: undefined }, "body2");
+  assert.equal(
+    out,
+    `---\nid: a\ntitle: ${meta.title}\ncreated: ${meta.created}\nupdated: ${meta.updated}\ntype: note\ntags: [x, y]\nfoo: bar\n---\nbody2`,
+  );
+});
+
+test("rewriteFrontmatter：应用自己写的标准文件头，结果和 serializeNote 一模一样（老行为不变）", () => {
+  const meta: NoteMeta = {
+    id: "n1",
+    title: "标题: 带冒号",
+    created: "2026-11-01T08:00:00+08:00",
+    updated: "2026-11-01T08:00:00+08:00",
+    type: "note",
+    tags: ["a", "中文"],
+    group: "agent/looprun",
+    template: "实现详情",
+    source: "https://example.com",
+  };
+  const raw = serializeNote(meta, "旧正文\n");
+  const next = { ...meta, title: "新标题", updated: "2026-11-02T09:00:00+08:00", tags: ["a"] };
+  assert.equal(rewriteFrontmatter(raw, next, "新正文\n"), serializeNote(next, "新正文\n"));
+  // 去掉 template / source
+  const bare = { ...next, template: undefined, source: undefined };
+  assert.equal(rewriteFrontmatter(raw, bare, "x"), serializeNote(bare, "x"));
+});
+
+test("rewriteFrontmatter：没有文件头时整块新写；时间写坏了照样更新；值相同时连引号写法都不动", () => {
+  const meta = parseNote("# 标题\n正文", fb).meta;
+  assert.equal(rewriteFrontmatter("# 标题\n正文", { ...meta, id: "z" }, "正文"), serializeNote({ ...meta, id: "z" }, "正文"));
+  const broken = "---\nid: a\ntitle: \"带引号\"\nupdated: 昨天\n---\n\nx";
+  const m = parseNote(broken, fb).meta;
+  const out = rewriteFrontmatter(broken, { ...m, updated: "2026-11-19T10:00:00Z" }, "x");
+  assert.match(out, /^updated: 2026-11-19T10:00:00Z$/m);
+  assert.match(out, /^title: "带引号"$/m);
 });
