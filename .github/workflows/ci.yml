@@ -61,6 +61,11 @@ jobs:
           STUDY_PDF_NO_SANDBOX: ${{ runner.os == 'Linux' && '1' || '' }}
         run: ./init.sh
 
+      # 一键启动（repo-003）：用真实的 bin/start.ps1 验证「代码更新后自动重建、换掉旧服务」
+      - name: 一键启动冒烟测试（Windows）
+        if: runner.os == 'Windows'
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-start.ps1
+
       - name: 上传 E2E 截图与导出的 PDF
         if: always()
         uses: actions/upload-artifact@v4

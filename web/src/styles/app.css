@@ -5357,3 +5357,23 @@ button.stat-card:hover {
 .editor__template.is-gone {
   color: var(--warn);
 }
+
+/* 应用已更新的提示条（repo-003）：顶部居中，不挡编辑 */
+.update-bar {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  z-index: 61;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 8px 8px 8px 14px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  border-radius: var(--radius-ctl);
+  box-shadow: var(--shadow-lg);
+  transform: translateX(-50%);
+}

@@ -1602,6 +1602,29 @@ try {
     }
   });
 
+  await step("服务换成新版本后，开着的旧页面提示「应用已更新」，可以稍后再说", async () => {
+    // 正常情况（页面和服务同一份代码）不提示
+    expect((await page.locator(".update-bar").count()) === 0, "代码没变时不该提示更新");
+    // 另开一页，把推送通道的 hello 换成「服务的代码指纹不一样」
+    const other = await browser.newPage({ viewport: { width: 1360, height: 860 } });
+    watch(other);
+    await other.route("**/api/events", (route) =>
+      route.fulfill({
+        status: 200,
+        headers: { "content-type": "text/event-stream", "cache-control": "no-store" },
+        body: `event: hello\ndata: ${JSON.stringify({ bootId: "e2e-new-boot", stamp: "0000000000000000" })}\n\n`,
+      }),
+    );
+    await other.goto(base);
+    const bar = other.locator(".update-bar");
+    await bar.waitFor({ timeout: 5000 });
+    expect((await bar.textContent()).includes("已更新到新版本"), "提示文字不对");
+    await other.screenshot({ path: path.join(artifacts, "27-update-bar.png") });
+    await bar.getByRole("button", { name: "稍后再说" }).click();
+    await bar.waitFor({ state: "detached" });
+    await other.close();
+  });
+
   await step("主题切换并在刷新后保持", async () => {
     const toggle = page.getByLabel(/切换主题/);
     await toggle.click(); // system → light

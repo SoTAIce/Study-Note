@@ -40,7 +40,7 @@ import { closeNoteTab, renameNoteTab, syncNoteTabTitles, upsertNoteTab, type Not
 import { neighbors } from "./lib/reading.ts";
 import type { Edit } from "./lib/edit-ops.ts";
 import { applyEditUndoable } from "./lib/textarea-edit.ts";
-import { connectLive, decideExternalChange, DELETE_CONFIRM_MS, touchesNote, type NoteChange } from "./lib/live.ts";
+import { connectLive, decideExternalChange, DELETE_CONFIRM_MS, needsReload, touchesNote, type NoteChange } from "./lib/live.ts";
 import {
   autosaveDelay,
   dropOwnEchoes,
@@ -132,6 +132,8 @@ export default function App() {
   // —— 笔记模板（tpl-001）：新建页、连读新建章用；面板打开时可定位到某个分组的默认模板 ——
   const [templates, setTemplates] = useState<TemplatesState | null>(null);
   const [templatesPanel, setTemplatesPanel] = useState<{ focusGroup: string | null } | null>(null);
+  /** 服务已经是新版本、这一页还是旧界面（repo-003） */
+  const [appUpdated, setAppUpdated] = useState(false);
 
   // —— 新建页 / AI 整篇替换的撤销 ——
   const [composeBusy, setComposeBusy] = useState(false);
@@ -242,6 +244,8 @@ export default function App() {
     const stop = connectLive({
       onChanges: (changes) => liveHandlersRef.current?.onChanges(changes),
       onResync: () => liveHandlersRef.current?.onResync(),
+      // 服务换成了新版本（repo-003）：这一页还是旧界面，提示刷新
+      onStamp: (stamp) => setAppUpdated(needsReload(__APP_STAMP__, stamp)),
     });
     return () => {
       stop();
@@ -1880,6 +1884,25 @@ export default function App() {
         }
         onRestored={(relPath) => void handleBackupRestored(relPath)}
       />
+
+      {appUpdated ? (
+        <div className="update-bar" role="status">
+          <span>笔记应用已更新到新版本，刷新页面就能用上。</span>
+          <button
+            type="button"
+            className="btn btn--small btn--primary"
+            onClick={() => {
+              // 先把手上的改动存好再刷新
+              void doSave().finally(() => window.location.reload());
+            }}
+          >
+            刷新页面
+          </button>
+          <button type="button" className="icon-btn" onClick={() => setAppUpdated(false)} aria-label="稍后再说">
+            <Icon name="x" size={14} />
+          </button>
+        </div>
+      ) : null}
 
       {toast ? (
         <div className={`toast toast--${toast.kind}`} role="status" key={toast.id}>

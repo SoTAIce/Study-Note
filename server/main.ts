@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp } from "./app.ts";
+import { appStamp } from "./app-stamp.ts";
 import { createApi } from "./api.ts";
 import { createBackupService } from "./backup.ts";
 import { openDb } from "./db.ts";
@@ -43,7 +44,9 @@ purgeTrash();
 const trashTick = setInterval(purgeTrash, 6 * 60 * 60 * 1000);
 
 const port = Number(process.env.STUDY_PORT ?? 7777);
-const app = createApp({ dataDir, notesRoot, api: createApi({ store, indexer, db, dataDir, backup, review }) });
+// 代码指纹（repo-003）：一键启动拿它和磁盘上的代码比，对不上就把这个旧进程换掉
+const stamp = appStamp(root);
+const app = createApp({ dataDir, notesRoot, stamp, api: createApi({ store, indexer, db, dataDir, backup, review, stamp }) });
 const server = http.createServer(app);
 
 // 备份定时器：每分钟醒一次做纯本地判断（不发请求），真正到点才备份。

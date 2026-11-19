@@ -64,6 +64,8 @@ export type AppDeps = {
   notesRoot: string;
   distDir?: string;
   now?: () => Date;
+  /** 代码指纹（repo-003）：/api/health 带出去，一键启动据此判断正在跑的是不是旧版本 */
+  stamp?: string;
   /** 由 api.ts 提供的 /api/* 处理器；返回 true 表示已处理 */
   api?: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>;
 };
@@ -105,7 +107,8 @@ export function createApp(deps: AppDeps) {
     try {
       if (!checkGuard(req, res)) return;
       if (url.pathname === "/api/health") {
-        sendJson(res, 200, { ok: true, version: VERSION });
+        // stamp：这个进程启动时的代码指纹（repo-003），启动脚本据此认出旧版本的服务
+        sendJson(res, 200, { ok: true, version: VERSION, stamp: deps.stamp ?? null });
         return;
       }
       if (url.pathname.startsWith("/api/")) {

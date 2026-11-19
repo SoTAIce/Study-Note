@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   connectLive,
   decideExternalChange,
+  needsReload,
   shouldResyncOnVisible,
   touchesNote,
   type NoteChange,
@@ -149,4 +150,21 @@ test("连接：坏 JSON 不抛错", () => {
   const t = setup();
   const source = t.source as unknown as { emit: (type: string, data: unknown) => void };
   assert.doesNotThrow(() => source.emit("notes", undefined));
+});
+
+test("hello 带上服务的代码指纹，每次连上都转给 onStamp；needsReload 只在两边都有且不同时为真（repo-003）", () => {
+  const source = fakeSource();
+  const stamps: Array<string | null> = [];
+  connectLive(
+    { onChanges: () => undefined, onResync: () => undefined, onStamp: (s) => stamps.push(s) },
+    { createEventSource: () => source, visibility: null },
+  );
+  source.emit("hello", { bootId: "b1", stamp: "s1" });
+  source.emit("hello", { bootId: "b2", stamp: "s2" });
+  source.emit("hello", { bootId: "b3" });
+  assert.deepEqual(stamps, ["s1", "s2", null]);
+  assert.equal(needsReload("s1", "s2"), true);
+  assert.equal(needsReload("s1", "s1"), false);
+  assert.equal(needsReload("s1", null), false, "旧服务没有指纹：不提示");
+  assert.equal(needsReload("", "s2"), false, "开发模式页面没有指纹：不提示");
 });

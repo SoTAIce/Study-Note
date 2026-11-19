@@ -70,6 +70,8 @@ export function connectLive(
   handlers: {
     onChanges: (changes: NoteChange[]) => void;
     onResync: (reason: ResyncReason) => void;
+    /** 每次连上都告诉调用方服务的代码指纹（repo-003）：和页面自己的不同，说明应用更新过 */
+    onStamp?: (stamp: string | null) => void;
   },
   opts: {
     url?: string;
@@ -88,11 +90,15 @@ export function connectLive(
 
   source.addEventListener("hello", (event) => {
     let next: string | null = null;
+    let stamp: string | null = null;
     try {
-      next = (JSON.parse(event.data) as { bootId?: string }).bootId ?? null;
+      const hello = JSON.parse(event.data) as { bootId?: string; stamp?: string | null };
+      next = hello.bootId ?? null;
+      stamp = hello.stamp ?? null;
     } catch {
       next = null;
     }
+    handlers.onStamp?.(stamp);
     if (bootId !== null && next !== bootId) handlers.onResync("restart");
     else if (lostConnection) handlers.onResync("reconnect");
     bootId = next;
@@ -130,4 +136,12 @@ export function connectLive(
     source.close();
     visibility?.removeEventListener("visibilitychange", onVisibility);
   };
+}
+
+/**
+ * 页面要不要提示「应用已更新，刷新一下」（repo-003）：服务的代码指纹和页面构建时的不同。
+ * 任一边没有指纹（旧服务、开发模式）就不提示。
+ */
+export function needsReload(pageStamp: string | null | undefined, serverStamp: string | null | undefined): boolean {
+  return !!pageStamp && !!serverStamp && pageStamp !== serverStamp;
 }

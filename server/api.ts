@@ -101,6 +101,8 @@ export type ApiDeps = {
   findPdfBrowser?: () => string | null;
   /** 知识简卡的复习记录（srs-001）；不传就按 dataDir 打开 */
   review?: ReviewLog;
+  /** 代码指纹（repo-003）：推送通道的 hello 带给页面，页面据此提示「应用已更新」 */
+  stamp?: string;
 };
 
 type NoteRow = {
@@ -674,7 +676,7 @@ export function createApi(deps: ApiDeps) {
       // 笔记变化推送（SSE）：只说哪篇变了，不带正文
       if (route[0] === "events" && route.length === 1 && method === "GET") {
         const session = sseStart(res);
-        session.send("hello", { bootId });
+        session.send("hello", { bootId, stamp: deps.stamp ?? null });
         const batcher = new ChangeBatcher({ send: (message) => session.send("notes", message) });
         const unsubscribe = indexer.onChange((event) => batcher.push(event));
         await new Promise<void>((resolve) => {

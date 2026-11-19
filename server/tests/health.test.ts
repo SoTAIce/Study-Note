@@ -12,7 +12,7 @@ let tmp: string;
 
 before(async () => {
   tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sn-health-"));
-  const app = createApp({ dataDir: tmp, notesRoot: path.join(tmp, "notes") });
+  const app = createApp({ dataDir: tmp, notesRoot: path.join(tmp, "notes"), stamp: "abc123" });
   server = http.createServer(app);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const addr = server.address() as { port: number };
@@ -27,9 +27,11 @@ after(async () => {
 test("GET /api/health 返回 ok", async () => {
   const res = await fetch(`${base}/api/health`);
   assert.equal(res.status, 200);
-  const body = (await res.json()) as { ok: boolean; version: string };
+  const body = (await res.json()) as { ok: boolean; version: string; stamp: string | null };
   assert.equal(body.ok, true);
   assert.equal(typeof body.version, "string");
+  // 代码指纹（repo-003）：一键启动据此认出旧版本的服务
+  assert.equal(body.stamp, "abc123");
 });
 
 test("未知的 /api 路径返回 404 JSON", async () => {
