@@ -25,10 +25,13 @@ const pm = arg("--pm") ?? "pnpm";
 
 function run(args: string[]): boolean {
   // Windows 上 pnpm / npm 是 .cmd，要经过 shell：拼成一条命令（参数是写死的，不含用户输入；
-  // 直接把参数数组交给 shell 会触发 Node 的 DEP0190 警告）
+  // 直接把参数数组交给 shell 会触发 Node 的 DEP0190 警告）。
+  // 命令名不能加引号：用 "pnpm" 调 pnpm.cmd 时 cmd 会把它里面的 %~dp0 解析错，找不到 pnpm.cjs（CI 实测）。
+  // 只有路径里有空格时才加。
+  const command = /\s/.test(pm) ? `"${pm}"` : pm;
   const result =
     process.platform === "win32"
-      ? spawnSync(`"${pm}" ${args.join(" ")}`, { cwd: root, stdio: "inherit", shell: true })
+      ? spawnSync(`${command} ${args.join(" ")}`, { cwd: root, stdio: "inherit", shell: true })
       : spawnSync(pm, args, { cwd: root, stdio: "inherit" });
   return result.status === 0;
 }
