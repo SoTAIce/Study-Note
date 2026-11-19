@@ -994,7 +994,7 @@
       "area": "repo",
       "title": "一键启动在代码更新后自动重新安装依赖、重新构建前端",
       "user_visible_behavior": "git pull 之后双击「启动笔记.bat」就能用上新功能：依赖清单变了自动 install，前端源码比 dist 新就自动 build；服务已在运行且是旧版本时提示先关掉再启动。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "bin/start.ps1 判断 dist 是否过期（比较源码与 dist/index.html 的修改时间或记录构建时的提交号）",
         "Windows CI 或手动：改一处前端源码后双击启动，确认重新构建"
@@ -1005,7 +1005,9 @@
         "前端：服务指纹和页面不同（开着的旧页面）时顶部提示「笔记应用已更新到新版本」，刷新前先保存；开发模式不提示",
         "单测：app-stamp.test.ts 4 条（指纹范围、改源码 / 测试 / 文档、preparePlan 四种情况、prestart 脚本用假包管理器走两遍）；health 返回 stamp；live.test.ts hello 指纹与 needsReload",
         "E2E 新增一步：模拟服务指纹不同 → 出现更新提示条 → 稍后再说可关（截图 e2e-artifacts/27-update-bar.png 看过）；E2E 共 32 步",
-        "Windows 实机流程：CI 新增「一键启动冒烟测试（Windows）」跑 scripts/test-start.ps1（第一次启动指纹一致 → 没改动不重建不重启 → 改前端文件后重建并换掉旧进程）。结果见 CI"
+        "Windows 实机流程：CI 新增「一键启动冒烟测试（Windows）」跑 scripts/test-start.ps1（第一次启动指纹一致 → 没改动不重建不重启 → 改前端文件后重建并换掉旧进程）",
+        "GitHub Actions run 44520766185（提交 462013f）Ubuntu + Windows 全绿；Windows 一键启动测试日志逐行看过：第一次启动 / 服务有响应 / 指纹一致 / 第二次不重建不重启（同一进程）/ 改代码后重建、指纹变化且与新构建一致、旧服务被换掉（进程 1472 -> 8516）、旧进程已退出，全部 [ok]，最后「一键启动测试通过」",
+        "中途 CI 抓到两处真问题并已修：测试脚本把启动输出混进返回值、出错仍报通过（846e282）；prestart 在 Windows 上用 \"pnpm\" 加引号调用导致 pnpm.cmd 找不到 pnpm.cjs、安装依赖失败（462013f）"
       ],
       "notes": "2026-11-19 用户问更新后能不能用上子项目 / 连读时发现：start.ps1 只在 dist/index.html 不存在时构建，pull 之后仍是旧界面，需手动 pnpm build。 同日升级实测又见：旧服务还在跑时双击启动只提示「服务已在运行」，打开的仍是旧版；要能认出版本不同并提示先关掉旧的。 2026-11-19 用户实际碰上：pnpm build 后浏览器拿到新界面，但后台最小化窗口里还是旧服务，新建子项目时旧服务按旧规则（组名不能有 /）拒绝，报「分组名里不能有 / … 这些字符」。优先级提到 4。"
     },

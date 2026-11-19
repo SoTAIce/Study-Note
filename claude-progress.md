@@ -6,8 +6,8 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-19，576 个单元/接口测试 + 四个基准 + E2E 32 步（本机；GitHub Actions 见会话 033）
-- 优先级最高的未完成功能：repo-003 收尾（等 Windows CI 的一键启动测试）；然后 tpl-002（方案已批准）；tpl-003、read-002 方案等批准；srs-002、blog-001 为 blocked，见 docs/待实现.md
+- 最近一次全绿：2026-11-19，576 个单元/接口测试 + 四个基准 + E2E 32 步（本机）；GitHub Actions run 44520766185 Ubuntu + Windows 全绿，含 Windows 一键启动测试
+- 优先级最高的未完成功能：tpl-002（方案已批准）；tpl-003、read-002 方案等批准；srs-002、blog-001 为 blocked，见 docs/待实现.md
 - 当前阻塞：无
 
 ## 会话记录
@@ -316,4 +316,7 @@
 - 做法：代码指纹。`server/app-stamp.ts` 对运行时代码做内容哈希；`scripts/prestart.ts` 依赖清单变了就 install、代码变了就 build，做完记下指纹；服务把启动时的指纹放进 `/api/health` 和推送 hello；`bin/start.ps1` 比较磁盘指纹和正在跑的服务，不同就只关掉占端口的 `node server/main.ts` 再启动。开着的旧页面顶部提示「已更新，刷新页面」（先保存再刷新）。
 - 本机不能跑 PowerShell，所以 CI 的 Windows 任务新增 `scripts/test-start.ps1`：用真实 start.ps1 走「第一次启动 → 没改动不重建不重启 → 改前端文件后重建并换掉旧进程」。
 - 验证：./init.sh 576 + 四个基准 + E2E 32 步全绿。
+- CI 抓到两处真问题：① 测试脚本把启动输出混进返回值、第一项出错却报「通过」（846e282 修：输出走 Out-Host，脚本出错算失败）；② prestart 在 Windows 上用 `"pnpm" install` 调用，cmd 把 pnpm.cmd 里的 %~dp0 解析错，找不到 pnpm.cjs（462013f 修：命令名不加引号，路径有空格才加）。
+- 最终：GitHub Actions run 44520766185（462013f）Ubuntu + Windows 全绿；Windows 一键启动测试日志逐行看过，全部 [ok]（含旧服务进程 1472 -> 8516 被换掉、旧进程已退出），repo-003 标 passing，并入 main。
+- 用户这次更新要做的：旧服务是改动前的代码，没有指纹，新 start.ps1 会认出来并关掉它；之后 git pull 再双击启动即可。
 
