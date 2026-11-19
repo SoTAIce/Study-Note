@@ -1000,7 +1000,21 @@
         "Windows CI 或手动：改一处前端源码后双击启动，确认重新构建"
       ],
       "evidence": [],
-      "notes": "2026-11-19 用户问更新后能不能用上子项目 / 连读时发现：start.ps1 只在 dist/index.html 不存在时构建，pull 之后仍是旧界面，需手动 pnpm build。"
+      "notes": "2026-11-19 用户问更新后能不能用上子项目 / 连读时发现：start.ps1 只在 dist/index.html 不存在时构建，pull 之后仍是旧界面，需手动 pnpm build。 同日升级实测又见：旧服务还在跑时双击启动只提示「服务已在运行」，打开的仍是旧版；要能认出版本不同并提示先关掉旧的。"
+    },
+    {
+      "id": "data-001",
+      "priority": 5,
+      "area": "store",
+      "title": "保存时保留文件头里应用不认识的键和块状 tags（不丢数据）",
+      "user_visible_behavior": "在 Obsidian 等编辑器里写的文件头（tags 写成「tags:」下一行「  - 标签」的列表、aliases、cssclass 等应用不认识的键）在本应用里编辑保存后原样保留；块状 tags 能读出来当标签用。",
+      "status": "not_started",
+      "verification": [
+        "单测：parseTags 认块状列表；serializeNote / save 保留未知键与原有顺序、换行风格",
+        "接口测试：带块状 tags 和未知键的笔记 PUT 后文件头这些行逐字节还在"
+      ],
+      "evidence": [],
+      "notes": "2026-11-19 合并 main 前做「旧版 main → 新版」升级实测时发现，旧版 main 同样存在（不是这次引入的）：store.save() 用 serializeNote 整块重写文件头，只写认识的键；块状 tags 被解析成空，保存后变成 tags: []。笔记正文不受影响，历史版本里有保存前的一份。"
     }
   ]
 }
