@@ -8,6 +8,7 @@
  * 模型只能回编号，正文的每个字都来自原文。唯一的格式调整：被放进小节的 # / ## 标题降成 ###，
  * 免得它变成模板以外的新小节（标题文字不动，差异里看得到）。
  */
+import { extractJsonReply } from "./ai-json.ts";
 import { OTHER_SECTION, TODO_MARK, type NoteTemplate } from "./templates.ts";
 
 /** 一次粘贴超过这么多字、且粘贴前正文几乎是空的，才提示要不要规整 */
@@ -181,19 +182,9 @@ export function blockPreview(block: Block, max = 400): string {
 
 /** 从模型回复里取出 JSON 对象：容忍外面包着 ```json 代码块、前后有说明文字 */
 export function extractJsonObject(reply: string): unknown {
-  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(reply);
-  const candidates = fenced ? [fenced[1], reply] : [reply];
-  for (const candidate of candidates) {
-    const start = candidate.indexOf("{");
-    const end = candidate.lastIndexOf("}");
-    if (start < 0 || end <= start) continue;
-    try {
-      return JSON.parse(candidate.slice(start, end + 1));
-    } catch {
-      // 换下一个候选
-    }
-  }
-  throw new ArrangeError("模型没有回一个能解析的 JSON 分配方案");
+  const parsed = extractJsonReply(reply);
+  if (parsed === undefined) throw new ArrangeError("模型没有回一个能解析的 JSON 分配方案");
+  return parsed;
 }
 
 export class ArrangeError extends Error {

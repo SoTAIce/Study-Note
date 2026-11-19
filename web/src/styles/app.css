@@ -365,6 +365,9 @@ kbd {
 .compose__template-select,
 .tpl-panel input,
 .tpl-panel select,
+.tpl-panel textarea,
+.tpl-gen input,
+.tpl-gen textarea,
 .book__adding-template,
 .arrange__select,
 .arrange-hint__select {
@@ -387,6 +390,9 @@ kbd {
 .compose__template-select:focus,
 .tpl-panel input:focus,
 .tpl-panel select:focus,
+.tpl-panel textarea:focus,
+.tpl-gen input:focus,
+.tpl-gen textarea:focus,
 .book__adding-template:focus,
 .arrange__select:focus,
 .arrange-hint__select:focus {
@@ -5541,5 +5547,177 @@ button.stat-card:hover {
   }
   .arrange__toolbar {
     flex-wrap: wrap;
+  }
+}
+
+/* —— 模板的专属提示词与「让 AI 生成」（tpl-003） —— */
+.tpl-panel textarea,
+.tpl-gen input,
+.tpl-gen textarea {
+  width: 100%;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text);
+  resize: vertical;
+}
+.tpl-panel textarea::placeholder,
+.tpl-gen input::placeholder,
+.tpl-gen textarea::placeholder {
+  color: var(--text-faint);
+}
+.tpl-panel__prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tpl-panel__prompt-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.tpl-panel__prompt-head .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+}
+.tpl-panel__preview-tabs {
+  align-self: flex-start;
+}
+.tpl-gen {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(720px, 100%);
+  max-height: 90vh;
+  padding: 16px;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-ctl);
+  box-shadow: var(--shadow-lg);
+}
+.tpl-gen .settings__head {
+  margin-bottom: 0;
+}
+.tpl-gen__tabs {
+  align-self: flex-start;
+}
+.tpl-gen__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+.tpl-gen__notes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tpl-gen__chips,
+.tpl-gen__hits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tpl-gen__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 2px 2px 2px 10px;
+  font-size: 12px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+}
+.tpl-gen__chip span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tpl-gen__hit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.tpl-gen__hit span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tpl-gen__hit:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--bg-hover);
+}
+.tpl-gen__hit:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.tpl-gen__run {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tpl-gen__run .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tpl-gen__busy {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.tpl-gen__busy .arrange__spinner {
+  width: 14px;
+  height: 14px;
+}
+.tpl-gen__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.tpl-gen__name {
+  margin-bottom: 0;
+}
+.tpl-gen__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tpl-gen__sections .tpl-panel__section {
+  grid-template-columns: minmax(90px, 0.7fr) minmax(0, 1.6fr) auto;
+}
+.tpl-gen__previews {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 720px) {
+  .tpl-gen__previews {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

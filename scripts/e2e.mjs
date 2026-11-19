@@ -1724,6 +1724,112 @@ try {
     }
   });
 
+  await step("AI 生成模板：一句话描述 → 预览里改名 → 加入列表 → 让 AI 改写提示词 → 保存；新建页复制提示词带额外要求", async () => {
+    // 本地假模型：按请求回模板或新的提示词
+    const asked = [];
+    const stub = http.createServer((req, res) => {
+      let raw = "";
+      req.on("data", (chunk) => (raw += chunk));
+      req.on("end", () => {
+        const messages = JSON.parse(raw).messages;
+        asked.push(messages[1].content);
+        const content = messages[0].content.includes('{"prompt": "额外要求"}')
+          ? JSON.stringify({ prompt: "实验一节列出数据集和指标；\n结论区分作者声称的和实验证明的。" })
+          : `好的：\n\`\`\`json\n${JSON.stringify({
+              name: "论文阅读",
+              sections: [
+                { title: "问题", hint: "论文要解决什么" },
+                { title: "方法", hint: "怎么做的" },
+                { title: "实验", hint: "数据、对比、结论" },
+              ],
+              prompt: "请用中文写；方法一节要画出数据流。",
+            })}\n\`\`\``;
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.end(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`);
+      });
+    });
+    await new Promise((resolve) => stub.listen(0, "127.0.0.1", resolve));
+    try {
+      await page.evaluate(async (baseUrl) => {
+        const res = await fetch("/api/config", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ baseUrl, apiKey: "sk-e2e-stub", model: "stub-model" }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+      }, `http://127.0.0.1:${stub.address().port}`);
+      const templatesFile = path.join(dataDir, "templates.json");
+      const savedBefore = fs.readFileSync(templatesFile, "utf8");
+
+      await page.getByRole("button", { name: "笔记模板", exact: true }).click();
+      const panel = page.getByRole("dialog", { name: "笔记模板" });
+      await panel.locator(".tpl-panel__item", { hasText: "实现详情" }).waitFor();
+      await panel.getByRole("button", { name: "让 AI 生成" }).click();
+      const gen = page.getByRole("dialog", { name: "让 AI 生成模板" });
+      await gen.waitFor();
+      // 「从笔记归纳」页签：能搜到笔记、选进来（这里只看界面，生成走描述方式）
+      await gen.getByRole("tab", { name: "从笔记归纳" }).click();
+      await gen.getByLabel("搜索要归纳的笔记").fill("阿尔法");
+      await gen.locator(".tpl-gen__hit", { hasText: "阿尔法笔记" }).click();
+      await gen.locator(".tpl-gen__chip", { hasText: "阿尔法笔记" }).waitFor();
+      expect((await gen.textContent()).includes("会发给你在 AI 设置里配置的服务商"), "要写明正文会发给 AI 服务商");
+      await gen.getByRole("tab", { name: "一句话描述" }).click();
+      await gen.getByLabel("模板描述").fill("论文阅读笔记，要能记方法和实验");
+      await gen.getByRole("button", { name: /^生成$/ }).click();
+      const nameInput = gen.getByLabel("生成的模板名");
+      await nameInput.waitFor({ timeout: 8000 });
+      expect((await nameInput.inputValue()) === "论文阅读", `模板名：${await nameInput.inputValue()}`);
+      expect((await gen.getByLabel("生成的第 3 节标题").inputValue()) === "实验", "小节应来自模型");
+      expect(asked.at(-1) === "想要的笔记模板：论文阅读笔记，要能记方法和实验", `发给模型的：${asked.at(-1)}`);
+      const promptPreview = await gen.getByLabel("生成的提示词预览").textContent();
+      expect(promptPreview.includes("## 方法\n（怎么做的）") && promptPreview.includes("这个模板的额外要求：\n请用中文写；方法一节要画出数据流。"), `提示词预览：${promptPreview}`);
+      await nameInput.fill("论文精读");
+      await page.screenshot({ path: path.join(artifacts, "29-template-gen.png") });
+      await page.emulateMedia({ colorScheme: "dark" });
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(artifacts, "29-template-gen-dark.png") });
+      await page.emulateMedia({ colorScheme: "light" });
+      await gen.getByRole("button", { name: "加入模板列表" }).click();
+      await gen.waitFor({ state: "detached" });
+      await panel.locator(".tpl-panel__item.is-active", { hasText: "论文精读" }).waitFor();
+      await panel.getByText("有没保存的修改").waitFor();
+      expect(fs.readFileSync(templatesFile, "utf8") === savedBefore, "加入列表后、保存前不该写盘");
+
+      // 让 AI 改写这个模板的专属提示词，结果进文本框；保存后才落盘
+      const promptBox = panel.getByLabel("专属提示词");
+      expect((await promptBox.inputValue()) === "请用中文写；方法一节要画出数据流。", "专属提示词应带过来");
+      await panel.getByRole("button", { name: "让 AI 改写提示词" }).click();
+      await page.waitForFunction(() => document.querySelector("#tpl-panel-prompt")?.value.startsWith("实验一节"), null, { timeout: 8000 });
+      expect(asked.at(-1).includes("## 方法\n<!-- 怎么做的 -->"), "改写提示词时要把小节发给模型");
+      expect((await panel.getByLabel("提示词预览").textContent()).includes("结论区分作者声称的和实验证明的。"), "改写后切到提示词预览");
+      await panel.getByRole("button", { name: /^保存/ }).click();
+      await page.getByText("模板已保存").waitFor({ timeout: 5000 });
+      const saved = JSON.parse(fs.readFileSync(templatesFile, "utf8")).templates.find((t) => t.name === "论文精读");
+      expect(saved && saved.sections.length === 3 && saved.prompt === "实验一节列出数据集和指标；\n结论区分作者声称的和实验证明的。", `templates.json：${JSON.stringify(saved)}`);
+      await page.keyboard.press("Escape");
+      await panel.waitFor({ state: "detached" });
+
+      // 新建页选这个模板，复制成提示词：固定要求之后是这个模板的额外要求
+      await page.locator(".new-note-entry").click();
+      const select = page.locator("#compose-template");
+      await select.waitFor();
+      await select.selectOption("论文精读");
+      await page.locator(".compose__title").fill("某篇论文");
+      await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
+      await page.getByRole("button", { name: "复制成提示词" }).click();
+      await page.getByText(/已复制提示词/).waitFor({ timeout: 5000 });
+      const prompt = (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, "\n");
+      expect(
+        prompt.includes("不要编造。\n\n这个模板的额外要求：\n实验一节列出数据集和指标；\n结论区分作者声称的和实验证明的。"),
+        `提示词应带额外要求：${prompt.slice(-120)}`,
+      );
+      await page.keyboard.press("Escape");
+      await page.locator(".compose__title").waitFor({ state: "detached" });
+    } finally {
+      await new Promise((resolve) => stub.close(resolve));
+    }
+  });
+
   await step("外部编辑器写的文件头（块状 tags、aliases、未知键）在应用里编辑保存后原样保留", async () => {
     const file = path.join(notesDir, "obsidian-style.md");
     const head = "---\ntitle: Obsidian 写的笔记\naliases:\n  - 黑曜石\ntags:\n  - 读书\n  - 复习\ncssclass: wide\n---\n";

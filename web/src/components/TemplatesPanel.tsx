@@ -6,14 +6,18 @@ import * as templatesApi from "../templates-api.ts";
 import type { TemplatesState } from "../templates-api.ts";
 import {
   BUILTIN_TEMPLATES,
+  MAX_TEMPLATE_PROMPT,
   findTemplate,
+  templatePrompt,
   templateSkeleton,
+  validateTemplate,
   validateTemplateList,
   type NoteTemplate,
 } from "../lib/templates.ts";
 import { sameGroupName } from "../lib/group-tree.ts";
 import { useConfirm } from "./ConfirmDialog.tsx";
 import Icon from "./Icon.tsx";
+import TemplateGenDialog from "./TemplateGenDialog.tsx";
 
 type Props = {
   open: boolean;
@@ -29,7 +33,7 @@ type Props = {
 
 type DraftSection = { key: number; title: string; hint: string };
 /** origin：载入时的名字（新建的为 null），保存时据此判断哪些是改名 */
-type Draft = { key: number; origin: string | null; name: string; sections: DraftSection[] };
+type Draft = { key: number; origin: string | null; name: string; sections: DraftSection[]; prompt: string };
 
 let nextKey = 1;
 const newKey = () => nextKey++;
@@ -40,14 +44,21 @@ function toDraft(list: NoteTemplate[]): Draft[] {
     origin: item.name,
     name: item.name,
     sections: item.sections.map((section) => ({ key: newKey(), ...section })),
+    prompt: item.prompt ?? "",
   }));
 }
 
-function toTemplates(drafts: Draft[]): NoteTemplate[] {
-  return drafts.map((draft) => ({
+function draftTemplate(draft: Draft): NoteTemplate {
+  return {
     name: draft.name,
     sections: draft.sections.map(({ title, hint }) => ({ title, hint })),
-  }));
+    // 空的不带这个字段：和服务端存下来的形状一致，不会凭空显示「有没保存的修改」
+    ...(draft.prompt.trim() ? { prompt: draft.prompt } : {}),
+  };
+}
+
+function toTemplates(drafts: Draft[]): NoteTemplate[] {
+  return drafts.map(draftTemplate);
 }
 
 function sameDrafts(a: Draft[], b: NoteTemplate[]): boolean {
@@ -80,6 +91,10 @@ export default function TemplatesPanel({ open, focusGroup, groups, onClose, onCh
   const [error, setError] = useState<string | null>(null);
   const [newGroup, setNewGroup] = useState("");
   const [newGroupTemplate, setNewGroupTemplate] = useState("");
+  /** 预览看哪个：新建时预填的骨架，还是复制给外部 AI 的提示词 */
+  const [previewKind, setPreviewKind] = useState<"skeleton" | "prompt">("skeleton");
+  const [genOpen, setGenOpen] = useState(false);
+  const [rewriting, setRewriting] = useState(false);
   const defaultsRef = useRef<HTMLElement | null>(null);
   const focusSelectRef = useRef<HTMLSelectElement | null>(null);
 
@@ -137,10 +152,11 @@ export default function TemplatesPanel({ open, focusGroup, groups, onClose, onCh
 
   const dirty = state ? !sameDrafts(drafts, state.templates) : false;
   const current = drafts[selected] ?? null;
-  const preview = useMemo(
-    () => (current ? templateSkeleton({ name: current.name, sections: current.sections }) : ""),
-    [current],
-  );
+  const preview = useMemo(() => {
+    if (!current) return "";
+    const template = draftTemplate(current);
+    return previewKind === "skeleton" ? templateSkeleton(template) : templatePrompt(template, "");
+  }, [current, previewKind]);
 
   if (!open) return null;
 
@@ -200,8 +216,9 @@ export default function TemplatesPanel({ open, focusGroup, groups, onClose, onCh
           origin: null,
           name: freeName(`${copyOf.name} 副本`, drafts),
           sections: copyOf.sections.map((section) => ({ ...section, key: newKey() })),
+          prompt: copyOf.prompt,
         }
-      : { key: newKey(), origin: null, name: freeName("新模板", drafts), sections: [{ key: newKey(), title: "要点", hint: "" }] };
+      : { key: newKey(), origin: null, name: freeName("新模板", drafts), sections: [{ key: newKey(), title: "要点", hint: "" }], prompt: "" };
     setDrafts((list) => [...list, draft]);
     setSelected(drafts.length);
   }
@@ -222,6 +239,44 @@ export default function TemplatesPanel({ open, focusGroup, groups, onClose, onCh
     if (!ok) return;
     setDrafts((list) => list.filter((_draft, at) => at !== selected));
     setSelected((at) => Math.max(0, at - 1));
+  }
+
+  /** AI 生成的模板（tpl-003）：放进列表末尾，和手工新建的一样要点「保存」才写盘 */
+  function addGenerated(template: NoteTemplate): void {
+    const draft: Draft = {
+      key: newKey(),
+      origin: null,
+      name: freeName(template.name, drafts),
+      sections: template.sections.map((section) => ({ key: newKey(), ...section })),
+      prompt: template.prompt ?? "",
+    };
+    setDrafts((list) => [...list, draft]);
+    setSelected(drafts.length);
+    setGenOpen(false);
+    onNotify(`已加入「${draft.name}」，点「保存」后生效`, "ok");
+  }
+
+  /** 让 AI 按当前小节改写专属提示词：结果放进文本框，保存前都能再改 */
+  async function rewritePrompt(): Promise<void> {
+    if (!current || rewriting) return;
+    const check = validateTemplate(draftTemplate(current));
+    if (!check.ok) {
+      setError(check.error);
+      return;
+    }
+    const key = current.key;
+    setRewriting(true);
+    setError(null);
+    try {
+      const result = await templatesApi.generateTemplate({ from: "prompt", template: check.template });
+      setDrafts((list) => list.map((draft) => (draft.key === key ? { ...draft, prompt: result.template.prompt ?? "" } : draft)));
+      setPreviewKind("prompt");
+      onNotify("AI 改写了专属提示词，看一下再保存", "ok");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setRewriting(false);
+    }
   }
 
   function restoreBuiltins(): void {
@@ -350,6 +405,9 @@ export default function TemplatesPanel({ open, focusGroup, groups, onClose, onCh
                   <button type="button" className="btn btn--small" onClick={() => addTemplate()}>
                     <Icon name="plus" size={12} /> 新建模板
                   </button>
+                  <button type="button" className="btn btn--small" onClick={() => setGenOpen(true)}>
+                    <Icon name="sparkles" size={12} /> 让 AI 生成
+                  </button>
                   <button type="button" className="link-btn" onClick={restoreBuiltins} title="只补回缺的，不覆盖改过的">
                     恢复内置的两种
                   </button>
@@ -434,9 +492,53 @@ export default function TemplatesPanel({ open, focusGroup, groups, onClose, onCh
                     </button>
                   </div>
 
+                  <div className="tpl-panel__prompt">
+                    <div className="tpl-panel__prompt-head">
+                      <label htmlFor="tpl-panel-prompt">
+                        专属提示词（可空：复制成提示词时接在固定要求后面） · {[...current.prompt].length} / {MAX_TEMPLATE_PROMPT}
+                      </label>
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={() => void rewritePrompt()}
+                        disabled={rewriting}
+                        title="按现在的小节，让应用内 AI 重写这一段；结果放进文本框，保存前都能改"
+                      >
+                        <Icon name="sparkles" size={12} /> {rewriting ? "AI 改写中…" : "让 AI 改写提示词"}
+                      </button>
+                    </div>
+                    <textarea
+                      id="tpl-panel-prompt"
+                      value={current.prompt}
+                      onChange={(event) => patchCurrent((draft) => ({ ...draft, prompt: event.target.value }))}
+                      rows={3}
+                      placeholder="例如：请用中文写；关键代码一节标出文件路径。"
+                      aria-label="专属提示词"
+                    />
+                  </div>
+
                   <div className="tpl-panel__preview">
-                    <span className="tpl-panel__preview-label">新建时预填</span>
-                    <pre aria-label="骨架预览">{preview}</pre>
+                    <div className="segmented tpl-panel__preview-tabs" role="tablist" aria-label="预览">
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={previewKind === "skeleton"}
+                        className={`segmented__btn segmented__btn--text${previewKind === "skeleton" ? " is-active" : ""}`}
+                        onClick={() => setPreviewKind("skeleton")}
+                      >
+                        新建时预填
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={previewKind === "prompt"}
+                        className={`segmented__btn segmented__btn--text${previewKind === "prompt" ? " is-active" : ""}`}
+                        onClick={() => setPreviewKind("prompt")}
+                      >
+                        复制成提示词
+                      </button>
+                    </div>
+                    <pre aria-label={previewKind === "skeleton" ? "骨架预览" : "提示词预览"}>{preview}</pre>
                   </div>
                 </div>
               ) : null}
@@ -521,6 +623,9 @@ export default function TemplatesPanel({ open, focusGroup, groups, onClose, onCh
           </button>
         </div>
       </div>
+      {genOpen ? (
+        <TemplateGenDialog takenNames={drafts.map((draft) => draft.name)} onAdd={addGenerated} onClose={() => setGenOpen(false)} />
+      ) : null}
     </div>
   );
 }

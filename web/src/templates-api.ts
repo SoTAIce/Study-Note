@@ -35,3 +35,20 @@ export function renameTemplate(input: {
 export function setGroupDefault(group: string, template: string | null): Promise<TemplatesState> {
   return request("/templates/default", { method: "PUT", body: jsonBody({ group, template }) });
 }
+
+/** AI 生成模板（tpl-003）的三种请求；服务端不写盘，结果由面板预览、人确认后加入列表 */
+export type TemplateGenPayload =
+  | { from: "notes"; ids: string[]; note?: string }
+  | { from: "describe"; description: string }
+  | { from: "prompt"; template: NoteTemplate };
+
+export type TemplateGenResult = {
+  template: NoteTemplate;
+  /** 正文太长、被截断后才发给模型的笔记标题 */
+  truncated: string[];
+  callId: number | null;
+};
+
+export function generateTemplate(payload: TemplateGenPayload, signal?: AbortSignal): Promise<TemplateGenResult> {
+  return request("/ai/template", { method: "POST", body: jsonBody(payload), signal });
+}

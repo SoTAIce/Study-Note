@@ -1076,12 +1076,22 @@
       "area": "ai",
       "title": "AI 生成模板：从选中的笔记归纳或用一句话描述，生成小节、每节提示和专属提示词",
       "user_visible_behavior": "模板面板里「让 AI 生成」：可以选 1～5 篇写得好的笔记让 AI 归纳共同结构，也可以写一句描述（如「论文阅读笔记」）让 AI 设计；AI 给出小节、每节提示，以及一段这个模板专属的「复制给外部 AI 的提示词」（可手改，复制成提示词时用它）；先看预览，确认后才存成模板。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
-        "待方案确定"
+        "单测：带 prompt 的模板校验；提示词拼接（有 / 无额外要求）；模型回复 JSON 解析（代码块包着、前后废话、坏 JSON、多余字段）",
+        "接口测试（假模型）：归纳和描述两种方式、笔记截断、坏 JSON 422、重名自动改名、没配置 AI 503、全程不写盘",
+        "E2E：面板里「让 AI 生成」走描述方式，预览里改模板名，加入列表并保存；新建页复制提示词能看到「这个模板的额外要求」"
       ],
-      "evidence": [],
-      "notes": "2026-11-19 用户提出；选择：两种来源都要、每节提示和专属提示词都要。改动较大（模板数据加 prompt 字段、新 AI 接口），先写方案经批准。 方案草案：docs/superpowers/specs/2026-11-19-ai-template-generation-design.md（等用户批准）。"
+      "evidence": [
+        "2026-11-19 模板数据加可选 prompt（web/src/lib/templates.ts：validateTemplatePrompt 最长 2000 字、允许换行和 Tab、空的不写字段；templatePrompt 在固定要求后接「这个模板的额外要求：」）",
+        "web/src/lib/template-gen.ts（前后端共用）：clipNotes 每篇 6000 / 总共 20000 字、templateGenMessages 三种请求、normalizeGenerated 只认 name / sections / prompt 并过 validateTemplate、重名加「 2」、normalizeGeneratedPrompt；web/src/lib/ai-json.ts 与 tpl-002 共用取 JSON",
+        "server/template-gen.ts + POST /api/ai/template（from: notes / describe / prompt）：不写盘；400 / 404 / 422 / 502 / 503；读笔记时去掉文件头和提示注释；返回 truncated",
+        "前端：模板面板「让 AI 生成」→ TemplateGenDialog（一句话描述 / 从笔记归纳，搜笔记选 1～5 篇、补充说明、写明正文会发给 AI 服务商；预览里可改名、改 / 删小节、改专属提示词，骨架和提示词并排预览；加入列表后标没保存）；编辑区加「专属提示词」文本框和「让 AI 改写提示词」，预览可切「新建时预填 / 复制成提示词」",
+        "单测：templates.test.ts 新增 2 条（prompt 校验、提示词拼接有 / 无额外要求）、template-gen.test.ts 6 条（截断、代码块与废话、多余字段、坏 JSON 与不合格模板、重名、消息内容、改写提示词）；接口测试 server/tests/template-gen-api.test.ts 8 条（假模型：描述、归纳与截断、重名、改写提示词、坏回复 422 不写盘、400/404/502、503、带 prompt 的模板保存读回）",
+        "E2E 新增一步（本地假模型 + 真实接口）：面板「让 AI 生成」→ 从笔记归纳页签选笔记 → 一句话描述生成 → 预览改名 → 加入列表（未写盘）→ 让 AI 改写提示词 → 保存后 templates.json 带 prompt → 新建页复制提示词含「这个模板的额外要求」；截图 29-template-gen（浅色 + 深色）看过；E2E 共 34 步",
+        "LANG=C.UTF-8 ./init.sh 全绿：606 个单元 / 接口测试 + 四个基准 + E2E 34 步"
+      ],
+      "notes": "2026-11-19 用户提出；选择：两种来源都要、每节提示和专属提示词都要。改动较大（模板数据加 prompt 字段、新 AI 接口），先写方案经批准。 方案：docs/superpowers/specs/2026-11-19-ai-template-generation-design.md（用户 2026-11-19 批准）。"
     },
     {
       "id": "read-002",
@@ -1094,7 +1104,7 @@
         "待方案确定"
       ],
       "evidence": [],
-      "notes": "2026-11-19 用户提出；选择「两篇笔记左右并排」。先写方案经批准。 方案草案：docs/superpowers/specs/2026-11-19-split-reading-design.md（等用户批准）。"
+      "notes": "2026-11-19 用户提出；选择「两篇笔记左右并排」。先写方案经批准。 方案：docs/superpowers/specs/2026-11-19-split-reading-design.md（用户 2026-11-19 批准）。"
     }
   ]
 }

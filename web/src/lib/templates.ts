@@ -4,7 +4,11 @@
  */
 
 export type TemplateSection = { title: string; hint: string };
-export type NoteTemplate = { name: string; sections: TemplateSection[] };
+/**
+ * prompt（tpl-003，可选）：这个模板专属的「额外要求」，复制成提示词时接在固定要求后面。
+ * 空着就不写进 templates.json，旧文件照常读。
+ */
+export type NoteTemplate = { name: string; sections: TemplateSection[]; prompt?: string };
 
 /** 模板名、小节标题的上限（字符数，中文也算 1 个） */
 export const MAX_TEMPLATE_NAME = 40;
@@ -12,6 +16,8 @@ export const MAX_SECTION_TITLE = 40;
 export const MAX_SECTION_HINT = 200;
 export const MAX_TEMPLATES = 50;
 export const MAX_SECTIONS = 20;
+/** 专属提示词（额外要求）最长多少字 */
+export const MAX_TEMPLATE_PROMPT = 2000;
 
 /** 规整时放不进任何小节的内容去这里（tpl-002）；模板里不能有同名小节 */
 export const OTHER_SECTION = "其他";
@@ -43,6 +49,20 @@ export const BUILTIN_TEMPLATES: NoteTemplate[] = [
 
 const BAD_NAME_CHARS = /[\\:*?"<>|]/;
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+/** 多行文字（专属提示词）里允许换行和 Tab，其它控制字符不行 */
+const CONTROL_CHARS_MULTILINE = /[\u0000-\u0008\u000b-\u001f\u007f]/;
+
+/** 专属提示词：统一换行、去首尾空白；空的返回 ""（调用方据此不写这个字段） */
+export function validateTemplatePrompt(raw: unknown, label = "模板"): { ok: true; prompt: string } | { ok: false; error: string } {
+  if (raw === undefined || raw === null) return { ok: true, prompt: "" };
+  if (typeof raw !== "string") return { ok: false, error: `${label}的专属提示词必须是文字` };
+  const prompt = raw.replace(/\r\n?/g, "\n").trim();
+  if ([...prompt].length > MAX_TEMPLATE_PROMPT) {
+    return { ok: false, error: `${label}的专属提示词太长，最多 ${MAX_TEMPLATE_PROMPT} 个字` };
+  }
+  if (CONTROL_CHARS_MULTILINE.test(prompt)) return { ok: false, error: `${label}的专属提示词里有不可见控制字符` };
+  return { ok: true, prompt };
+}
 
 /** 模板名比较：去首尾空白、不区分大小写 */
 export function sameTemplate(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -127,7 +147,9 @@ export function validateTemplate(raw: unknown): { ok: true; template: NoteTempla
     }
     sections.push({ title, hint });
   }
-  return { ok: true, template: { name: name.name, sections } };
+  const prompt = validateTemplatePrompt(input.prompt, label);
+  if (!prompt.ok) return prompt;
+  return { ok: true, template: prompt.prompt ? { name: name.name, sections, prompt: prompt.prompt } : { name: name.name, sections } };
 }
 
 /** 校验整份模板列表（数量、重名） */
@@ -177,6 +199,8 @@ export function templatePrompt(template: NoteTemplate, topic: string): string {
     `- 只输出 Markdown 正文，从第一个「## ${first}」开始，不要开场白、不要结尾的客套话；`,
     "- 小节标题、顺序和级别都不要改，不要加别的 ## 小节（小节里可以用 ### 细分）；",
     `- 某个小节没有可写的内容就只写「${TODO_MARK}」，不要编造。`,
+    // 模板专属的额外要求（tpl-003）接在固定要求后面：结构和「只输出 Markdown / 写待补」这几条始终由应用来写
+    ...(template.prompt?.trim() ? ["", "这个模板的额外要求：", template.prompt.trim()] : []),
     "",
   ].join("\n");
 }

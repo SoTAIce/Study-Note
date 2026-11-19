@@ -53,7 +53,7 @@ import {
   type BackupService,
 } from "./backup.ts";
 import type { Indexer } from "./indexer.ts";
-import type { NoteMeta, NoteType } from "./parse.ts";
+import { stripHtmlComments, type NoteMeta, type NoteType } from "./parse.ts";
 import { search } from "./search.ts";
 import { ConflictError, HistoryNotFoundError, toLocalIso, TRASH_RETENTION_DAYS, type HistoryReason, type NoteStore } from "./store.ts";
 import { isValidVersionId } from "./history.ts";
@@ -63,6 +63,7 @@ import { createReviewRoutes, ReviewHttpError } from "./review-api.ts";
 import { BookHttpError, createBookRoutes, createBookService, groupParam } from "./book.ts";
 import { createTemplatesRoutes, resolveNewNoteTemplate, TemplatesHttpError } from "./templates.ts";
 import { arrangeNote, ArrangeHttpError } from "./arrange.ts";
+import { generateTemplate, TemplateGenHttpError } from "./template-gen.ts";
 import { templateSkeleton } from "../web/src/lib/templates.ts";
 
 const MAX_BODY = 5 * 1024 * 1024;
@@ -857,6 +858,45 @@ export function createApi(deps: ApiDeps) {
         if (!Number.isFinite(callId)) throw new HttpError(400, "callId 无效");
         db.prepare("UPDATE ai_calls SET inserted = 1 WHERE id = ?").run(callId);
         sendJson(res, 200, { ok: true });
+        return true;
+      }
+
+      // —— AI 生成模板（tpl-003）：只回模板，不写盘 ——
+      if (route[0] === "ai" && route[1] === "template" && route.length === 2 && method === "POST") {
+        const payload = await readJson(req);
+        const controller = new AbortController();
+        const onClose = (): void => {
+          if (!res.writableEnded) controller.abort();
+        };
+        res.on("close", onClose);
+        try {
+          const result = await generateTemplate({
+            dataDir,
+            payload,
+            readNote: (id) => {
+              const row = findNote(id);
+              const note = store.read(row.path);
+              return { title: note.parsed.meta.title, body: stripHtmlComments(note.parsed.body) };
+            },
+            fetchImpl: deps.aiFetch,
+            signal: controller.signal,
+            record: (model, output) =>
+              Number(
+                db
+                  .prepare(
+                    "INSERT INTO ai_calls (note_id, mode, model, created, output, inserted) VALUES (NULL, 'template', ?, ?, ?, 0)",
+                  )
+                  .run(model, toLocalIso((deps.now ?? (() => new Date()))()), output).lastInsertRowid,
+              ),
+          });
+          sendJson(res, 200, result);
+        } catch (err) {
+          if (!(err instanceof TemplateGenHttpError)) throw err;
+          if (err.status === 499) res.end();
+          else sendJson(res, err.status, { error: err.message, code: err.code });
+        } finally {
+          res.off("close", onClose);
+        }
         return true;
       }
 

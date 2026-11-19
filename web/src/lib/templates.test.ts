@@ -130,3 +130,32 @@ test("groupDefaultTemplate：组名不区分大小写、/ 两边空白不计；�
   assert.equal(groupDefaultTemplate(defaults, BUILTIN_TEMPLATES, "agent"), undefined);
   assert.equal(groupDefaultTemplate(defaults, BUILTIN_TEMPLATES, ""), undefined);
 });
+
+test("专属提示词（tpl-003）：可选、统一换行、去首尾空白、空的不写字段；太长或有控制字符不行；换行和 Tab 可以", () => {
+  const base = { name: "论文阅读", sections: [{ title: "问题", hint: "" }] };
+  const without = validateTemplate(base);
+  assert.ok(without.ok && !("prompt" in without.template), "没有 prompt 时不带这个字段");
+  const blank = validateTemplate({ ...base, prompt: "  \n " });
+  assert.ok(blank.ok && !("prompt" in blank.template), "空白的 prompt 等于没有");
+  const multi = validateTemplate({ ...base, prompt: "  用中文写；\r\n\t方法一节画数据流。 " });
+  assert.ok(multi.ok);
+  assert.equal(multi.ok && multi.template.prompt, "用中文写；\n\t方法一节画数据流。");
+  assert.equal(validateTemplate({ ...base, prompt: "字".repeat(2000) }).ok, true);
+  const long = validateTemplate({ ...base, prompt: "字".repeat(2001) });
+  assert.ok(!long.ok && /太长/.test(long.error));
+  const control = validateTemplate({ ...base, prompt: "a\u0007b" });
+  assert.ok(!control.ok && /控制字符/.test(control.error));
+  const wrongType = validateTemplate({ ...base, prompt: 42 });
+  assert.ok(!wrongType.ok);
+  // 旧的 templates.json 没有这个字段：整份列表照常通过
+  assert.equal(validateTemplateList(BUILTIN_TEMPLATES).ok, true);
+});
+
+test("templatePrompt：有专属提示词时接在固定要求后面，固定要求一条不少；没有时和以前一样", () => {
+  const withExtra = templatePrompt({ ...impl, prompt: "请用中文写；\n关键代码一节标出文件路径。" }, "looprun");
+  const plain = templatePrompt(impl, "looprun");
+  assert.ok(withExtra.startsWith(plain.trimEnd()), "前面的结构和固定要求不变");
+  assert.ok(withExtra.endsWith("- 某个小节没有可写的内容就只写「待补」，不要编造。\n\n这个模板的额外要求：\n请用中文写；\n关键代码一节标出文件路径。\n"));
+  assert.equal(plain.includes("额外要求"), false);
+  assert.equal(templatePrompt({ ...impl, prompt: "   " }, "looprun"), plain, "空白的额外要求不加段落");
+});
