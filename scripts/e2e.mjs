@@ -1503,7 +1503,8 @@ try {
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
     await page.getByRole("button", { name: "复制成提示词" }).click();
     await page.getByText(/已复制提示词/).waitFor({ timeout: 5000 });
-    const prompt = await page.evaluate(() => navigator.clipboard.readText());
+    // Windows 的剪贴板会把换行变成 \r\n
+    const prompt = (await page.evaluate(() => navigator.clipboard.readText())).replace(/\r\n/g, "\n");
     expect(prompt.startsWith("请就「模板笔记」写一篇笔记，严格按下面的结构输出："), `提示词开头不对：${prompt.slice(0, 40)}`);
     expect(prompt.includes("## 关键代码\n（文件路径 + 片段") && prompt.includes("只写「待补」"), "提示词应含小节和「待补」要求");
     // 换成「不用模板」：正文只有骨架，直接清空；再换回来又填上

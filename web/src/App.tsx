@@ -1078,6 +1078,12 @@ export default function App() {
 
   liveHandlersRef.current = {
     onChanges: (incoming) => {
+      // 保存还在路上：等它落地（记下自己存的 hash）再判断，免得机器慢时把自己的回声当成外部修改
+      const pending = savePromiseRef.current;
+      if (pending) {
+        void pending.catch(() => false).then(() => liveHandlersRef.current?.onChanges(incoming));
+        return;
+      }
       // 回声：自己保存过的版本，或编辑器里正显示的这一版（恢复历史版本等自己的写入）
       const own = new Set(ownSavesRef.current);
       if (noteIdRef.current && hashRef.current) own.add(echoKey(noteIdRef.current, hashRef.current));
@@ -1843,14 +1849,17 @@ export default function App() {
         onCaptured={(result) => void handleCaptured(result)}
       />
 
-      <TemplatesPanel
-        open={!!templatesPanel}
-        focusGroup={templatesPanel?.focusGroup ?? null}
-        groups={groups.map((group) => group.name)}
-        onClose={() => setTemplatesPanel(null)}
-        onChanged={setTemplates}
-        onNotify={showToast}
-      />
+      {/* 只在打开时挂载：每次打开都从磁盘重读，不会先闪一下上次的内容 */}
+      {templatesPanel ? (
+        <TemplatesPanel
+          open
+          focusGroup={templatesPanel.focusGroup}
+          groups={groups.map((group) => group.name)}
+          onClose={() => setTemplatesPanel(null)}
+          onChanged={setTemplates}
+          onNotify={showToast}
+        />
+      ) : null}
 
       <BackupPanel
         open={backupOpen}
