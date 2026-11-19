@@ -65,6 +65,7 @@ type Props = {
   onOpenWikilink: (target: string) => void;
   onFilterTag: (tag: string) => void;
   onSelectionChange: (length: number) => void;
+  onLargePaste?: (pasted: string, before: string) => void;
   /** 回到首页（欢迎界面），那里是「新建笔记」的入口。 */
   onGoHome: () => void;
   /** 打开阅览模式（只读、铺满窗口）。 */
@@ -126,6 +127,7 @@ export default function EditorPane({
   onOpenWikilink,
   onFilterTag,
   onSelectionChange,
+  onLargePaste,
   onGoHome,
   onOpenPreviewFull,
   onExport,
@@ -414,6 +416,7 @@ export default function EditorPane({
             selfTitle={title}
             onNotify={onNotify}
             onSelectionChange={onSelectionChange}
+            onLargePaste={onLargePaste}
             onScroll={scheduleSync}
             placeholder={"在这里记。Markdown、[[双链]]、#标签 都支持。\nCtrl+S 立即保存，离开会自动保存。"}
             ariaLabel="笔记正文"

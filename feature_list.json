@@ -659,6 +659,20 @@
       "notes": ""
     },
     {
+      "id": "test-002",
+      "priority": 18.5,
+      "area": "harness",
+      "title": "E2E 里 page.waitForFunction 用了 async 判断函数，等落盘其实没在等",
+      "user_visible_behavior": "E2E 里「等文件存好」「等接口返回某状态」的检查真的会等到条件成立，失败时报出来。",
+      "status": "not_started",
+      "verification": [
+        "scripts/e2e.mjs 里所有 async 判断函数的 waitForFunction 改成 Node 端轮询（until）或同步判断",
+        "pnpm e2e 通过"
+      ],
+      "evidence": [],
+      "notes": "2026-11-19 写 tpl-002 的 E2E 时发现：Playwright 的 waitForFunction 遇到 async 判断函数，Promise 本身算真值立刻返回（实测设 1.5 秒后才成立的条件，43ms 就返回）。现有约 7 处（如「AI 插入 / 整篇替换后 Ctrl+Z」步骤末尾等磁盘内容）因此是空等，靠后面的步骤碰巧没出错。新写的 tpl-002 步骤已用 until() 轮询。"
+    },
+    {
       "id": "repo-001",
       "priority": 20,
       "area": "repo",
@@ -953,13 +967,20 @@
       "area": "ai",
       "title": "按模板规整粘贴进来的 AI 回答（只搬不改）",
       "user_visible_behavior": "AI 面板「按模板规整」或粘贴大段后的提示条：应用把正文切块，AI 只回「哪块放进哪个小节」，应用逐字拼接（放不下的进「其他」，空小节写「待补」）；先看差异，应用后可撤销。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "单测：切块、分配方案校验与拼接（逐字来自原文）",
         "接口测试：/api/ai/arrange 正常、坏 JSON、非法方案都不写盘",
         "E2E：粘贴大段 → 提示条 → 规整预览 → 应用 → 撤销"
       ],
-      "evidence": [],
+      "evidence": [
+        "2026-11-19 web/src/lib/arrange.ts（前后端共用纯函数）：splitBlocks 按顶层块切（段落 / 列表含空行续项 / 代码块里的 ## 不算标题 / 表格 / 引用 / 标题 / 多行注释），先去掉骨架（同名 ## 小节、骨架提示注释、「## 其他」、单独一段「待补」）；parsePlan 校验（未知小节、编号重复 / 越界 / 不是整数、非标题进 drop、不是对象都报错）；assemble 逐字拼接，没分配的进「其他」、空小节写「待补」，放进小节的 # / ## 标题降成 ###",
+        "server/arrange.ts + POST /api/ai/arrange {id, template, baseHash} → {template, baseHash, blocks, plan, body, callId}：不写盘；baseHash 对不上 409、模板不存在 400、只有骨架 400、模型回坏方案 422、模型没回 502、未配置 503；ai_calls 记一笔 mode=arrange",
+        "前端：AI 面板「改稿」组加「按模板规整」；ArrangeDialog 预览（左：每个小节收了哪几块、被换掉的原标题；右：规整前后逐行差异，DiffView 与历史版本面板共用）；应用走 AI 整篇替换（历史版本 reason=ai、可撤销），保存时文件头补 template:，「撤销 AI 改写」连模板名一起还原；粘贴超过 400 字且粘贴前正文为空或只有骨架时底部提示条（没模板时可选，10 秒自动消失，鼠标停留不计时）",
+        "单测 web/src/lib/arrange.test.ts 10 条；接口测试 server/tests/arrange-api.test.ts 4 条（假模型：正常拼接且全程不写盘、6 种坏回复都 422 不写盘、409/400、502/503）",
+        "E2E 新增一步（本地假模型 + 真实 /api/config、/api/ai/arrange）：粘贴大段 → 提示条 → 预览各小节 → 应用 → 文件头 template: 与历史版本 ai → 撤销后正文与文件头都回去 → AI 面板入口、模型乱回报错且文件不变；截图 28-arrange-hint / 28-arrange-preview（浅色 + 深色）看过；E2E 共 33 步",
+        "LANG=C.UTF-8 ./init.sh 全绿：590 个单元 / 接口测试 + 四个基准 + E2E 33 步"
+      ],
       "notes": "方案：docs/superpowers/specs/2026-11-18-note-templates-design.md（用户 2026-11-19 批准）。第十节第 2 期，依赖 tpl-001。"
     },
     {

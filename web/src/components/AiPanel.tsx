@@ -15,6 +15,8 @@ type Props = {
   onInsert: (text: string, where: "cursor" | "end" | "replace") => void;
   /** 整篇替换（改稿类动作用），App 里负责记旧版本以便撤销。 */
   onReplaceAll: (text: string) => void;
+  /** 按模板规整（tpl-002）：App 打开预览面板，AI 只给分配方案 */
+  onArrange?: () => void;
   focusSignal: number;
   /** 调 AI 前先落盘，保证服务端读到的是最新正文。 */
   beforeRun?: () => Promise<void>;
@@ -49,6 +51,7 @@ export default function AiPanel({
   getSelection,
   onInsert,
   onReplaceAll,
+  onArrange,
   focusSignal,
   beforeRun,
 }: Props) {
@@ -277,6 +280,17 @@ export default function AiPanel({
               {busy === item.mode ? "改写中…" : item.label}
             </button>
           ))}
+          {onArrange ? (
+            <button
+              type="button"
+              className="btn btn--small ai__mode"
+              onClick={() => (configured ? onArrange() : setSettingsOpen(true))}
+              disabled={configLoading || Boolean(configError) || busy !== null || !noteId}
+              title="把整篇正文按模板的小节归位：AI 只决定每块放哪，字一个不改；先看差异再应用"
+            >
+              按模板规整
+            </button>
+          ) : null}
         </div>
       </div>
 

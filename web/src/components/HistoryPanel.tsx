@@ -4,6 +4,7 @@ import * as api from "../api.ts";
 import type { HistoryEntry, HistoryReason, HistoryVersion } from "../api.ts";
 import { diffLines, diffStats, foldUnchanged } from "../lib/diff.ts";
 import { clockTime, dayKey, dayLabel, relativeTime } from "../lib/time.ts";
+import DiffView from "./DiffView.tsx";
 import Icon from "./Icon.tsx";
 import Preview from "./Preview.tsx";
 
@@ -248,24 +249,7 @@ export default function HistoryPanel({ open, noteId, noteTitle, currentBody, onC
         </div>
       );
     }
-    return (
-      <div className="diff" role="table" aria-label="与当前内容的逐行对比">
-        {diff.rows.map((row, index) =>
-          row.kind === "fold" ? (
-            <div key={index} className="diff__fold" role="row">
-              ··· {row.count} 行没有变化 ···
-            </div>
-          ) : (
-            <div key={index} className={`diff__line diff__line--${row.kind}`} role="row">
-              <span className="diff__sign" aria-hidden="true">
-                {row.kind === "add" ? "+" : row.kind === "del" ? "−" : " "}
-              </span>
-              <span className="diff__text">{row.text || " "}</span>
-            </div>
-          ),
-        )}
-      </div>
-    );
+    return <DiffView rows={diff.rows} label="与当前内容的逐行对比" />;
   }
 
   return (

@@ -17,6 +17,7 @@
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
+import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -118,6 +119,18 @@ async function step(name, fn) {
 }
 function expect(cond, message) {
   if (!cond) throw new Error(message);
+}
+/**
+ * 在 Node 这边轮询到条件成立（check 可以是 async）。
+ * 注意：page.waitForFunction 遇到 async 判断函数不会等它的结果（Promise 本身算真，立刻返回），等落盘要用这个。
+ */
+async function until(check, message, timeout = 8000) {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    if (await check()) return;
+    if (Date.now() > deadline) throw new Error(message);
+    await new Promise((r) => setTimeout(r, 100));
+  }
 }
 
 const pageErrors = [];
@@ -1573,6 +1586,142 @@ try {
     await panel.waitFor();
     await page.keyboard.press("Escape");
     await panel.waitFor({ state: "detached" });
+  });
+
+  await step("按模板规整：粘贴大段 → 提示条 → 预览（每节收了哪几块 + 差异）→ 应用 → 撤销；模型乱回不改正文", async () => {
+    // 本地假模型：只回分配方案（mode = bad 时回一句话，不是 JSON）
+    let mode = "ok";
+    let calls = 0;
+    const stub = http.createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        calls += 1;
+        const content =
+          mode === "ok"
+            ? `好的：\n\`\`\`json\n${JSON.stringify({ 背景: [1], 设计: [3], drop: [0, 2] })}\n\`\`\``
+            : "我觉得第一段应该放在背景里。";
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.end(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\ndata: [DONE]\n\n`);
+      });
+    });
+    await new Promise((resolve) => stub.listen(0, "127.0.0.1", resolve));
+    try {
+      // 走真实的设置接口把应用内 AI 指向假模型；规整走真实的 /api/ai/arrange
+      await page.evaluate(async (baseUrl) => {
+        const res = await fetch("/api/config", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ baseUrl, apiKey: "sk-e2e-stub", model: "stub-model" }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+      }, `http://127.0.0.1:${stub.address().port}`);
+      const created = await page.evaluate(async () => {
+        const res = await fetch("/api/notes", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ title: "规整测试", body: "", template: null }),
+        });
+        return res.json();
+      });
+      await page.reload();
+      // 等界面起来（左栏有笔记）再按快捷键
+      await page.locator(".note-row").first().waitFor({ timeout: 8000 });
+      await page.keyboard.press("Control+k");
+      await page.getByLabel("搜索关键词").fill("规整测试");
+      await page.locator(".hit", { hasText: "规整测试" }).first().click();
+      await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "规整测试", null, { timeout: 5000 });
+
+      // 外部 AI 的回答：小节名和模板不一样，还多了一段闲话
+      const reason = "旧的主循环每一轮都重新读全部配置，笔记多了以后一轮要好几秒。".repeat(14);
+      const pasted = `## 1. 背景\n\n${reason}\n\n## 2. 实现\n\n- 配置读一次后缓存\n- 只在文件变了时重读\n\n顺便一提：这个改动是周末做的。`;
+      expect([...pasted].length > 400, "粘贴内容要超过 400 字");
+      const ta = page.locator(".editor__textarea");
+      // 模拟一次真实粘贴：先发 paste 事件，应用没拦下就照浏览器默认行为插入文字
+      await ta.evaluate((el, text) => {
+        el.focus();
+        const data = new DataTransfer();
+        data.setData("text/plain", text);
+        const event = new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true });
+        el.dispatchEvent(event);
+        if (!event.defaultPrevented) document.execCommand("insertText", false, text);
+      }, pasted);
+      expect((await ta.inputValue()) === pasted, "粘贴的文字应进了正文框");
+      const hint = page.locator(".arrange-hint");
+      await hint.waitFor({ timeout: 3000 });
+      expect((await hint.textContent()).includes("要按模板规整刚粘贴的内容吗"), "这篇没有模板：提示条里让人选一个");
+      expect((await hint.getByLabel("规整用的模板").inputValue()) === "实现详情", "默认选第一个模板");
+      await page.waitForTimeout(300); // 等淡入动画结束
+      await page.screenshot({ path: path.join(artifacts, "28-arrange-hint.png") });
+      await hint.getByRole("button", { name: "规整", exact: true }).click();
+
+      const dialog = page.getByRole("dialog", { name: "按模板规整" });
+      await dialog.waitFor();
+      const section = (title) => dialog.locator(".arrange__section", { has: page.locator("strong", { hasText: new RegExp(`^${title}$`) }) });
+      await section("背景").locator(".arrange__blocks li").first().waitFor({ timeout: 8000 });
+      expect((await section("背景").textContent()).includes("1 块"), "背景应收 1 块");
+      expect((await section("设计").textContent()).includes("配置读一次后缓存"), "设计应收列表");
+      expect((await section("踩坑").textContent()).includes("待补"), "没内容的小节显示待补");
+      expect((await section("其他").textContent()).includes("顺便一提"), "没分配的进「其他」");
+      expect((await section("换成模板标题").textContent()).includes("1. 背景"), "被丢掉的原标题要列出来");
+      await dialog.locator(".diff__line--add").first().waitFor();
+      // 只是预览：磁盘上还是粘贴的原样
+      const notePath = path.join(notesDir, created.relPath);
+      await until(async () => (await api(`/api/notes/${created.id}`)).body.includes("## 1. 背景"), "粘贴的内容应先存盘");
+      expect(!fs.readFileSync(notePath, "utf8").includes("template:"), "预览阶段不该写文件头");
+      await page.screenshot({ path: path.join(artifacts, "28-arrange-preview.png") });
+      await page.emulateMedia({ colorScheme: "dark" });
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(artifacts, "28-arrange-preview-dark.png") });
+      await page.emulateMedia({ colorScheme: "light" });
+
+      await dialog.getByRole("button", { name: "应用", exact: true }).click();
+      await dialog.waitFor({ state: "detached" });
+      const arranged = await ta.inputValue();
+      expect(arranged.startsWith(`## 背景\n<!-- 为什么做、要解决什么问题 -->\n\n${reason}\n\n## 设计\n`), `规整结果开头不对：${JSON.stringify(arranged.slice(0, 80))}`);
+      expect(arranged.includes("- 配置读一次后缓存\n- 只在文件变了时重读"), "列表原样搬进来");
+      expect(arranged.endsWith("## 其他\n\n顺便一提：这个改动是周末做的。\n"), `结尾应是「其他」：${JSON.stringify(arranged.slice(-40))}`);
+      expect(!arranged.includes("1. 背景") && !arranged.includes("2. 实现"), "原来的标题被模板标题代替");
+      // 保存后：文件头补上 template:，历史里有一份「AI 改写前」
+      await until(async () => {
+        const note = await api(`/api/notes/${created.id}`);
+        return note.meta.template === "实现详情" && note.body.startsWith("## 背景");
+      }, "规整结果应存盘，文件头带 template:");
+      const arrangedRaw = fs.readFileSync(notePath, "utf8");
+      expect(/^template: 实现详情$/m.test(arrangedRaw), `文件头应有 template: 实现详情：${arrangedRaw.slice(0, 200)}`);
+      await page.locator(".editor__template", { hasText: "实现详情" }).waitFor();
+      const history = await api(`/api/notes/${created.id}/history`);
+      expect(history.items.some((item) => item.reason === "ai"), `应存了一份「AI 改写前」：${JSON.stringify(history.items.map((i) => i.reason))}`);
+
+      // 撤销：正文回到粘贴的原样，文件头的模板名也去掉
+      await page.getByRole("button", { name: "撤销 AI 改写" }).click();
+      expect((await ta.inputValue()) === pasted, "撤销后应回到粘贴的原样");
+      await until(async () => {
+        const note = await api(`/api/notes/${created.id}`);
+        return !note.meta.template && note.body.startsWith("## 1. 背景");
+      }, "撤销后正文和文件头都应回到规整前并存盘");
+
+      // AI 面板入口；模型乱回：报错，正文一个字不动
+      mode = "bad";
+      const before = fs.readFileSync(notePath, "utf8");
+      // 这一段里浏览器会把 422 记成一条资源加载错误：只放过它，别的照样算失败
+      const errorsBefore = pageErrors.length;
+      await page.keyboard.press("Control+j");
+      await page.locator("section.ai").getByRole("button", { name: "按模板规整" }).click();
+      await dialog.waitFor();
+      await dialog.getByRole("button", { name: "开始规整" }).click();
+      await dialog.getByText(/规整没成功/).waitFor({ timeout: 8000 });
+      expect((await dialog.textContent()).includes("笔记没有任何改动"), "失败时说明正文没动");
+      expect(await dialog.getByRole("button", { name: "应用", exact: true }).isDisabled(), "失败时不能应用");
+      await page.keyboard.press("Escape");
+      await dialog.waitFor({ state: "detached" });
+      expect(fs.readFileSync(notePath, "utf8") === before, "模型乱回时文件不该变");
+      expect((await ta.inputValue()) === pasted, "模型乱回时正文不该变");
+      const during = pageErrors.splice(errorsBefore);
+      pageErrors.push(...during.filter((e) => !/status of 422 .*\/api\/ai\/arrange/.test(e)));
+      expect(calls === 2, `假模型应被调用 2 次，实际 ${calls}`);
+    } finally {
+      await new Promise((resolve) => stub.close(resolve));
+    }
   });
 
   await step("外部编辑器写的文件头（块状 tags、aliases、未知键）在应用里编辑保存后原样保留", async () => {

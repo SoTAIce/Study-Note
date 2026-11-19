@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import * as api from "./api.ts";
 import { useConfirm } from "./components/ConfirmDialog.tsx";
 import CardsView, { useReviewSummary, type CardsIntent } from "./components/CardsView.tsx";
@@ -65,6 +65,10 @@ import Icon from "./components/Icon.tsx";
 import TemplatesPanel from "./components/TemplatesPanel.tsx";
 import * as templatesApi from "./templates-api.ts";
 import type { TemplatesState } from "./templates-api.ts";
+import { findTemplate, groupDefaultTemplate, isBlankOrSkeleton, sameTemplate } from "./lib/templates.ts";
+import { ARRANGE_PASTE_MIN } from "./lib/arrange.ts";
+import ArrangeDialog from "./components/ArrangeDialog.tsx";
+import ArrangeHint from "./components/ArrangeHint.tsx";
 import "./styles/app.css";
 import "./styles/content.css";
 import "./styles/reading.css";
@@ -140,6 +144,14 @@ export default function App() {
   const [composeError, setComposeError] = useState<string | null>(null);
   const [aiUndoAvailable, setAiUndoAvailable] = useState(false);
   const aiUndoRef = useRef<string | null>(null);
+  /** 按模板规整（tpl-002）：预览面板；body 是打开时的正文，应用前要和当前一致 */
+  const [arrange, setArrange] = useState<{ initialTemplate: string | null; body: string } | null>(null);
+  /** 粘贴大段后的提示条（10 秒自动消失） */
+  const [arrangeHint, setArrangeHint] = useState<{ template: string | null } | null>(null);
+  /** 下次保存顺带写进文件头的模板名（规整后补 template:） */
+  const pendingTemplateRef = useRef<string | null | undefined>(undefined);
+  /** 规整前文件头里的模板名：「撤销 AI 改写」时一起还原（undefined = 这次替换没动模板） */
+  const aiUndoTemplateRef = useRef<string | null | undefined>(undefined);
   const composeReturnRef = useRef<Screen>("notes");
   const composeGroupRef = useRef("");
   /** 每篇笔记离开时的光标、选区、滚动位置（editor-005，只在本次打开期间记） */
@@ -402,6 +414,7 @@ export default function App() {
       title: draftRef.current.title,
       baseHash: hashRef.current,
       checkpoint: checkpointRef.current,
+      template: pendingTemplateRef.current,
     };
     checkpointRef.current = null;
     firstDirtyAtRef.current = null;
@@ -415,7 +428,11 @@ export default function App() {
           baseHash: snapshot.baseHash,
           title: snapshot.title.trim() ? snapshot.title.trim() : undefined,
           ...(snapshot.checkpoint ? { checkpoint: snapshot.checkpoint } : {}),
+          ...(snapshot.template !== undefined ? { template: snapshot.template } : {}),
         });
+        if (snapshot.template !== undefined && pendingTemplateRef.current === snapshot.template) {
+          pendingTemplateRef.current = undefined;
+        }
 
         // 期间已经切换了笔记：这次结果只更新列表，不碰当前草稿。
         rememberOwnSave(saved.id, saved.hash);
@@ -531,6 +548,9 @@ export default function App() {
     dirtyRef.current = false;
     aiUndoRef.current = null;
     setAiUndoAvailable(false);
+    pendingTemplateRef.current = undefined;
+    setArrange(null);
+    setArrangeHint(null);
     setPreviewFull(false);
     setHistoryOpen(false);
     checkpointRef.current = null;
@@ -568,6 +588,9 @@ export default function App() {
       setHistoryOpen(false);
       aiUndoRef.current = null;
       setAiUndoAvailable(false);
+      pendingTemplateRef.current = undefined;
+      setArrange(null);
+      setArrangeHint(null);
       setCurrent(detail);
       setDraft({ title: detail.meta.title, body: detail.body });
       setNoteTabs((tabs) => upsertNoteTab(tabs, { id: detail.id, title: detail.meta.title }));
@@ -786,6 +809,7 @@ export default function App() {
   function replaceWholeBody(next: string): void {
     const prev = draftRef.current.body;
     aiUndoRef.current = prev;
+    aiUndoTemplateRef.current = undefined;
     checkpointRef.current = "ai";
     setAiUndoAvailable(true);
     setBodyFromAi({ from: 0, to: prev.length, insert: next, selStart: 0, selEnd: 0 }, true);
@@ -828,8 +852,63 @@ export default function App() {
     if (prev === null) return;
     aiUndoRef.current = null;
     setAiUndoAvailable(false);
+    if (aiUndoTemplateRef.current !== undefined) {
+      pendingTemplateRef.current = aiUndoTemplateRef.current;
+      aiUndoTemplateRef.current = undefined;
+    }
     setBodyFromAi({ from: 0, to: draftRef.current.body.length, insert: prev, selStart: 0, selEnd: 0 }, true);
     showToast("已还原到 AI 改写前", "ok");
+  }
+
+  /** 规整用哪个模板：文件头里的（还存在的话）→ 所在子项目的默认 → 没有（让人选） */
+  function arrangeTemplateFor(note: NoteDetail | null): string | null {
+    if (!note || !templates) return null;
+    const own = findTemplate(templates.templates, note.meta.template ?? null);
+    if (own) return own.name;
+    return groupDefaultTemplate(templates.groupDefaults, templates.templates, note.meta.group ?? null)?.name ?? null;
+  }
+
+  /** 打开「按模板规整」预览（tpl-002）：先落盘，服务端读到的就是现在的正文 */
+  async function openArrange(template?: string | null): Promise<void> {
+    if (!current) return;
+    setArrangeHint(null);
+    if (!(await doSave())) {
+      showToast("当前笔记还没保存成功，先处理冲突再规整", "error");
+      return;
+    }
+    if (!templates || templates.templates.length === 0) {
+      showToast("还没有模板，先在「笔记模板」里建一个", "error");
+      return;
+    }
+    setArrange({ initialTemplate: template ?? arrangeTemplateFor(current), body: draftRef.current.body });
+  }
+
+  /** 应用规整结果：走 AI 整篇替换（存历史版本、可撤销），文件头补上 template: */
+  function applyArrange(result: api.ArrangeResult): void {
+    const opened = arrange;
+    setArrange(null);
+    if (!current || !opened) return;
+    if (draftRef.current.body !== opened.body || hashRef.current !== result.baseHash) {
+      showToast("规整期间正文改过了，没有套用；请重新规整", "error");
+      return;
+    }
+    const before = current.meta.template ?? null;
+    replaceWholeBody(result.body);
+    if (!sameTemplate(before, result.template)) {
+      pendingTemplateRef.current = result.template;
+      aiUndoTemplateRef.current = before;
+    }
+    void api.acceptAi(result.callId);
+  }
+
+  const dismissArrangeHint = useCallback(() => setArrangeHint(null), []);
+
+  /** 正文框里一次粘贴了一大段：粘贴前几乎是空的才提示要不要规整 */
+  function handleLargePaste(pasted: string, before: string): void {
+    if (!current || !templates || templates.templates.length === 0) return;
+    if ([...pasted.trim()].length <= ARRANGE_PASTE_MIN) return;
+    if (!isBlankOrSkeleton(before, templates.templates)) return;
+    setArrangeHint({ template: arrangeTemplateFor(current) });
   }
 
   /** 双链 / 出链里点到不存在的标题：按标题建一条。 */
@@ -1253,9 +1332,9 @@ export default function App() {
   });
   keyContext.current = {
     modalOpen:
-      paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen || !!templatesPanel || screen === "ai",
+      paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen || !!templatesPanel || !!arrange || screen === "ai",
     // 收左栏只在真的有弹窗时不响应（AI 对话页也能收）
-    dialogOpen: paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen || !!templatesPanel,
+    dialogOpen: paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen || !!templatesPanel || !!arrange,
     toggleSidebar,
     openReview: () => openCards(true),
     openPalette: () => setPaletteOpen(true),
@@ -1599,6 +1678,7 @@ export default function App() {
                 setFilter({ kind: "tag", tag });
               }}
               onSelectionChange={setSelectionLength}
+              onLargePaste={handleLargePaste}
               onGoHome={() => void goHome()}
               onOpenPreviewFull={() => setPreviewFull(true)}
               onExport={() => setExportOpen(true)}
@@ -1782,6 +1862,7 @@ export default function App() {
               getSelection,
               onInsert: insertAiText,
               onReplaceAll: replaceWholeBody,
+              onArrange: () => void openArrange(),
               focusSignal: aiFocusSignal,
               beforeRun: async () => {
                 await doSave();
@@ -1852,6 +1933,27 @@ export default function App() {
         onClose={() => setCaptureOpen(false)}
         onCaptured={(result) => void handleCaptured(result)}
       />
+
+      {arrange && current ? (
+        <ArrangeDialog
+          noteTitle={draft.title || current.meta.title}
+          templates={templates?.templates ?? []}
+          initialTemplate={arrange.initialTemplate}
+          currentBody={arrange.body}
+          run={(template, signal) => api.arrangeNote(current.id, template, hashRef.current || null, signal)}
+          onApply={applyArrange}
+          onClose={() => setArrange(null)}
+        />
+      ) : null}
+
+      {arrangeHint && current && screen === "notes" && !arrange ? (
+        <ArrangeHint
+          template={arrangeHint.template}
+          templateNames={templates?.templates.map((item) => item.name) ?? []}
+          onArrange={(template) => void openArrange(template)}
+          onDismiss={dismissArrangeHint}
+        />
+      ) : null}
 
       {/* 只在打开时挂载：每次打开都从磁盘重读，不会先闪一下上次的内容 */}
       {templatesPanel ? (

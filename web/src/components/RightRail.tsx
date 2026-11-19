@@ -23,6 +23,8 @@ type Props = {
     getSelection: () => string;
     onInsert: (text: string, where: "cursor" | "end" | "replace") => void;
     onReplaceAll: (text: string) => void;
+    /** 打开「按模板规整」预览（tpl-002） */
+    onArrange?: () => void;
     focusSignal: number;
     beforeRun?: () => Promise<void>;
   };
@@ -155,6 +157,7 @@ export default function RightRail({
           getSelection={ai.getSelection}
           onInsert={ai.onInsert}
           onReplaceAll={ai.onReplaceAll}
+          onArrange={ai.onArrange}
           focusSignal={ai.focusSignal}
           beforeRun={ai.beforeRun}
         />

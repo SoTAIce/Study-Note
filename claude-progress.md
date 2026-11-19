@@ -6,8 +6,8 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-19，576 个单元/接口测试 + 四个基准 + E2E 32 步（本机）；GitHub Actions run 44520766185 Ubuntu + Windows 全绿，含 Windows 一键启动测试
-- 优先级最高的未完成功能：tpl-002（方案已批准）；tpl-003、read-002 方案等批准；srs-002、blog-001 为 blocked，见 docs/待实现.md
+- 最近一次全绿：2026-11-19，590 个单元/接口测试 + 四个基准 + E2E 33 步（本机；GitHub Actions 见会话 034）
+- 优先级最高的未完成功能：tpl-003、read-002 方案等用户批准；其次 help-001（要先写方案）、test-002（E2E 里的空等）；srs-002、blog-001 为 blocked，见 docs/待实现.md
 - 当前阻塞：无
 
 ## 会话记录
@@ -320,3 +320,15 @@
 - 最终：GitHub Actions run 44520766185（462013f）Ubuntu + Windows 全绿；Windows 一键启动测试日志逐行看过，全部 [ok]（含旧服务进程 1472 -> 8516 被换掉、旧进程已退出），repo-003 标 passing，并入 main。
 - 用户这次更新要做的：旧服务是改动前的代码，没有指纹，新 start.ps1 会认出来并关掉它；之后 git pull 再双击启动即可。
 
+### 会话 034 · 2026-11-19 · 按模板规整（tpl-002）
+
+- 用户：「那先从 002 开始」，理解为 tpl-002（方案已批准；回复里说明了，如指 read-002 再改）。
+- 先收尾 repo-003：重跑因 runner 下载 Playwright 失败的 Ubuntu 任务（与代码无关，那次提交只改文档），两边绿后把 8be27fd 并入 main。
+- 做法：AI 只回分配方案，正文由应用逐字拼。
+  - `web/src/lib/arrange.ts`：切块、校验、拼接（前后端共用）。
+  - `server/arrange.ts`：`POST /api/ai/arrange`，不写盘。
+  - 前端：`ArrangeDialog` 预览（各小节收了哪几块 + 前后差异）、`ArrangeHint` 粘贴大段提示条、AI 面板入口；应用走 AI 整篇替换（历史版本、可撤销），保存时文件头补 `template:`，撤销连模板名一起还原。
+  - 历史版本面板的差异视图抽成 `DiffView` 共用。
+- 方案没写细、实现时定下的几处（放进小节的 #/## 降成 ###、再规整能识别上次的结果等）记在设计方案第十二节。
+- 发现：Playwright 的 `waitForFunction` 遇到 async 判断函数不会等（实测 43ms 就返回），现有 E2E 约 7 处「等落盘」是空等。记为 test-002，没顺手改；新步骤用 `until()` 在 Node 端轮询。
+- 验证：`LANG=C.UTF-8 ./init.sh` 全绿，590 + 四个基准 + E2E 33 步；截图 28-arrange-hint、28-arrange-preview（浅色 / 深色）看过。

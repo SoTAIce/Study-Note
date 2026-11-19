@@ -78,6 +78,8 @@ export type SaveInput = {
   tags?: string[];
   /** 强制在历史版本里存一份「保存前」：edit = 打开后的第一次保存，ai = AI 改写后的保存 */
   checkpoint?: "edit" | "ai";
+  /** 顺带改文件头的模板名（tpl-002 规整后补上）；不传 = 不动 */
+  template?: string | null;
 };
 
 export type SearchHit = {
@@ -475,6 +477,29 @@ export function putAiConfig(patch: AiConfigPatch): Promise<AiConfig> {
 }
 
 /** 采纳建议后尽力回写 ai_calls.inserted；失败不影响插入本身。 */
+export type ArrangeResult = {
+  template: string;
+  baseHash: string;
+  blocks: Array<{ index: number; kind: string; text: string; level: number }>;
+  plan: { sections: Array<{ title: string; blocks: number[] }>; drop: number[]; other: number[] };
+  body: string;
+  callId: number | null;
+};
+
+/** 按模板规整（tpl-002）：服务端切块、请 AI 给分配方案、校验后拼好正文；不写盘 */
+export function arrangeNote(
+  id: string,
+  template: string,
+  baseHash: string | null,
+  signal?: AbortSignal,
+): Promise<ArrangeResult> {
+  return request<ArrangeResult>("/ai/arrange", {
+    method: "POST",
+    body: jsonBody({ id, template, ...(baseHash ? { baseHash } : {}) }),
+    signal,
+  });
+}
+
 export async function acceptAi(callId: number | null): Promise<void> {
   if (!callId) return;
   try {

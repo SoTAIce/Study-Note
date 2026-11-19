@@ -61,6 +61,8 @@ type Props = {
   /** 内置按键（补全、Tab、续列表、Ctrl+B/I/K）没处理的键，再交给调用方 */
   onKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onSelectionChange?: (length: number) => void;
+  /** 粘贴了一段普通文字（不是图片、不是选中后贴网址）：给 App 判断要不要提示规整（tpl-002） */
+  onLargePaste?: (pasted: string, before: string) => void;
   onScroll?: () => void;
 };
 
@@ -81,6 +83,7 @@ export default function MarkdownTextarea({
   autoSize,
   onKeyDown,
   onSelectionChange,
+  onLargePaste,
   onScroll,
 }: Props) {
   // —— 输入 [[ 补全标题（editor-003）——
@@ -255,7 +258,10 @@ export default function MarkdownTextarea({
       { value: target.value, start: target.selectionStart, end: target.selectionEnd },
       event.clipboardData.getData("text/plain"),
     );
-    if (!edit) return;
+    if (!edit) {
+      onLargePaste?.(event.clipboardData.getData("text/plain"), target.value);
+      return;
+    }
     event.preventDefault();
     applyEditUndoable(target, edit);
   }
