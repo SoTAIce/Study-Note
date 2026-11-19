@@ -979,7 +979,8 @@
         "前端：AI 面板「改稿」组加「按模板规整」；ArrangeDialog 预览（左：每个小节收了哪几块、被换掉的原标题；右：规整前后逐行差异，DiffView 与历史版本面板共用）；应用走 AI 整篇替换（历史版本 reason=ai、可撤销），保存时文件头补 template:，「撤销 AI 改写」连模板名一起还原；粘贴超过 400 字且粘贴前正文为空或只有骨架时底部提示条（没模板时可选，10 秒自动消失，鼠标停留不计时）",
         "单测 web/src/lib/arrange.test.ts 10 条；接口测试 server/tests/arrange-api.test.ts 4 条（假模型：正常拼接且全程不写盘、6 种坏回复都 422 不写盘、409/400、502/503）",
         "E2E 新增一步（本地假模型 + 真实 /api/config、/api/ai/arrange）：粘贴大段 → 提示条 → 预览各小节 → 应用 → 文件头 template: 与历史版本 ai → 撤销后正文与文件头都回去 → AI 面板入口、模型乱回报错且文件不变；截图 28-arrange-hint / 28-arrange-preview（浅色 + 深色）看过；E2E 共 33 步",
-        "LANG=C.UTF-8 ./init.sh 全绿：590 个单元 / 接口测试 + 四个基准 + E2E 33 步"
+        "LANG=C.UTF-8 ./init.sh 全绿：590 个单元 / 接口测试 + 四个基准 + E2E 33 步",
+        "GitHub Actions run 44524981844（提交 ef41b7c）Ubuntu + Windows 全绿，Ubuntu 日志里 E2E「按模板规整」一步通过、共 33 步；已并入 main"
       ],
       "notes": "方案：docs/superpowers/specs/2026-11-18-note-templates-design.md（用户 2026-11-19 批准）。第十节第 2 期，依赖 tpl-001。"
     },

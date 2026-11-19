@@ -6,7 +6,7 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-19，590 个单元/接口测试 + 四个基准 + E2E 33 步（本机；GitHub Actions 见会话 034）
+- 最近一次全绿：2026-11-19，590 个单元/接口测试 + 四个基准 + E2E 33 步（本机）；GitHub Actions run 44524981844 Ubuntu + Windows 全绿
 - 优先级最高的未完成功能：tpl-003、read-002 方案等用户批准；其次 help-001（要先写方案）、test-002（E2E 里的空等）；srs-002、blog-001 为 blocked，见 docs/待实现.md
 - 当前阻塞：无
 
@@ -332,3 +332,4 @@
 - 方案没写细、实现时定下的几处（放进小节的 #/## 降成 ###、再规整能识别上次的结果等）记在设计方案第十二节。
 - 发现：Playwright 的 `waitForFunction` 遇到 async 判断函数不会等（实测 43ms 就返回），现有 E2E 约 7 处「等落盘」是空等。记为 test-002，没顺手改；新步骤用 `until()` 在 Node 端轮询。
 - 验证：`LANG=C.UTF-8 ./init.sh` 全绿，590 + 四个基准 + E2E 33 步；截图 28-arrange-hint、28-arrange-preview（浅色 / 深色）看过。
+- CI：run 44524981844（ef41b7c）Ubuntu + Windows 全绿，Ubuntu 日志确认 E2E 33 步含规整一步；ef41b7c 已并入 main。
