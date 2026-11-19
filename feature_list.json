@@ -1089,7 +1089,8 @@
         "前端：模板面板「让 AI 生成」→ TemplateGenDialog（一句话描述 / 从笔记归纳，搜笔记选 1～5 篇、补充说明、写明正文会发给 AI 服务商；预览里可改名、改 / 删小节、改专属提示词，骨架和提示词并排预览；加入列表后标没保存）；编辑区加「专属提示词」文本框和「让 AI 改写提示词」，预览可切「新建时预填 / 复制成提示词」",
         "单测：templates.test.ts 新增 2 条（prompt 校验、提示词拼接有 / 无额外要求）、template-gen.test.ts 6 条（截断、代码块与废话、多余字段、坏 JSON 与不合格模板、重名、消息内容、改写提示词）；接口测试 server/tests/template-gen-api.test.ts 8 条（假模型：描述、归纳与截断、重名、改写提示词、坏回复 422 不写盘、400/404/502、503、带 prompt 的模板保存读回）",
         "E2E 新增一步（本地假模型 + 真实接口）：面板「让 AI 生成」→ 从笔记归纳页签选笔记 → 一句话描述生成 → 预览改名 → 加入列表（未写盘）→ 让 AI 改写提示词 → 保存后 templates.json 带 prompt → 新建页复制提示词含「这个模板的额外要求」；截图 29-template-gen（浅色 + 深色）看过；E2E 共 34 步",
-        "LANG=C.UTF-8 ./init.sh 全绿：606 个单元 / 接口测试 + 四个基准 + E2E 34 步"
+        "LANG=C.UTF-8 ./init.sh 全绿：606 个单元 / 接口测试 + 四个基准 + E2E 34 步",
+        "GitHub Actions run 44632995320（提交 b57ef20）Ubuntu + Windows 全绿，Ubuntu 日志里 E2E「AI 生成模板」一步通过、共 34 步；已并入 main"
       ],
       "notes": "2026-11-19 用户提出；选择：两种来源都要、每节提示和专属提示词都要。改动较大（模板数据加 prompt 字段、新 AI 接口），先写方案经批准。 方案：docs/superpowers/specs/2026-11-19-ai-template-generation-design.md（用户 2026-11-19 批准）。"
     },

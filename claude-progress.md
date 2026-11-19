@@ -6,7 +6,7 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-19，606 个单元/接口测试 + 四个基准 + E2E 34 步（本机；GitHub Actions 见会话 035）
+- 最近一次全绿：2026-11-19，606 个单元/接口测试 + 四个基准 + E2E 34 步（本机）；GitHub Actions run 44632995320 Ubuntu + Windows 全绿
 - 优先级最高的未完成功能：read-002 分屏阅读（方案已批准）；其次 help-001（要先写方案）、test-002（E2E 里的空等）；srs-002、blog-001 为 blocked，见 docs/待实现.md
 - 当前阻塞：无
 
@@ -344,3 +344,4 @@
   - 取 JSON 的代码抽成 `web/src/lib/ai-json.ts`，规整和生成模板共用。
 - 方案没写细、实现时定下的几处（改写提示词也走同一接口、提示注释不发给模型、截断要告诉人等）记在方案第九节。
 - 验证：`LANG=C.UTF-8 ./init.sh` 全绿，606 + 四个基准 + E2E 34 步；截图 29-template-gen（浅色 / 深色）看过。
+- CI：run 44632995320（b57ef20）Ubuntu + Windows 全绿，Ubuntu 日志确认 E2E 34 步含生成模板一步；b57ef20 已并入 main。
