@@ -8,7 +8,7 @@ import {
   buildOutline,
   parsePositions,
   parseWidth,
-  READING_WIDTHS,
+  readingLayout,
   rememberPosition,
   scrollRatio,
   type OutlineItem,
@@ -47,10 +47,12 @@ const FONT_DEFAULT = 18;
 /** 窗口比这窄时目录默认收起，打开时盖在正文上 */
 const TOC_INLINE_MIN = 1000;
 
-const WIDTH_LABELS: Array<{ value: ReadingWidth; label: string }> = [
-  { value: "narrow", label: "窄" },
-  { value: "medium", label: "中" },
-  { value: "wide", label: "宽" },
+const WIDTH_LABELS: Array<{ value: ReadingWidth; label: string; hint: string }> = [
+  { value: "auto", label: "自动", hint: "随窗口变宽，宽屏时字号略放大" },
+  { value: "narrow", label: "窄", hint: "600px" },
+  { value: "medium", label: "中", hint: "700px" },
+  { value: "wide", label: "宽", hint: "840px" },
+  { value: "full", label: "满宽", hint: "铺满窗口" },
 ];
 
 /** localStorage 只存本机的阅读偏好：读写失败（隐私模式等）就用默认值 */
@@ -93,6 +95,8 @@ export default function ReadingMode(props: Props) {
   useDialogFocus(dialogFocusRef);
   const [fontSize, setFontSize] = useState(readFont);
   const [width, setWidth] = useState<ReadingWidth>(() => parseWidth(load(WIDTH_KEY)));
+  /** 正文滚动区的宽度：自动档按它算版心和字号（read-003） */
+  const [available, setAvailable] = useState(() => window.innerWidth);
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [active, setActive] = useState(-1);
   const [progress, setProgress] = useState(0);
@@ -145,9 +149,22 @@ export default function ReadingMode(props: Props) {
     setProgress(ratio);
   }, []);
 
+  // 窗口大小、目录开合都会改变正文区宽度
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const update = () => setAvailable(scroller.clientWidth);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(scroller);
+    return () => observer.disconnect();
+  }, []);
+
+  const layout = readingLayout(width, available, fontSize);
+
   useEffect(() => {
     measure();
-  }, [outline, fontSize, width, measure]);
+  }, [outline, layout.fontSize, layout.maxWidth, measure]);
 
   /** 切到这一篇：回到上次读到的位置；离开时记下读到哪里 */
   useLayoutEffect(() => {
@@ -164,6 +181,14 @@ export default function ReadingMode(props: Props) {
       store(POSITIONS_KEY, JSON.stringify(rememberPosition(parsePositions(load(POSITIONS_KEY)), noteId, ratioRef.current)));
     };
   }, [noteId, measure]);
+
+  // 版心宽度或字号变了（量到正文区宽度、拖窗口、换档位）：按读到的比例回到原处，不让位置跳走
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    scroller.scrollTop = ratioRef.current * Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    measure();
+  }, [layout.fontSize, layout.maxWidth, measure]);
 
   function onScroll(): void {
     measure();
@@ -236,7 +261,7 @@ export default function ReadingMode(props: Props) {
                 className={`segmented__btn segmented__btn--text${width === option.value ? " is-active" : ""}`}
                 onClick={() => changeWidth(option.value)}
                 aria-pressed={width === option.value}
-                title={`行宽：${option.label}`}
+                title={`行宽：${option.label}（${option.hint}）`}
               >
                 {option.label}
               </button>
@@ -251,7 +276,9 @@ export default function ReadingMode(props: Props) {
           >
             A−
           </button>
-          <span className="reader__size">{fontSize}px</span>
+          <span className="reader__size" title={layout.fontSize !== fontSize ? `设定 ${fontSize}px，宽屏自动放大` : undefined}>
+            {layout.fontSize}px
+          </span>
           <button
             type="button"
             className="btn btn--small"
@@ -290,9 +317,9 @@ export default function ReadingMode(props: Props) {
 
         <div className="reader__scroll" ref={scrollRef} onScroll={onScroll}>
           <article
-            className="reader__paper"
+            className={`reader__paper${width === "full" ? " reader__paper--full" : ""}`}
             ref={paperRef}
-            style={{ fontSize: `${fontSize}px`, maxWidth: `${READING_WIDTHS[width]}px` }}
+            style={{ fontSize: `${layout.fontSize}px`, maxWidth: layout.maxWidth === null ? "none" : `${layout.maxWidth}px` }}
           >
             <p className="reader__meta">
               {metaParts.join(" · ")}

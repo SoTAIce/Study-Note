@@ -2987,6 +2987,11 @@ button.stat-card:hover {
   margin: 0 auto;
   padding: 40px 28px 120px;
 }
+/* 满宽（read-003）：铺满正文区，两边多留一点白 */
+.reader__paper--full {
+  padding-left: 48px;
+  padding-right: 48px;
+}
 
 .reader__meta {
   display: flex;

@@ -124,7 +124,8 @@ const pageErrors = [];
 function watch(page) {
   page.on("pageerror", (e) => pageErrors.push(String(e)));
   page.on("console", (m) => {
-    if (m.type() === "error") pageErrors.push(m.text());
+    // 「Failed to load resource」不带地址：附上控制台给的位置，排查时知道是哪个请求
+    if (m.type() === "error") pageErrors.push(m.location()?.url ? `${m.text()}（${m.location().url}）` : m.text());
   });
 }
 
@@ -389,6 +390,31 @@ try {
     await page.keyboard.press("ArrowLeft");
     await page.locator(".reader__title", { hasText: "阅览测试" }).waitFor({ timeout: 5000 });
     await page.keyboard.press("e");
+    await page.locator(".reader").waitFor({ state: "detached" });
+
+    // 宽屏（read-003）：默认「自动」，1920 宽时版心比原来最宽的 840 宽、字号放大；「满宽」接近铺满；选择记住
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.keyboard.press("Control+Shift+F");
+    await page.locator(".reader").waitFor();
+    const paper = page.locator(".reader__paper");
+    const auto = await paper.evaluate((el) => ({ w: el.getBoundingClientRect().width, font: parseFloat(getComputedStyle(el).fontSize) }));
+    expect(auto.w > 1000, `自动档在 1920 宽下版心应超过 1000px，实际 ${Math.round(auto.w)}`);
+    expect(auto.font > 18, `宽屏下字号应略放大，实际 ${auto.font}px`);
+    expect((await page.getByRole("button", { name: "自动", exact: true }).getAttribute("aria-pressed")) === "true", "默认应是「自动」");
+    await page.screenshot({ path: path.join(artifacts, "07-reading-wide.png") });
+    await page.getByRole("button", { name: "满宽", exact: true }).click();
+    const full = await page.evaluate(() => ({
+      paper: document.querySelector(".reader__paper").getBoundingClientRect().width,
+      area: document.querySelector(".reader__scroll").clientWidth,
+    }));
+    expect(full.paper >= full.area - 2, `满宽应铺满正文区：版心 ${Math.round(full.paper)}，正文区 ${full.area}`);
+    await page.keyboard.press("Escape");
+    await page.locator(".reader").waitFor({ state: "detached" });
+    await page.keyboard.press("Control+Shift+F");
+    await page.locator(".reader").waitFor();
+    expect((await page.getByRole("button", { name: "满宽", exact: true }).getAttribute("aria-pressed")) === "true", "重新进入应记住「满宽」");
+    await page.getByRole("button", { name: "自动", exact: true }).click();
+    await page.keyboard.press("Escape");
     await page.locator(".reader").waitFor({ state: "detached" });
 
     // 窄屏：目录默认收起，点按钮才出来，页面不横向溢出

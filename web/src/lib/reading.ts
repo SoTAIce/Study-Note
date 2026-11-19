@@ -78,9 +78,42 @@ export function rememberPosition(positions: Positions, id: string, ratio: number
   return next;
 }
 
+/** 固定档的版心宽度（px） */
 export const READING_WIDTHS = { narrow: 600, medium: 700, wide: 840 } as const;
-export type ReadingWidth = keyof typeof READING_WIDTHS;
+/**
+ * 行宽档位（read-003）：固定三档，加「自动」（随窗口变宽、宽屏字号略放大）和「满宽」（铺满窗口）。
+ * 默认「自动」。
+ */
+export type ReadingWidth = keyof typeof READING_WIDTHS | "auto" | "full";
 
 export function parseWidth(raw: string | null): ReadingWidth {
-  return raw === "narrow" || raw === "wide" ? raw : "medium";
+  return raw === "narrow" || raw === "medium" || raw === "wide" || raw === "full" ? raw : "auto";
+}
+
+/** 自动档：一行大约多少个字（版心 = 字号 × 这个数）。中文 40～50 字一行读起来最舒服 */
+export const AUTO_LINE_CHARS = 48;
+/** 自动档：正文区比这宽才开始放大字号；放大到这个倍数为止 */
+export const AUTO_SCALE_FROM = 1100;
+export const AUTO_SCALE_MAX = 1.25;
+/** 版心两边至少留的空白（px） */
+export const READING_GUTTER = 28;
+
+/**
+ * 阅览排版（read-003）：available = 正文滚动区的宽度（不含左侧目录），baseFont = 用户选的字号。
+ * 返回实际字号和版心最大宽度（null = 不限，铺满）。
+ * - 固定档：版心固定，字号就是用户选的；
+ * - 满宽：版心铺满（两边留边距），字号不变；
+ * - 自动：正文区越宽字号越大（最多 ×1.25），版心 = 字号 × 48 个字，但不超过正文区。
+ */
+export function readingLayout(
+  width: ReadingWidth,
+  available: number,
+  baseFont: number,
+): { fontSize: number; maxWidth: number | null } {
+  if (width === "full") return { fontSize: baseFont, maxWidth: null };
+  if (width !== "auto") return { fontSize: baseFont, maxWidth: READING_WIDTHS[width] };
+  const room = Math.max(0, available - READING_GUTTER * 2);
+  const scale = Math.min(AUTO_SCALE_MAX, Math.max(1, available / AUTO_SCALE_FROM));
+  const fontSize = Math.round(baseFont * scale);
+  return { fontSize, maxWidth: Math.max(320, Math.min(room, fontSize * AUTO_LINE_CHARS)) };
 }

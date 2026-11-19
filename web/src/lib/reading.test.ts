@@ -6,6 +6,7 @@ import {
   neighbors,
   parsePositions,
   parseWidth,
+  readingLayout,
   rememberPosition,
   scrollRatio,
 } from "./reading.ts";
@@ -71,6 +72,27 @@ test("阅读位置：坏数据当没有；最近读的在最后；超上限丢�
 test("行宽设置：未知值回到「中」", () => {
   assert.equal(parseWidth("narrow"), "narrow");
   assert.equal(parseWidth("wide"), "wide");
-  assert.equal(parseWidth(null), "medium");
-  assert.equal(parseWidth("huge"), "medium");
+  // 默认改成「自动」（read-003）；不认识的值也回到自动
+  assert.equal(parseWidth(null), "auto");
+  assert.equal(parseWidth("huge"), "auto");
+  assert.equal(parseWidth("medium"), "medium");
+  assert.equal(parseWidth("full"), "full");
+  assert.equal(parseWidth("auto"), "auto");
+});
+
+test("readingLayout：固定档不变；满宽不限宽；自动档随正文区变宽、宽屏字号最多放大 1.25 倍（read-003）", () => {
+  assert.deepEqual(readingLayout("wide", 1680, 18), { fontSize: 18, maxWidth: 840 });
+  assert.deepEqual(readingLayout("narrow", 400, 18), { fontSize: 18, maxWidth: 600 });
+  assert.deepEqual(readingLayout("full", 1680, 18), { fontSize: 18, maxWidth: null });
+  // 笔记本（正文区 900）：字号不变，版心 = 正文区减两边留白
+  assert.deepEqual(readingLayout("auto", 900, 18), { fontSize: 18, maxWidth: 844 });
+  // 1920 全屏（正文区约 1680）：字号放大到 23（×1.25 封顶），一行约 48 字
+  const wide = readingLayout("auto", 1680, 18);
+  assert.equal(wide.fontSize, 23);
+  assert.equal(wide.maxWidth, 23 * 48);
+  assert.ok((wide.maxWidth ?? 0) > 840, "宽屏下要比原来最宽的 840 宽");
+  // 极宽（4K）：字号封顶，不会无限变大
+  assert.equal(readingLayout("auto", 3600, 18).fontSize, 23);
+  // 很窄的窗口：不小于 320
+  assert.equal(readingLayout("auto", 300, 18).maxWidth, 320);
 });
