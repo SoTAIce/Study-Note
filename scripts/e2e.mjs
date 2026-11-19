@@ -1830,6 +1830,146 @@ try {
     }
   });
 
+  await step("分屏阅读：选一篇放右边、各自滚动、外部修改刷新、拖分隔条、⇄ / ×、Ctrl+点双链在另一栏、当前栏翻篇、窄窗口", async () => {
+    const para = "分屏用的长段落，撑出滚动条，方便测两栏各自滚动。".repeat(8);
+    const body = `# 分屏长文\n\n参见 [[分屏短文]]。\n\n${["甲", "乙", "丙"].map((h) => `## ${h}\n\n${para}\n\n${para}`).join("\n\n")}\n`;
+    const make = (title, text) =>
+      page.evaluate(
+        async ([noteTitle, noteBody]) =>
+          (
+            await fetch("/api/notes", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ title: noteTitle, body: noteBody }),
+            })
+          ).json(),
+        [title, text],
+      );
+    const created = await make("分屏长文", body);
+    await make("分屏短文", "# 分屏短文\n\n回到 [[阅览测试]]。\n");
+    const rightTitle = () => page.locator('.reader-pane[aria-label="右栏"] .reader-pane__title').textContent();
+    const leftTitle = () => page.locator('.reader-pane[aria-label="左栏"] .reader-pane__title').textContent();
+    const scrollerOf = (pane) => page.locator(`.reader-pane[aria-label="${pane}"] .reader__scroll`);
+
+    await page.keyboard.press("Control+k");
+    await page.getByLabel("搜索关键词").fill("阅览测试");
+    await page.locator(".hit", { hasText: "阅览测试" }).first().click();
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "阅览测试", null, { timeout: 5000 });
+    await page.getByLabel("阅览模式").click();
+    await page.locator(".reader").waitFor();
+
+    // 1. 「分屏」→ 选一篇放右边
+    await page.getByRole("button", { name: "分屏", exact: true }).click();
+    const picker = page.getByRole("dialog", { name: "选一篇放到右边" });
+    await picker.getByLabel("搜索关键词").fill("分屏长文");
+    await picker.locator(".hit", { hasText: "分屏长文" }).first().click();
+    await page.locator('.reader-pane[aria-label="右栏"] .reader__paper').waitFor({ timeout: 5000 });
+    expect((await leftTitle()) === "阅览测试" && (await rightTitle()) === "分屏长文", "左右两栏应各是一篇");
+    expect((await page.locator('.reader-pane.is-active').getAttribute("aria-label")) === "右栏", "刚打开的右栏是当前栏");
+
+    // 2. 各自滚动，互不影响
+    await scrollerOf("右栏").evaluate((el) => (el.scrollTop = 600));
+    await scrollerOf("左栏").evaluate((el) => (el.scrollTop = 300));
+    await page.waitForTimeout(100);
+    const tops = [await scrollerOf("左栏").evaluate((el) => el.scrollTop), await scrollerOf("右栏").evaluate((el) => el.scrollTop)];
+    expect(Math.abs(tops[0] - 300) < 2 && Math.abs(tops[1] - 600) < 2, `两栏应各自滚动：${JSON.stringify(tops)}`);
+    // 版心按这一栏自己的宽度算：半屏时正文差不多铺满这一栏（不会被压到最窄）
+    const paperWidth = (await page.locator('.reader-pane[aria-label="左栏"] .reader__paper').boundingBox()).width;
+    const paneWidth = (await page.locator('.reader-pane[aria-label="左栏"]').boundingBox()).width;
+    expect(paperWidth > paneWidth * 0.8, `左栏版心太窄：${paperWidth}/${paneWidth}`);
+    await page.screenshot({ path: path.join(artifacts, "30-split-reading.png") });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: path.join(artifacts, "30-split-reading-dark.png") });
+    await page.emulateMedia({ colorScheme: "light" });
+
+    // 3. 右栏那篇在外面被改：自动刷新
+    const rightFile = path.join(notesDir, created.relPath);
+    fs.writeFileSync(rightFile, fs.readFileSync(rightFile, "utf8").replace("参见 [[分屏短文]]。", "参见 [[分屏短文]]。外部编辑器加的一句。"), "utf8");
+    await page.locator('.reader-pane[aria-label="右栏"]', { hasText: "外部编辑器加的一句" }).waitFor({ timeout: 8000 });
+
+    // 4. 拖分隔条：比例跟着变并记在本机；双击恢复一半
+    const divider = page.getByRole("separator", { name: "调整左右两栏的比例" });
+    const area = await page.locator(".reader__body--split").boundingBox();
+    const handle = await divider.boundingBox();
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(area.x + area.width * 0.65, handle.y + handle.height / 2, { steps: 5 });
+    await page.mouse.up();
+    const dragged = Number(await divider.getAttribute("aria-valuenow"));
+    expect(Math.abs(dragged - 65) <= 1, `拖到 65% 附近，实际 ${dragged}`);
+    const leftWidth = (await page.locator('.reader-pane[aria-label="左栏"]').boundingBox()).width;
+    expect(Math.abs(leftWidth / area.width - 0.65) < 0.02, `左栏应占 65%：${leftWidth}/${area.width}`);
+    expect(Math.abs(Number(await page.evaluate(() => localStorage.getItem("study.splitRatio"))) - 0.65) < 0.011, "比例应记在本机");
+    await divider.dblclick();
+    expect((await divider.getAttribute("aria-valuenow")) === "50", "双击恢复各一半");
+    await divider.focus();
+    await page.keyboard.press("ArrowLeft");
+    expect((await divider.getAttribute("aria-valuenow")) === "45", "焦点在分隔条上按 ← 调 5%");
+    expect((await leftTitle()) === "阅览测试", "调分隔条时 ← 不该翻篇");
+
+    // 5. ⇄ 交换、再换回来
+    await page.getByRole("button", { name: "左右交换" }).click();
+    await page.waitForFunction(() => document.querySelector('.reader-pane[aria-label="左栏"] .reader-pane__title')?.textContent === "分屏长文", null, { timeout: 5000 });
+    expect((await rightTitle()) === "阅览测试", "交换后右栏是原来的左栏");
+    await page.getByRole("button", { name: "左右交换" }).click();
+    await page.waitForFunction(() => document.querySelector('.reader-pane[aria-label="左栏"] .reader-pane__title')?.textContent === "阅览测试", null, { timeout: 5000 });
+
+    // 6. Ctrl+点双链：右栏点 → 左栏打开；左栏点 → 右栏打开
+    await page.locator('.reader-pane[aria-label="右栏"] a.wikilink', { hasText: "分屏短文" }).click({ modifiers: ["Control"] });
+    await page.waitForFunction(() => document.querySelector('.reader-pane[aria-label="左栏"] .reader-pane__title')?.textContent === "分屏短文", null, { timeout: 5000 });
+    expect((await rightTitle()) === "分屏长文", "右栏不动");
+    await page.locator('.reader-pane[aria-label="左栏"] a.wikilink', { hasText: "阅览测试" }).click({ modifiers: ["Control"] });
+    await page.waitForFunction(() => document.querySelector('.reader-pane[aria-label="右栏"] .reader-pane__title')?.textContent === "阅览测试", null, { timeout: 5000 });
+    expect((await leftTitle()) === "分屏短文", "左栏不动");
+
+    // 7. 当前栏翻篇：点一下右栏，] / [ 只换右栏
+    await page.locator('.reader-pane[aria-label="右栏"] .reader__scroll').click({ position: { x: 20, y: 200 } });
+    expect((await page.locator(".reader-pane.is-active").getAttribute("aria-label")) === "右栏", "点过的右栏是当前栏");
+    const before = await rightTitle();
+    await page.keyboard.press("]");
+    await page.waitForTimeout(400);
+    if ((await rightTitle()) === before) await page.keyboard.press("[");
+    await page.waitForFunction((was) => document.querySelector('.reader-pane[aria-label="右栏"] .reader-pane__title')?.textContent !== was, before, { timeout: 5000 });
+    expect((await leftTitle()) === "分屏短文", "翻篇只作用于当前栏");
+
+    // 8. 窗口太窄：只显示当前栏 + 提示；加宽恢复
+    await page.setViewportSize({ width: 860, height: 860 });
+    await page.locator(".reader__split-hint").waitFor();
+    expect((await page.locator(".reader-pane").count()) === 1, "窄窗口只显示当前栏");
+    await page.setViewportSize({ width: 1360, height: 860 });
+    await page.locator('.reader-pane[aria-label="左栏"]').waitFor();
+    expect((await page.locator(".reader-pane").count()) === 2, "加宽后两栏都回来");
+
+    // 9. × 关闭右栏；窄窗口时「分屏」按钮变灰
+    const lastRight = await rightTitle();
+    await page.getByRole("button", { name: "关闭右栏" }).click();
+    await page.locator(".reader-pane").first().waitFor({ state: "detached" });
+    await page.setViewportSize({ width: 860, height: 860 });
+    await page.waitForFunction(
+      () => [...document.querySelectorAll(".reader__tools button")].find((b) => b.textContent.trim() === "分屏")?.disabled === true,
+      null,
+      { timeout: 3000 },
+    );
+    expect((await page.getByRole("button", { name: "分屏", exact: true }).getAttribute("title")) === "窗口太窄，放不下两栏", "悬停说明原因");
+    await page.setViewportSize({ width: 1360, height: 860 });
+
+    // 10. 退出再进：选篇框最前面是上次在右边看的那篇，比例也还在
+    await page.keyboard.press("Escape");
+    await page.locator(".reader").waitFor({ state: "detached" });
+    await page.getByLabel("阅览模式").click();
+    await page.getByRole("button", { name: "分屏", exact: true }).click();
+    const first = picker.locator(".hit").first();
+    await first.waitFor();
+    expect((await first.textContent()).includes(lastRight) && (await first.textContent()).includes("上次在右边"), `第一项应是上次右栏：${await first.textContent()}`);
+    // 对输入框按回车：框刚打开时焦点要等一下才进输入框
+    await picker.getByLabel("搜索关键词").press("Enter");
+    await page.waitForFunction((title) => document.querySelector('.reader-pane[aria-label="右栏"] .reader-pane__title')?.textContent === title, lastRight, { timeout: 5000 });
+    expect((await page.getByRole("separator", { name: "调整左右两栏的比例" }).getAttribute("aria-valuenow")) === "45", "比例应还是上次的 45%");
+    await page.keyboard.press("Escape");
+    await page.locator(".reader").waitFor({ state: "detached" });
+  });
+
   await step("外部编辑器写的文件头（块状 tags、aliases、未知键）在应用里编辑保存后原样保留", async () => {
     const file = path.join(notesDir, "obsidian-style.md");
     const head = "---\ntitle: Obsidian 写的笔记\naliases:\n  - 黑曜石\ntags:\n  - 读书\n  - 复习\ncssclass: wide\n---\n";

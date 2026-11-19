@@ -160,6 +160,8 @@ export default function App() {
   // —— 全屏预览 ——
   const [previewFull, setPreviewFull] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  /** 要导出的不是正在编辑的这篇（分屏阅读里导出右栏那篇，read-002）；null = 当前这篇 */
+  const [exportTarget, setExportTarget] = useState<{ id: string; title: string } | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
 
   // —— 外观：主题 / 编辑视图 / 窄屏导航抽屉 ——
@@ -233,6 +235,14 @@ export default function App() {
   const doSaveRef = useRef<() => Promise<boolean>>(async () => true);
   const externalCheckRef = useRef<Promise<void>>(Promise.resolve());
   const liveHandlersRef = useRef<{ onChanges: (changes: NoteChange[]) => void; onResync: () => void } | null>(null);
+  /** 阅览模式的右栏（read-002）也要知道哪篇变了：null = 整体重新同步 */
+  const liveListenersRef = useRef(new Set<(changes: NoteChange[] | null) => void>());
+  const subscribeChanges = useCallback((listener: (changes: NoteChange[] | null) => void) => {
+    liveListenersRef.current.add(listener);
+    return () => {
+      liveListenersRef.current.delete(listener);
+    };
+  }, []);
   const navigateSeq = useRef(0);
   const toastTimer = useRef<number | null>(null);
 
@@ -1161,6 +1171,7 @@ export default function App() {
 
   liveHandlersRef.current = {
     onChanges: (incoming) => {
+      for (const listener of liveListenersRef.current) listener(incoming);
       // 保存还在路上：等它落地（记下自己存的 hash）再判断，免得机器慢时把自己的回声当成外部修改
       const pending = savePromiseRef.current;
       if (pending) {
@@ -1177,6 +1188,7 @@ export default function App() {
       if (touchesNote(changes, noteIdRef.current, currentRef.current?.relPath ?? null)) queueExternalCheck();
     },
     onResync: () => {
+      for (const listener of liveListenersRef.current) listener(null);
       scheduleLiveRefresh();
       setBookTick((n) => n + 1);
       if (noteIdRef.current) queueExternalCheck();
@@ -1185,10 +1197,10 @@ export default function App() {
 
   // —— 导出 PDF（export-001） ——
   async function exportCurrent(prefs: ExportPrefs): Promise<string | null> {
-    const id = noteIdRef.current;
+    const id = exportTarget?.id ?? noteIdRef.current;
     if (!id) return "没有打开的笔记";
-    // 服务端从磁盘读：先把没保存的存掉，导出的才是最新内容
-    if (!(await doSave())) return "当前笔记还没保存成功，先处理冲突或错误再导出";
+    // 服务端从磁盘读：导出正在编辑的这篇时先把没保存的存掉，导出的才是最新内容
+    if (id === noteIdRef.current && !(await doSave())) return "当前笔记还没保存成功，先处理冲突或错误再导出";
     const request = { id, ...prefs };
     try {
       const { blob, fileName } = await api.exportPdf(request);
@@ -1444,6 +1456,28 @@ export default function App() {
     return found ? { id: found.id, title: found.title || "无标题" } : null;
   };
   const readingNeighbors = { prev: titleOf(readingIds.prev), next: titleOf(readingIds.next) };
+  /** 分屏右栏那篇的上一篇 / 下一篇（同样按中间列表的顺序） */
+  const readingNeighborsOf = (id: string) => {
+    const around = neighbors(
+      notes.map((note) => note.id),
+      id,
+    );
+    return { prev: titleOf(around.prev), next: titleOf(around.next) };
+  };
+  /**
+   * 双链标题 → 笔记 id，找不到不新建：先查已经载入的列表（和 openTitle 一样），
+   * 没有（中间列表正筛着别的）再按标题搜一次服务端，只认标题完全一样的。
+   */
+  const resolveTitle = async (wanted: string): Promise<string | null> => {
+    const local = (timeline.find((item) => item.title === wanted) ?? notes.find((item) => item.title === wanted))?.id;
+    if (local) return local;
+    try {
+      const found = await api.searchNotes(wanted, { limit: 20 });
+      return found.items.find((item) => item.title === wanted)?.id ?? null;
+    } catch {
+      return null;
+    }
+  };
 
   // —— 渲染 ——
   const railVisible = railOpen && screen === "notes" && current !== null;
@@ -1897,9 +1931,22 @@ export default function App() {
           prev={readingNeighbors.prev}
           next={readingNeighbors.next}
           onNavigate={(id) => void openNote(id)}
-          onExport={() => setExportOpen(true)}
+          onExport={(id, exportTitle) => {
+            setExportTarget(id === current.id ? null : { id, title: exportTitle });
+            setExportOpen(true);
+          }}
           paused={exportOpen}
           onExit={() => setPreviewFull(false)}
+          listIds={notes.map((note) => note.id)}
+          neighborsOf={readingNeighborsOf}
+          resolveTitle={resolveTitle}
+          loadNote={api.getNote}
+          subscribeChanges={subscribeChanges}
+          onOpenInEditor={(id) => {
+            setPreviewFull(false);
+            void openNote(id);
+          }}
+          onNotify={showToast}
           onOpenWikilink={(target) => void openTitle(target)}
           onFilterTag={(tag) => {
             setPreviewFull(false);
@@ -1911,8 +1958,11 @@ export default function App() {
       {current ? (
         <ExportDialog
           open={exportOpen}
-          title={draft.title || current.meta.title}
-          onClose={() => setExportOpen(false)}
+          title={exportTarget?.title ?? (draft.title || current.meta.title)}
+          onClose={() => {
+            setExportOpen(false);
+            setExportTarget(null);
+          }}
           onExport={exportCurrent}
         />
       ) : null}

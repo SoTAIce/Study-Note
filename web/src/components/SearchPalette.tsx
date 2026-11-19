@@ -13,6 +13,11 @@ type Props = {
   onClose: () => void;
   onOpenNote: (id: string) => void;
   commands?: PaletteCommand[];
+  /** 还没输入时列出的几篇（例如分屏时「上次在右边看的」，read-002） */
+  suggestions?: Array<{ id: string; title: string; hint: string }>;
+  /** 弹框的名字和输入框提示（默认是「搜索笔记」） */
+  label?: string;
+  placeholder?: string;
 };
 
 /** 命令匹配：关键词包含输入，或输入包含关键词（不区分大小写） */
@@ -27,7 +32,15 @@ export function matchCommands(commands: PaletteCommand[], query: string): Palett
   );
 }
 
-export default function SearchPalette({ open, onClose, onOpenNote, commands = [] }: Props) {
+export default function SearchPalette({
+  open,
+  onClose,
+  onOpenNote,
+  commands = [],
+  suggestions = [],
+  label = "搜索笔记",
+  placeholder = "搜索笔记标题与正文…",
+}: Props) {
   const dialogFocusRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogFocusRef, open);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -94,9 +107,18 @@ export default function SearchPalette({ open, onClose, onOpenNote, commands = []
   }, [open, onClose]);
 
   const matched = matchCommands(commands, query);
-  const total = matched.length + items.length;
+  const suggested = query.trim() ? [] : suggestions;
+  const total = suggested.length + matched.length + items.length;
 
   function runAt(index: number): void {
+    if (suggested.length > 0) {
+      const pick = suggested[index];
+      if (pick) {
+        onOpenNote(pick.id);
+        onClose();
+      }
+      return;
+    }
     const command = matched[index];
     if (command) {
       onClose();
@@ -131,7 +153,7 @@ export default function SearchPalette({ open, onClose, onOpenNote, commands = []
         className="palette"
         ref={dialogFocusRef} role="dialog"
         aria-modal="true"
-        aria-label="搜索笔记"
+        aria-label={label}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="palette__inputrow">
@@ -144,7 +166,7 @@ export default function SearchPalette({ open, onClose, onOpenNote, commands = []
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="搜索笔记标题与正文…"
+            placeholder={placeholder}
             aria-label="搜索关键词"
             spellCheck={false}
             autoComplete="off"
@@ -178,6 +200,22 @@ export default function SearchPalette({ open, onClose, onOpenNote, commands = []
           {!loading && !error && query.trim() && items.length === 0 && matched.length === 0 ? (
             <p className="palette__state">没有找到「{query.trim()}」。</p>
           ) : null}
+          {suggested.map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              role="option"
+              aria-selected={index === active}
+              className={`hit hit--command${index === active ? " is-active" : ""}`}
+              onMouseEnter={() => setActive(index)}
+              onClick={() => runAt(index)}
+            >
+              <span className="hit__head">
+                <span className="hit__title">{item.title || "未命名"}</span>
+                <span className="hit__path">{item.hint}</span>
+              </span>
+            </button>
+          ))}
           {!query.trim() ? (
             <p className="palette__state palette__state--dim">
               输入关键词开始检索。中文两个字也能搜到。

@@ -5721,3 +5721,115 @@ button.stat-card:hover {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* —— 分屏阅读（read-002）：两栏各自滚动，中间一条可拖的分隔条 —— */
+.reader__body--split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6px minmax(0, 1fr);
+}
+.reader__body--split.is-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+.reader-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.reader-pane__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 4px 8px 4px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+.reader-pane.is-active .reader-pane__head {
+  background: rgba(var(--accent-rgb), 0.08);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.reader-pane__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.reader-pane.is-active .reader-pane__title {
+  color: var(--text);
+}
+.reader-pane__toc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.reader-pane__body {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+.reader-pane__toc {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  z-index: 3;
+  width: min(300px, calc(100% - 20px));
+  max-height: 70%;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-ctl);
+  box-shadow: var(--shadow-lg);
+}
+.reader-pane__loading {
+  margin: 40px auto;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+.reader__divider {
+  position: relative;
+  cursor: col-resize;
+  background: var(--line);
+  touch-action: none;
+  outline: none;
+}
+.reader__divider::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 1px;
+  width: 4px;
+  height: 36px;
+  margin-top: -18px;
+  border-radius: 2px;
+  background: var(--line-strong);
+}
+.reader__divider:hover,
+.reader__divider:focus-visible {
+  background: rgba(var(--accent-rgb), 0.4);
+}
+.reader__split-hint {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow-lg);
+}

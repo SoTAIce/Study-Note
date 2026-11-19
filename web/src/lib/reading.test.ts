@@ -1,9 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  SPLIT_DEFAULT_RATIO,
+  SPLIT_MAX_RATIO,
+  SPLIT_MIN_RATIO,
   activeOutlineIndex,
   buildOutline,
+  canSplit,
+  clampSplitRatio,
   neighbors,
+  nudgeSplitRatio,
+  otherPane,
+  paneNavigation,
+  parseSplitRatio,
+  ratioFromPointer,
   parsePositions,
   parseWidth,
   readingLayout,
@@ -95,4 +105,45 @@ test("readingLayout：固定档不变；满宽不限宽；自动档随正文区�
   assert.equal(readingLayout("auto", 3600, 18).fontSize, 23);
   // 很窄的窗口：不小于 320
   assert.equal(readingLayout("auto", 300, 18).maxWidth, 320);
+});
+
+test("分屏比例：夹在 30%～70%，坏数据用 50%，键盘每次调 5%，拖动按指针位置算", () => {
+  assert.equal(clampSplitRatio(0.1), SPLIT_MIN_RATIO);
+  assert.equal(clampSplitRatio(0.95), SPLIT_MAX_RATIO);
+  assert.equal(clampSplitRatio(0.4567), 0.457);
+  assert.equal(clampSplitRatio(Number.NaN), SPLIT_DEFAULT_RATIO);
+  assert.equal(parseSplitRatio(null), 0.5);
+  assert.equal(parseSplitRatio(""), 0.5);
+  assert.equal(parseSplitRatio("abc"), 0.5);
+  assert.equal(parseSplitRatio("0.62"), 0.62);
+  assert.equal(parseSplitRatio("2"), 0.7);
+  assert.equal(nudgeSplitRatio(0.5, 1), 0.55);
+  assert.equal(nudgeSplitRatio(0.5, -1), 0.45);
+  assert.equal(nudgeSplitRatio(0.68, 1), 0.7);
+  assert.equal(nudgeSplitRatio(0.32, -1), 0.3);
+  assert.equal(ratioFromPointer(600, 100, 1000), 0.5);
+  assert.equal(ratioFromPointer(150, 100, 1000), 0.3);
+  assert.equal(ratioFromPointer(1090, 100, 1000), 0.7);
+  assert.equal(ratioFromPointer(500, 0, 0), 0.5);
+});
+
+test("窄窗口不能分屏：不到 900px", () => {
+  assert.equal(canSplit(899), false);
+  assert.equal(canSplit(900), true);
+  assert.equal(canSplit(1920), true);
+});
+
+test("翻篇作用于当前栏，按中间列表顺序；没分屏时总是左栏；到头或不在列表里返回 null", () => {
+  const ids = ["a", "b", "c", "d"];
+  const base = { split: true, leftId: "b", rightId: "c", ids };
+  assert.deepEqual(paneNavigation({ ...base, active: "left", direction: 1 }), { pane: "left", id: "c" });
+  assert.deepEqual(paneNavigation({ ...base, active: "right", direction: 1 }), { pane: "right", id: "d" });
+  assert.deepEqual(paneNavigation({ ...base, active: "right", direction: -1 }), { pane: "right", id: "b" });
+  assert.equal(paneNavigation({ ...base, active: "right", rightId: "d", direction: 1 }), null);
+  assert.equal(paneNavigation({ ...base, active: "right", rightId: "zz", direction: 1 }), null);
+  // 没分屏：即使记着「右栏」也只翻左栏
+  assert.deepEqual(paneNavigation({ ...base, split: false, active: "right", direction: -1 }), { pane: "left", id: "a" });
+  assert.deepEqual(paneNavigation({ ...base, active: "right", rightId: null, direction: 1 }), { pane: "left", id: "c" });
+  assert.equal(otherPane("left"), "right");
+  assert.equal(otherPane("right"), "left");
 });

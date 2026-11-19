@@ -4,7 +4,8 @@ import { renderMarkdown } from "../lib/markdown.ts";
 
 type Props = {
   markdown: string;
-  onOpenWikilink: (target: string) => void;
+  /** split：按住 Ctrl / ⌘ 点的（阅览模式里在另一栏打开，read-002）；别处可以不管 */
+  onOpenWikilink: (target: string, options?: { split: boolean }) => void;
   onFilterTag: (tag: string) => void;
   /** 额外的类名，例如阅览模式的 "reading" */
   className?: string;
@@ -59,7 +60,7 @@ export default function Preview({
     if (wikilink) {
       event.preventDefault();
       const target = wikilink.dataset.target ?? "";
-      if (target) onOpenWikilink(target);
+      if (target) onOpenWikilink(target, { split: event.ctrlKey || event.metaKey });
       return;
     }
 

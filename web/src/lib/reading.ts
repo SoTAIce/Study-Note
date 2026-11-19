@@ -117,3 +117,66 @@ export function readingLayout(
   const fontSize = Math.round(baseFont * scale);
   return { fontSize, maxWidth: Math.max(320, Math.min(room, fontSize * AUTO_LINE_CHARS)) };
 }
+
+// —— 分屏阅读（read-002） ——
+
+export type Pane = "left" | "right";
+
+/** 窗口比这窄就放不下两栏：「分屏」按钮变灰；已经分屏时只显示当前栏 */
+export const SPLIT_MIN_WIDTH = 900;
+/** 左栏占比的范围和默认值；拖动分隔条、用键盘调都夹在这里面 */
+export const SPLIT_MIN_RATIO = 0.3;
+export const SPLIT_MAX_RATIO = 0.7;
+export const SPLIT_DEFAULT_RATIO = 0.5;
+/** 焦点在分隔条上按一次 ← / → 调多少 */
+export const SPLIT_KEY_STEP = 0.05;
+
+export function canSplit(windowWidth: number): boolean {
+  return windowWidth >= SPLIT_MIN_WIDTH;
+}
+
+export function clampSplitRatio(ratio: number): number {
+  if (!Number.isFinite(ratio)) return SPLIT_DEFAULT_RATIO;
+  return Math.round(Math.min(SPLIT_MAX_RATIO, Math.max(SPLIT_MIN_RATIO, ratio)) * 1000) / 1000;
+}
+
+/** localStorage 里存的比例；坏数据用默认值 */
+export function parseSplitRatio(raw: string | null): number {
+  if (raw === null || raw.trim() === "") return SPLIT_DEFAULT_RATIO;
+  return clampSplitRatio(Number(raw));
+}
+
+/** 拖动分隔条：指针在两栏区域里的位置 → 左栏占比 */
+export function ratioFromPointer(pointerX: number, areaLeft: number, areaWidth: number): number {
+  if (areaWidth <= 0) return SPLIT_DEFAULT_RATIO;
+  return clampSplitRatio((pointerX - areaLeft) / areaWidth);
+}
+
+/** 键盘调分隔条：方向 -1（←）或 +1（→） */
+export function nudgeSplitRatio(ratio: number, direction: -1 | 1): number {
+  return clampSplitRatio(ratio + direction * SPLIT_KEY_STEP);
+}
+
+/**
+ * 翻篇（← → [ ]）作用到哪一栏、换成哪一篇：作用于当前栏，按中间列表的顺序。
+ * 没分屏时永远是左栏；当前栏这一篇不在列表里或已经到头时返回 null。
+ */
+export function paneNavigation(input: {
+  split: boolean;
+  active: Pane;
+  leftId: string;
+  rightId: string | null;
+  ids: string[];
+  direction: -1 | 1;
+}): { pane: Pane; id: string } | null {
+  const pane: Pane = input.split && input.active === "right" && input.rightId ? "right" : "left";
+  const from = pane === "right" ? input.rightId : input.leftId;
+  const around = neighbors(input.ids, from);
+  const id = input.direction < 0 ? around.prev : around.next;
+  return id ? { pane, id } : null;
+}
+
+/** 打开另一栏时的去向：在左栏 Ctrl+点双链 → 右栏；在右栏 Ctrl+点 → 左栏 */
+export function otherPane(pane: Pane): Pane {
+  return pane === "left" ? "right" : "left";
+}
