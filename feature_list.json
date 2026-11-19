@@ -1122,7 +1122,8 @@
         "2026-11-19 web/src/lib/reading.ts 加分屏纯函数：clampSplitRatio / parseSplitRatio / ratioFromPointer / nudgeSplitRatio（30%～70%、键盘每次 5%）、canSplit（≥ 900px）、paneNavigation（翻篇作用于当前栏，按中间列表顺序）；reading.test.ts 新增 3 条",
         "ReadingPane.tsx 从 ReadingMode 抽出一栏（目录、滚动、位置、版心按本栏宽度、正文、上一篇下一篇；单栏 DOM 不变）；ReadingMode 管顶栏、一栏或两栏、可拖分隔条（双击恢复、焦点在上面时 ← → 调、比例记在本机）、当前栏、快捷键、右栏读取与推送刷新、被删关闭；Preview 双链带 Ctrl/⌘；SearchPalette 加 suggestions（上次在右边）；App 提供推送订阅、按标题找笔记（本地找不到再搜服务端）、导出 / 编辑指定一篇。不改后端、不加依赖",
         "E2E 新增一步：分屏选篇、两栏各自滚动、左栏版心不被压窄、外部改右栏自动刷新、拖分隔条到 65% 并记在本机、双击恢复、键盘调且不翻篇、⇄ 交换、× 关闭、Ctrl+点双链两个方向、当前栏翻篇、窄窗口只显示当前栏与提示、窄窗口分屏按钮变灰、退出再进时上次右栏排最前且比例还在；截图 30-split-reading（浅色 + 深色）看过；E2E 共 35 步，修好后连跑 9 次都通过",
-        "LANG=C.UTF-8 ./init.sh 全绿：609 个单元 / 接口测试 + 四个基准 + E2E 35 步"
+        "LANG=C.UTF-8 ./init.sh 全绿：609 个单元 / 接口测试 + 四个基准 + E2E 35 步",
+        "GitHub Actions run 44639110527（提交 6e4de3d）Ubuntu + Windows 全绿，Ubuntu 日志里 E2E「分屏阅读」一步通过、共 35 步；已并入 main"
       ],
       "notes": "2026-11-19 用户提出；选择「两篇笔记左右并排」。先写方案经批准。 方案：docs/superpowers/specs/2026-11-19-split-reading-design.md（用户 2026-11-19 批准）。"
     }
