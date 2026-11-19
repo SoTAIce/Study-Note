@@ -77,12 +77,15 @@ export type EditingSync = "keep" | "adopt" | "conflict";
  * - 磁盘版本就是编辑起点，或是自己刚存的：keep；
  * - 别处改了、而这里还没动过：adopt（换成磁盘上的新内容，继续编辑）；
  * - 别处改了、这里也改了：conflict（走冲突提示，不自动覆盖任何一边）。
+ * - 已经在冲突里、磁盘上还是那个版本：keep；磁盘又变了：conflict（记下最新的 hash，
+ *   否则「以我的覆盖」会拿旧 hash 去存、再撞一次 409——外部编辑器先清空再写入时常见）。
  */
 export function syncEditing(
-  editing: { baseHash: string; draft: string; original: string },
+  editing: { baseHash: string; draft: string; original: string; diskHash?: string },
   disk: { hash: string },
   ownHashes: ReadonlySet<string>,
 ): EditingSync {
   if (disk.hash === editing.baseHash || ownHashes.has(disk.hash)) return "keep";
+  if (editing.diskHash !== undefined && editing.diskHash === disk.hash) return "keep";
   return editing.draft === editing.original ? "adopt" : "conflict";
 }

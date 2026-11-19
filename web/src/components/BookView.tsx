@@ -141,7 +141,8 @@ export default function BookView({
       const verdict = syncEditing(current, disk, ownHashes.current);
       if (verdict === "adopt") {
         setEditing({ ...current, original: disk.body, draft: disk.body, baseHash: disk.hash, status: "editing" });
-      } else if (verdict === "conflict" && current.status !== "conflict") {
+      } else if (verdict === "conflict") {
+        // 已在冲突里而磁盘又变了：换成最新的 hash，「以我的覆盖」才能一次存上
         setEditing({ ...current, status: "conflict", diskHash: disk.hash });
       }
     },

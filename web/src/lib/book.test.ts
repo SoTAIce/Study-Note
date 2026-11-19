@@ -62,3 +62,9 @@ test("syncEditing：自己存的 / 编辑起点不动；别处改了且没动过
   assert.equal(syncEditing(editing, { hash: "h3" }, new Set()), "adopt");
   assert.equal(syncEditing({ ...editing, draft: "ab" }, { hash: "h3" }, new Set()), "conflict");
 });
+
+test("syncEditing：已在冲突里，磁盘还是那个版本就不动；磁盘又变了再报冲突（带上最新 hash）", () => {
+  const conflicted = { baseHash: "h1", draft: "ab", original: "a", diskHash: "h3" };
+  assert.equal(syncEditing(conflicted, { hash: "h3" }, new Set()), "keep");
+  assert.equal(syncEditing(conflicted, { hash: "h4" }, new Set()), "conflict");
+});

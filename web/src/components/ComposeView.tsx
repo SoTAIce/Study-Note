@@ -45,6 +45,14 @@ type Props = {
  * 这里什么都不写磁盘，点「创建并开始编辑」才 POST /api/notes；
  * 取消则整页丢弃（不会留下「未命名」的空笔记）。
  */
+/** 新建页的预选模板：分组的默认模板，其次上次在新建页选的 */
+function presetFor(templates: TemplatesState, group: string) {
+  return (
+    groupDefaultTemplate(templates.groupDefaults, templates.templates, group) ??
+    findTemplate(templates.templates, readLastTemplate())
+  );
+}
+
 function sameName(a: string, b: string): boolean {
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
@@ -63,11 +71,16 @@ export default function ComposeView({
   const confirm = useConfirm();
   const [title, setTitle] = useState("");
   const [group, setGroup] = useState(initialGroup);
-  const [body, setBody] = useState("");
+  // 初值：分组有默认模板用默认的，否则用上次选的（tpl-001 方案 5.2）。
+  // 模板已经读到时在第一次渲染就定好，不能等 effect（否则会先闪一下「不用模板」和空正文）
+  const [initialPreset] = useState(() => (templates ? presetFor(templates, initialGroup) : undefined));
+  const [body, setBody] = useState(() => (initialPreset ? templateSkeleton(initialPreset) : ""));
   /** 选中的模板名；空串 = 不用模板 */
-  const [template, setTemplate] = useState("");
+  const [template, setTemplate] = useState(() => initialPreset?.name ?? "");
   /** 用户自己动过模板选择后，换分组不再自动跟着换 */
   const touchedRef = useRef(false);
+  /** 初值定过了（打开时模板还没读到的，等读到再定一次） */
+  const presetDoneRef = useRef(templates !== null);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const bodyRef = useRef<HTMLTextAreaElement | null>(null);
   const list = templates?.templates ?? [];
@@ -77,12 +90,12 @@ export default function ComposeView({
     titleRef.current?.focus();
   }, []);
 
-  // 模板读到以后定初值：分组有默认模板用默认的，否则用上次选的（tpl-001 方案 5.2）
+  // 打开新建页时模板还没读到：读到以后再定初值
   useEffect(() => {
-    if (!templates || touchedRef.current) return;
-    const preset =
-      groupDefaultTemplate(templates.groupDefaults, templates.templates, initialGroup) ??
-      findTemplate(templates.templates, readLastTemplate());
+    if (!templates || presetDoneRef.current) return;
+    presetDoneRef.current = true;
+    if (touchedRef.current) return;
+    const preset = presetFor(templates, initialGroup);
     if (preset) void choose(preset.name, { quiet: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templates]);
