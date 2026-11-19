@@ -300,3 +300,4 @@
 - 修法：`parse.ts` 新增 `rewriteFrontmatter`——按顶格键分组，只改值（按含义比较）变了的那几个管的键，缺的插在前一个管的键后面，该删的删掉；其余行（未知键、块状 tags、引号、顺序、CRLF、BOM、文件头后有没有空行）原样保留。`save`、`restoreVersion`、`restoreFromSnapshot` 改用它；新建笔记照旧用 `serializeNote`。解析同时认块状列表，缩进的嵌套键不再顶替外层同名键。
 - 应用自己写的标准文件头，新旧写法结果完全一样（有单测比对），所以已有笔记的保存行为不变。
 - 验证：./init.sh 570 + 四个基准 + E2E 31 步全绿；E2E 连跑 3 次都过。
+- CI：bc88496 的 run 44493581473（Ubuntu + Windows）全绿后，按用户要求把 main 快进到包含本修复的提交，main 与开发分支一致。
