@@ -985,6 +985,19 @@
       "notes": "方案：docs/superpowers/specs/2026-11-18-note-templates-design.md（用户 2026-11-19 批准）。第十节第 2 期，依赖 tpl-001。"
     },
     {
+      "id": "import-001",
+      "priority": 6.8,
+      "area": "notes",
+      "title": "拖入 .md 文件导入成笔记（拖到项目上就导入到该项目）",
+      "user_visible_behavior": "把一个 .md 文件拖进窗口任意处：弹框确认标题和分组后导入成新笔记并打开；拖到左栏某个分组 / 子项目行或连读页上时，框里预选那个项目。文件自带的文件头（tags、aliases、自定义键）保留，缺的补上；一次只导一个。",
+      "status": "not_started",
+      "verification": [
+        "待方案批准"
+      ],
+      "evidence": [],
+      "notes": "2026-11-19 用户提出；问答结论：任意处新建 + 拖到项目上导入该项目、每次弹框选分组、文件头保留缺的补上、一次只导一个。方案草案：docs/superpowers/specs/2026-11-19-md-import-design.md（等用户批准）。"
+    },
+    {
       "id": "help-001",
       "priority": 7,
       "area": "onboarding",
