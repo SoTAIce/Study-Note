@@ -29,9 +29,10 @@ function BuildStamp {
 function BuildTime {
   return (Get-Item (Join-Path $root 'dist\index.html')).LastWriteTimeUtc
 }
+# 启动脚本的输出直接显示（Out-Host），函数只返回退出码；否则输出会混进返回值
 function Start-App {
-  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'bin\start.ps1') -NoBrowser -NoAssistant
-  return $LASTEXITCODE
+  & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'bin\start.ps1') -NoBrowser -NoAssistant | Out-Host
+  return [int]$LASTEXITCODE
 }
 function Check([bool]$ok, [string]$message) {
   if ($ok) { Write-Host "[ok] $message" } else { Write-Host "[x] $message"; $script:failed = $true }
@@ -62,12 +63,16 @@ try {
   Check ($h3.stamp -eq (BuildStamp)) '新服务的指纹和新构建一致'
   Check ($pid3 -ne $pid1) "旧服务被换掉了（进程 $pid1 -> $pid3）"
   Check ($null -eq (Get-Process -Id $pid1 -ErrorAction SilentlyContinue)) '旧进程已经退出'
+} catch {
+  # 测试脚本自己出错也算失败，不能悄悄跳过后面的检查
+  Write-Host "[x] 测试脚本出错：$_"
+  $failed = $true
 } finally {
   [IO.File]::WriteAllText($probe, $original)
   & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'bin\stop.ps1') -Quiet
   Remove-Item -Recurse -Force $env:STUDY_DATA -ErrorAction SilentlyContinue
 }
 
-if ($failed) { Write-Host '[x] 一键启动测试失败'; exit 1 }
+if ($script:failed) { Write-Host '[x] 一键启动测试失败'; exit 1 }
 Write-Host '[=] 一键启动测试通过'
 exit 0

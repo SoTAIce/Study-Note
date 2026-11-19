@@ -24,8 +24,12 @@ const root = path.resolve(arg("--root") ?? path.join(path.dirname(fileURLToPath(
 const pm = arg("--pm") ?? "pnpm";
 
 function run(args: string[]): boolean {
-  // Windows 上 pnpm / npm 是 .cmd，要经过 shell；参数是写死的，不含用户输入
-  const result = spawnSync(pm, args, { cwd: root, stdio: "inherit", shell: process.platform === "win32" });
+  // Windows 上 pnpm / npm 是 .cmd，要经过 shell：拼成一条命令（参数是写死的，不含用户输入；
+  // 直接把参数数组交给 shell 会触发 Node 的 DEP0190 警告）
+  const result =
+    process.platform === "win32"
+      ? spawnSync(`"${pm}" ${args.join(" ")}`, { cwd: root, stdio: "inherit", shell: true })
+      : spawnSync(pm, args, { cwd: root, stdio: "inherit" });
   return result.status === 0;
 }
 
