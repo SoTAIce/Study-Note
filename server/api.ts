@@ -61,6 +61,8 @@ import { AttachmentError, MAX_UPLOAD_BODY, saveAttachment, servedFile } from "./
 import { ReviewLog } from "./review.ts";
 import { createReviewRoutes, ReviewHttpError } from "./review-api.ts";
 import { BookHttpError, createBookRoutes, createBookService, groupParam } from "./book.ts";
+import { createTemplatesRoutes, resolveNewNoteTemplate, TemplatesHttpError } from "./templates.ts";
+import { templateSkeleton } from "../web/src/lib/templates.ts";
 
 const MAX_BODY = 5 * 1024 * 1024;
 
@@ -232,8 +234,11 @@ export function createApi(deps: ApiDeps) {
   const reviewLog = deps.review ?? new ReviewLog({ dataDir });
   indexer.onCardRenamed((newId, oldId) => reviewLog.alias(newId, oldId));
   const reviewRoutes = createReviewRoutes({ db, log: reviewLog, dataDir });
-  const bookService = createBookService({ db, store, reindex });
-  const bookRoutes = createBookRoutes({ db, store, reindex }, bookService);
+  // 新建章节时套用模板（tpl-001）：显式传了用传的，没传用所在组的默认模板
+  const templateFor = (group: string, requested: unknown) => resolveNewNoteTemplate(dataDir, group, requested);
+  const bookService = createBookService({ db, store, reindex, templateFor });
+  const bookRoutes = createBookRoutes({ db, store, reindex, templateFor }, bookService);
+  const templatesRoutes = createTemplatesRoutes({ db, store, dataDir, reindex });
   /** 每次进程启动不同：前端重连后发现它变了，就知道服务重启过，整体刷新一次 */
   const bootId = randomUUID();
 
@@ -252,6 +257,11 @@ export function createApi(deps: ApiDeps) {
       const bookResult = await bookRoutes(method, route, url, () => readJson(req));
       if (bookResult !== undefined) {
         sendJson(res, 200, bookResult);
+        return true;
+      }
+      const templatesResult = await templatesRoutes(method, route, () => readJson(req));
+      if (templatesResult !== undefined) {
+        sendJson(res, 200, templatesResult);
         return true;
       }
 
@@ -303,16 +313,27 @@ export function createApi(deps: ApiDeps) {
         }
         if (method === "POST") {
           const body = await readJson(req);
-          const text = typeof body.body === "string" ? body.body : "";
+          let text = typeof body.body === "string" ? body.body : "";
+          const type: NoteType =
+            body.type === "idea" || body.type === "source" || body.type === "index" ? (body.type as NoteType) : "note";
+          const groupName = groupValue(body.group);
+          // 模板（tpl-001）只给普通笔记，想法、来源、目录不套用。
+          // 显式指定的：记下模板名，正文空着就预填骨架；没指定的：只在正文空着时自动套用组的默认模板，
+          // 免得「正文是别处来的、文件头却写着某个模板」
+          const template =
+            type === "note" && (body.template !== undefined || !text.trim())
+              ? resolveNewNoteTemplate(dataDir, groupName, body.template)
+              : null;
+          if (template && !text.trim()) text = templateSkeleton(template);
           const group = groupInput(body.group);
           const note = store.create({
             title: typeof body.title === "string" ? body.title : undefined,
             body: text,
             tags: Array.isArray(body.tags) ? body.tags.map(String) : undefined,
-            type:
-              body.type === "idea" || body.type === "source" || body.type === "index" ? (body.type as NoteType) : "note",
+            type,
             source: typeof body.source === "string" ? body.source : undefined,
             group,
+            template: template?.name ?? null,
           });
           reindex(note.relPath);
           sendJson(res, 201, {
@@ -467,8 +488,15 @@ export function createApi(deps: ApiDeps) {
           const body = typeof payload.body === "string" ? payload.body : null;
           const baseHash = typeof payload.baseHash === "string" ? payload.baseHash : "";
           if (body === null) throw new HttpError(400, "缺少 body 字段");
-          const patch: { title?: string; tags?: string[] } = {};
+          const patch: { title?: string; tags?: string[]; template?: string | null } = {};
           if (typeof payload.title === "string" && payload.title.trim()) patch.title = payload.title.trim();
+          // template（tpl-001）：字符串 = 记下这个模板名，null = 去掉文件头那一行；不要求模板还存在
+          if (payload.template === null) patch.template = null;
+          else if (typeof payload.template === "string") {
+            const name = payload.template.trim();
+            if ([...name].length > 40 || /[\u0000-\u001f]/.test(name)) throw new HttpError(400, "参数错误：template 不合法");
+            patch.template = name || null;
+          }
           if (Array.isArray(payload.tags)) patch.tags = payload.tags.map(String);
           // 前端只能要求 edit / ai 两种存档点；restore、agent 等由服务端自己决定
           const checkpoint: HistoryReason | undefined =
@@ -1302,7 +1330,7 @@ export function createApi(deps: ApiDeps) {
         sendJson(res, err.status, { error: err.message });
         return true;
       }
-      if (err instanceof BookHttpError) {
+      if (err instanceof BookHttpError || err instanceof TemplatesHttpError) {
         sendJson(res, err.status, { error: err.message, ...err.extra });
         return true;
       }

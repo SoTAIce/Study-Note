@@ -32,6 +32,8 @@ const PATHS = {
   menu: "M4 6h16 M4 12h16 M4 18h16",
   zap: "M13 2 4 14h7l-1 8 9-12h-7Z",
   chevronDown: "M6 9l6 6 6-6",
+  chevronUp: "M6 15l6-6 6 6",
+  template: "M4 4h16v5H4Z M4 13h7v7H4Z M15 13h5 M15 16.5h5 M15 20h5",
   chevronRight: "M9 6l6 6-6 6",
   chevronLeft: "M15 6l-6 6 6 6",
   download: "M12 3v12 M7 10l5 5 5-5 M5 21h14",

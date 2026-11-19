@@ -14,6 +14,8 @@ export type NoteMeta = {
   tags: string[];
   /** 所属分组；缺省表示「未分组」。frontmatter 里的 `group:` 键。 */
   group?: string;
+  /** 新建时套用的模板名（tpl-001）。frontmatter 里的 `template:` 键；模板删了也照样留着。 */
+  template?: string;
   source?: string;
 };
 
@@ -139,7 +141,51 @@ function stripBlockMarks(line: string): string {
   return out;
 }
 
+/**
+ * 去掉正文里的 HTML 注释 `<!-- … -->`（模板的小节提示，tpl-001），换行原样保留，行号不变。
+ * 围栏代码块和行内代码里的不动；没闭合的 `<!--` 也不动（渲染时它照旧被转义成文字）。
+ */
+export function stripHtmlComments(text: string): string {
+  if (!text.includes("<!--")) return text;
+  const lines = text.split("\n");
+  const out: string[] = [];
+  let chunk: string[] = [];
+  let fence: string | null = null;
+  const flush = () => {
+    if (chunk.length) out.push(stripCommentsInText(chunk.join("\n")));
+    chunk = [];
+  };
+  for (const line of lines) {
+    const mark = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (fence) {
+      out.push(line);
+      if (mark && mark[0] === fence[0] && mark.length >= fence.length && !line.trim().slice(mark.length).trim()) fence = null;
+      continue;
+    }
+    if (mark) {
+      flush();
+      fence = mark;
+      out.push(line);
+      continue;
+    }
+    chunk.push(line);
+  }
+  flush();
+  return out.join("\n");
+}
+
+/** 不含围栏代码的一段文字：行内代码先遮住，再去注释（注释里的换行留下）。 */
+function stripCommentsInText(text: string): string {
+  if (!text.includes("<!--")) return text;
+  const codes: string[] = [];
+  const masked = text.replace(/`[^`\n]*`/g, (code) => `\u0001${codes.push(code) - 1}\u0001`);
+  return masked
+    .replace(/<!--[\s\S]*?-->/g, (comment) => comment.replace(/[^\n]/g, ""))
+    .replace(/\u0001(\d+)\u0001/g, (_all, i: string) => codes[Number(i)] ?? "");
+}
+
 export function excerpt(body: string, max = 120): string {
+  body = stripHtmlComments(body);
   // 行内代码保留文字：先换成占位符，免得里面的 * _ 被当成强调去掉
   const codes: string[] = [];
   const text = body
@@ -263,10 +309,49 @@ export function serializeNote(meta: NoteMeta, body: string): string {
     `tags: ${yamlList(meta.tags)}`,
   ];
   if (meta.group) lines.push(`group: ${yamlValue(meta.group)}`);
+  if (meta.template) lines.push(templateLine(meta.template));
   if (meta.source) lines.push(`source: ${yamlValue(meta.source)}`);
   lines.push("---", "", body);
   return lines.join("\n");
 }
+
+/** 写一行 `template: …`（tpl-001）。 */
+export function templateLine(value: string): string {
+  return `template: ${yamlValue(value)}`;
+}
+
+/**
+ * 只改 frontmatter 里的 `template` 一行（tpl-001），规则同 patchFrontmatterGroup：
+ * 正文与其它键逐字节保留；null 删行；没有 frontmatter 时插最小块。
+ * 与 group 不同的是名字只差大小写时也照改（模板改名可能只改大小写）。
+ */
+export function patchFrontmatterTemplate(raw: string, template: string | null): { raw: string; changed: boolean } {
+  const want = template === null ? "" : template.trim();
+  const fm = readFrontmatterBlock(raw);
+  if (!fm) {
+    if (!want) return { raw, changed: false };
+    const eol = raw.includes("\r\n") ? "\r\n" : "\n";
+    return { raw: `---${eol}${templateLine(want)}${eol}---${eol}${eol}${raw}`, changed: true };
+  }
+  const { bom, lines, eol, body } = fm;
+  const index = lines.findIndex((line) => TEMPLATE_LINE_RE.test(line));
+  const current = index >= 0 ? unquote(lines[index].slice(lines[index].indexOf(":") + 1).trim()) : "";
+  if (current === want) return { raw, changed: false };
+
+  let next: string[];
+  if (!want) next = lines.filter((_line, at) => at !== index);
+  else if (index >= 0) next = lines.map((line, at) => (at === index ? templateLine(want) : line));
+  else {
+    // 紧跟 group 行；没有 group 就按 group 的规则（tags 之后）
+    const groupAt = lines.findIndex((line) => GROUP_LINE_RE.test(line));
+    const at = groupAt >= 0 ? groupAt + 1 : groupInsertAt(lines);
+    next = [...lines.slice(0, at), templateLine(want), ...lines.slice(at)];
+  }
+  if (next.every((line) => !line.trim())) return { raw: `${bom}${stripLeadingEol(body)}`, changed: true };
+  return { raw: `${bom}---${eol}${next.join(eol)}${eol}---${eol}${body}`, changed: true };
+}
+
+const TEMPLATE_LINE_RE = /^template\s*:/;
 
 /** frontmatter 里 `group:` 行（行首、不缩进）。 */
 const GROUP_LINE_RE = /^group\s*:/;
@@ -358,5 +443,7 @@ export function parseNote(
   // 手写的 `agent / looprun` 规整成 `agent/looprun`，索引和筛选只认一种写法
   const group = data.group ? normalizeGroupName(unquote(data.group)) : "";
   if (group) meta.group = group;
+  const template = data.template ? unquote(data.template).trim() : "";
+  if (template) meta.template = template;
   return { meta, body, hadFrontmatter: fm !== null };
 }

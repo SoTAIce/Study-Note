@@ -1448,6 +1448,106 @@ try {
     expect(fs.readFileSync(path.join(notesDir, foreign.path), "utf8").includes("导出前刚写的一句"), "导出前应先保存正在编辑的章");
   });
 
+  await step("笔记模板：面板里新建模板、子项目设默认模板、新建页预填骨架和复制成提示词、文件头记 template:、预览和连读不显示提示、Ctrl+K 找到模板", async () => {
+    const G = "冒烟测试/looprun";
+    // 1. 左栏底部「笔记模板」：新建一个模板，两个小节，保存后写进 data/templates.json
+    await page.getByRole("button", { name: "笔记模板", exact: true }).click();
+    const panel = page.getByRole("dialog", { name: "笔记模板" });
+    await panel.waitFor();
+    await panel.locator(".tpl-panel__item", { hasText: "实现详情" }).waitFor();
+    await panel.getByRole("button", { name: "新建模板" }).click();
+    await panel.getByLabel("模板名").fill("会议纪要");
+    await panel.getByLabel("第 1 节标题").fill("结论");
+    await panel.getByLabel("第 1 节提示").fill("定了什么");
+    await panel.getByRole("button", { name: "添加小节" }).click();
+    await panel.getByLabel("第 2 节标题").fill("跟进");
+    const skeleton = await panel.getByLabel("骨架预览").textContent();
+    expect(skeleton === "## 结论\n<!-- 定了什么 -->\n\n## 跟进\n", `骨架预览不对：${JSON.stringify(skeleton)}`);
+    await panel.getByRole("button", { name: /^保存/ }).click();
+    await page.getByText("模板已保存").waitFor({ timeout: 5000 });
+    const saved = JSON.parse(fs.readFileSync(path.join(dataDir, "templates.json"), "utf8"));
+    expect(saved.templates.map((t) => t.name).join() === "实现详情,学习笔记,会议纪要", `templates.json：${JSON.stringify(saved.templates.map((t) => t.name))}`);
+    await page.screenshot({ path: path.join(artifacts, "25-templates-panel.png") });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: path.join(artifacts, "25-templates-panel-dark.png") });
+    await page.emulateMedia({ colorScheme: "light" });
+    await panel.getByRole("button", { name: "关闭", exact: true }).first().click();
+    await panel.waitFor({ state: "detached" });
+
+    // 2. 子项目行上的「默认模板」：面板定位到这个组，选「实现详情」设为默认
+    const childRow = page.locator(".group-row--child", { hasText: "looprun" });
+    await childRow.hover();
+    await childRow.getByRole("button", { name: `「${G}」的默认模板` }).click();
+    await panel.getByLabel("要设默认模板的分组").waitFor();
+    const picked = await panel.getByLabel("要设默认模板的分组").inputValue();
+    expect(picked === G, `应预选这个子项目，实际「${picked}」`);
+    await panel.getByLabel("默认模板", { exact: true }).selectOption("实现详情");
+    await panel.getByRole("button", { name: "设为默认" }).click();
+    await panel.getByLabel(`「${G}」的默认模板`).waitFor();
+    await page.keyboard.press("Escape");
+    await panel.waitFor({ state: "detached" });
+    expect(JSON.parse(fs.readFileSync(path.join(dataDir, "templates.json"), "utf8")).groupDefaults[G] === "实现详情", "默认模板应落盘");
+
+    // 3. 在这个子项目里新建：预选「实现详情」、正文预填骨架；复制成提示词
+    await childRow.locator(".group-row__main").click();
+    await page.locator(".book__title").waitFor();
+    await page.locator(".new-note-entry").click();
+    const select = page.locator("#compose-template");
+    await select.waitFor();
+    expect((await select.inputValue()) === "实现详情", `应预选默认模板，实际「${await select.inputValue()}」`);
+    const body = await page.locator(".compose__body").inputValue();
+    expect(body.startsWith("## 背景\n<!-- 为什么做、要解决什么问题 -->\n\n## 设计\n"), `正文应预填骨架：${JSON.stringify(body.slice(0, 60))}`);
+    await page.locator(".compose__title").fill("模板笔记");
+    await page.screenshot({ path: path.join(artifacts, "26-compose-template.png") });
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: base });
+    await page.getByRole("button", { name: "复制成提示词" }).click();
+    await page.getByText(/已复制提示词/).waitFor({ timeout: 5000 });
+    const prompt = await page.evaluate(() => navigator.clipboard.readText());
+    expect(prompt.startsWith("请就「模板笔记」写一篇笔记，严格按下面的结构输出："), `提示词开头不对：${prompt.slice(0, 40)}`);
+    expect(prompt.includes("## 关键代码\n（文件路径 + 片段") && prompt.includes("只写「待补」"), "提示词应含小节和「待补」要求");
+    // 换成「不用模板」：正文只有骨架，直接清空；再换回来又填上
+    await select.selectOption("");
+    expect((await page.locator(".compose__body").inputValue()) === "", "换成不用模板后骨架应清掉");
+    await select.selectOption("实现详情");
+    await page.locator(".compose__body").press("Control+End");
+    await page.keyboard.type("\n写进去的正文");
+    await page.keyboard.press("Control+Enter");
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "模板笔记", null, { timeout: 5000 });
+    const made = (await api("/api/notes")).items.find((n) => n.title === "模板笔记");
+    const raw = fs.readFileSync(path.join(notesDir, made.relPath), "utf8");
+    expect(/^group: 冒烟测试\/looprun\ntemplate: 实现详情$/m.test(raw), `文件头应有 template:：${raw.slice(0, 200)}`);
+    expect(raw.includes("## 背景\n<!-- 为什么做、要解决什么问题 -->"), "正文应是骨架");
+    await page.locator(".editor__template", { hasText: "实现详情" }).waitFor();
+    expect(made.excerpt === "背景 设计 关键代码 踩坑 待办 写进去的正文", `摘要不该有提示语：${made.excerpt}`);
+
+    // 4. 预览、连读里看不到提示注释
+    await page.getByRole("button", { name: "只看预览", exact: true }).click();
+    const preview = page.locator(".preview").first();
+    await preview.locator("h2", { hasText: "关键代码" }).waitFor();
+    expect(!(await preview.textContent()).includes("为什么做"), "预览里不该显示提示注释");
+    await page.getByRole("button", { name: "分栏", exact: true }).click();
+    await childRow.locator(".group-row__main").click();
+    await page.locator(".book__chapter-title", { hasText: "模板笔记" }).waitFor();
+    expect(!(await page.locator(".book").textContent()).includes("要解决什么问题"), "连读里不该显示提示注释");
+    // 连读「在此后新建一章」：模板默认是项目的默认模板
+    await page
+      .locator(".book__chapter", { has: page.locator(".book__chapter-title", { hasText: "第二章" }) })
+      .getByRole("button", { name: /之后新建一章/ })
+      .click();
+    expect((await page.getByLabel("新一章用的模板").inputValue()) === "实现详情", "新建章应默认用项目的默认模板");
+    await page.getByLabel("新一章的标题").press("Escape");
+
+    // 5. Ctrl+K 输入「模板」：第一条是打开模板管理的命令
+    await page.keyboard.press("Control+k");
+    await page.getByLabel("搜索关键词").fill("模板");
+    await page.locator(".hit--command", { hasText: "笔记模板" }).waitFor();
+    await page.keyboard.press("Enter");
+    await panel.waitFor();
+    await page.keyboard.press("Escape");
+    await panel.waitFor({ state: "detached" });
+  });
+
   await step("主题切换并在刷新后保持", async () => {
     const toggle = page.getByLabel(/切换主题/);
     await toggle.click(); // system → light

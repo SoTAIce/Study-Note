@@ -74,3 +74,8 @@ test("改标题认回原卡：同位置、相似才配对；删了、换了完�
   assert.deepEqual(pairs, [[after[0].id, before[0].id]]);
   assert.deepEqual(matchRenamed(before, before), []);
 });
+
+test("模板提示注释里的「问题 :: 答案」不算卡，后面的真卡行号不变（tpl-001）", () => {
+  const body = "## 简卡\n<!-- 一行一张：问题 :: 答案，复习时用 -->\n<!--\n多行 :: 注释\n-->\n闭包 :: 函数和它捕获的变量\n";
+  assert.deepEqual(parseCards(body), [{ kind: "line", title: "闭包", body: "函数和它捕获的变量", line: 5 }]);
+});

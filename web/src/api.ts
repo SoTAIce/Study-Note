@@ -29,6 +29,8 @@ export type NoteMeta = {
   type: NoteType;
   tags: string[];
   group?: string;
+  /** 新建时套用的模板名（tpl-001） */
+  template?: string;
   source?: string;
 };
 
@@ -65,6 +67,8 @@ export type CreateInput = {
   type?: NoteType;
   source?: string;
   group?: string | null;
+  /** 模板名（tpl-001）；null = 不用模板；不传 = 所在组有默认模板就自动套用 */
+  template?: string | null;
 };
 
 export type SaveInput = {

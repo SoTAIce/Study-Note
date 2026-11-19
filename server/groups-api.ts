@@ -15,6 +15,7 @@ import {
   type MergedGroup,
 } from "./groups.ts";
 import { ConflictError, type NoteStore } from "./store.ts";
+import { removeGroupDefaults, renameGroupDefaults } from "./templates.ts";
 
 export class GroupsHttpError extends Error {
   readonly status: number;
@@ -148,6 +149,8 @@ export function renameGroup(
   // 父分组自己一定要有条目（没登记过也补上），子项目条目各自改名
   const names = new Set([normalizeGroupName(from), ...entries.map(normalizeGroupName)]);
   for (const name of names) renameGroupEntry(deps.dataDir, name, replaceGroupPrefix(name, from, check.name));
+  // 子项目的默认模板（tpl-001）跟着改名：有笔记没改成功时也改，默认值属于「这个项目」，不属于某篇笔记
+  renameGroupDefaults(deps.dataDir, from, check.name);
   return { renamed, failed };
 }
 
@@ -179,6 +182,7 @@ export function deleteGroup(
   if (failed.length === 0) {
     removeGroupEntry(deps.dataDir, name);
     for (const entry of entries) removeGroupEntry(deps.dataDir, entry);
+    removeGroupDefaults(deps.dataDir, name);
   }
   return { ungrouped, failed };
 }

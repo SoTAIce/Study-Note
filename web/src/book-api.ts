@@ -41,6 +41,8 @@ export function createBookChapter(input: {
   title: string;
   after?: string;
   baseHash?: string;
+  /** 模板名（tpl-001）；null = 不用；不传 = 用项目的默认模板 */
+  template?: string | null;
 }): Promise<{ note: { id: string; hash: string; title: string }; index: { id: string; hash: string; created: boolean } }> {
   return request("/book/chapters", { method: "POST", body: jsonBody(input) });
 }

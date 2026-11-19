@@ -6,8 +6,8 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-18，537 个单元/接口测试 + 四个基准 + E2E 29 步（本机；GitHub Actions 见会话 028）
-- 优先级最高的未完成功能：连读方案四期已全部完成；下一件是 tpl-001（统一笔记模板，需先写方案并经用户批准）；srs-002、blog-001 为 blocked，见 docs/待实现.md
+- 最近一次全绿：2026-11-19，563 个单元/接口测试 + 四个基准 + E2E 30 步（本机；GitHub Actions 见会话 029）
+- 优先级最高的未完成功能：tpl-002（按模板规整，方案已批准）；之后 help-001（先写方案）；srs-002、blog-001 为 blocked，见 docs/待实现.md
 - 当前阻塞：无
 
 ## 会话记录
@@ -269,3 +269,14 @@
 - export-002 的分组部分由本期完成，条目描述改成只剩「按标签导出」。
 - 验证：./init.sh 537 + 四个基准 + E2E 29 步全绿。
 - 下一步：tpl-001（统一笔记模板）需先写方案、经用户批准；help-001 在它之后；blog-001、srs-002 仍等用户。
+
+### 会话 029 · 2026-11-19 · 笔记模板（tpl-001）
+
+- 用户批准模板方案（「然后开始做tpl-001吧」），方案状态改为已批准。
+- 后端：`server/templates.ts`（`data/templates.json` 读写 + version 冲突、子项目默认模板、改名连带改笔记文件头、`resolveNewNoteTemplate`）；`GET/PUT /api/templates`、`POST /api/templates/rename`、`PUT /api/templates/default`；`POST /api/notes`、`POST /api/book/chapters` 接受 `template`（不传且正文为空时套用组的默认模板）；`PUT /api/notes/:id` 接受 `template`。笔记文件头 `template:`（`NoteMeta.template`、`patchFrontmatterTemplate`、`store.setTemplate`）；索引 `notes.template` 列（SCHEMA_VERSION 6）；分组改名 / 删除连带默认模板；备份带上 `_templates/templates.json`。
+- 注释：`markdown.ts` 去掉完整的 `<!-- -->`（没闭合的、代码里的照旧显示）；`parse.ts` 的 `stripHtmlComments` 用在摘要、全文索引、简卡解析。
+- 前端：`TemplatesPanel`（列表 + 上下移、小节标题 / 提示、骨架预览、子项目默认模板；入口：左栏底部图标、新建页「管理模板」、分组行模板按钮、Ctrl+K「模板」）；新建页模板栏（预选默认 / 上次用的、预填骨架、写了字先问、复制成提示词）；连读 + 新建章可换模板；编辑页显示模板名或「模板『X』已不存在」。纯函数在 `web/src/lib/templates.ts`，前后端共用。
+- 和方案字面不同的几处（简卡不预填示例行、默认模板只在正文为空时自动套用、按钮排序代替拖动等）记在方案第十二节。
+- 截图里发现新建页正文框把 `<!--` 连写成箭头，补了 `font-variant-ligatures: none`。
+- 验证：./init.sh 563 + 四个基准 + E2E 30 步全绿；截图 e2e-artifacts/25-templates-panel(-dark).png、26-compose-template.png 已看过。
+- 下一步：tpl-002（按模板规整）。

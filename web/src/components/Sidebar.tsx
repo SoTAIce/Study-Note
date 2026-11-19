@@ -3,7 +3,7 @@ import type { BackupStatus, NoteSummary, TagCount, TimelineItem } from "../api.t
 import type { GroupView } from "../groups-api.ts";
 import { dayKey, groupByDay, relativeTime } from "../lib/time.ts";
 import { filterLabel, sameFilter, type Filter } from "../lib/nav.ts";
-import { buildGroupTree, leafName, readCollapsedGroups, writeCollapsedGroups } from "../lib/group-tree.ts";
+import { buildGroupTree, leafName, readCollapsedGroups, sameGroupName, writeCollapsedGroups } from "../lib/group-tree.ts";
 import { THEME_LABEL, type ThemePref } from "../lib/theme.ts";
 import { useConfirm } from "./ConfirmDialog.tsx";
 import Icon, { type IconName } from "./Icon.tsx";
@@ -34,6 +34,12 @@ type Props = {
   onReindex: () => void;
   onReload: () => void;
   onOpenBackup: () => void;
+  /** 笔记模板管理（tpl-001） */
+  onOpenTemplates: () => void;
+  /** 给某个分组 / 子项目设默认模板：打开模板面板并定位到它 */
+  onGroupTemplate: (group: string) => void;
+  /** 分组 → 默认模板名（行上的按钮提示用） */
+  groupDefaults: Record<string, string>;
   onOpenAi: () => void;
   aiActive: boolean;
   onCreateGroup: (name: string) => void;
@@ -92,6 +98,9 @@ export default function Sidebar({
   onReindex,
   onReload,
   onOpenBackup,
+  onOpenTemplates,
+  onGroupTemplate,
+  groupDefaults,
   onOpenAi,
   aiActive,
   onCreateGroup,
@@ -120,6 +129,11 @@ export default function Sidebar({
   );
   const groupTree = useMemo(() => buildGroupTree(groups), [groups]);
   const hasSubprojects = groupTree.some((node) => node.children.length > 0);
+
+  function defaultTemplateOf(name: string): string | undefined {
+    const key = Object.keys(groupDefaults).find((group) => sameGroupName(group, name));
+    return key ? groupDefaults[key] : undefined;
+  }
 
   function toggleGroupCollapsed(name: string): void {
     setCollapsedGroups((prev) => {
@@ -236,6 +250,19 @@ export default function Sidebar({
               <Icon name="plus" size={12} />
             </button>
           ) : null}
+          <button
+            type="button"
+            className={`icon-btn${defaultTemplateOf(group.name) ? " is-on" : ""}`}
+            title={
+              defaultTemplateOf(group.name)
+                ? `默认模板：${defaultTemplateOf(group.name)}（点了改）`
+                : "设默认模板：在这里新建笔记时自动套用"
+            }
+            aria-label={`「${group.name}」的默认模板`}
+            onClick={() => onGroupTemplate(group.name)}
+          >
+            <Icon name="template" size={12} />
+          </button>
           <button
             type="button"
             className="icon-btn"
@@ -683,6 +710,15 @@ export default function Sidebar({
           <Icon name="cloud" size={15} />
           <span className="backup-entry__text">备份 · {backupLabel}</span>
           <span className="backup-entry__dot" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={onOpenTemplates}
+          title="笔记模板：新建笔记时预填的小节"
+          aria-label="笔记模板"
+        >
+          <Icon name="template" size={15} />
         </button>
         <button
           type="button"

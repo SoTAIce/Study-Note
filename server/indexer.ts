@@ -4,7 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { ChangeEvent } from "./events.ts";
 import { diffIndexed, type IndexChanges, type IndexedShape } from "./index-diff.ts";
 import { indexCards, matchRenamed, parseCards, type IndexedCard } from "./cards.ts";
-import { contentHash, excerpt, extractLinks, extractTags } from "./parse.ts";
+import { contentHash, excerpt, extractLinks, extractTags, stripHtmlComments } from "./parse.ts";
 import { toLocalIso, type NoteStore, type StoredNote } from "./store.ts";
 
 const DEBOUNCE_MS = 250;
@@ -137,8 +137,8 @@ export class Indexer {
 
     this.db
       .prepare(
-        `INSERT OR REPLACE INTO notes (id, path, title, excerpt, type, created, updated, content_hash, chars, indexed_at, group_name)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT OR REPLACE INTO notes (id, path, title, excerpt, type, created, updated, content_hash, chars, indexed_at, group_name, template)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -152,6 +152,7 @@ export class Indexer {
         note.parsed.body.length,
         at,
         note.parsed.meta.group ?? null,
+        note.parsed.meta.template ?? null,
       );
 
     const insertTag = this.db.prepare("INSERT OR IGNORE INTO tags (note_id, tag) VALUES (?, ?)");
@@ -169,7 +170,8 @@ export class Indexer {
     this.db.prepare("DELETE FROM notes_fts WHERE rowid = ?").run(rowid);
     this.db
       .prepare("INSERT INTO notes_fts (rowid, note_id, title, body) VALUES (?, ?, ?, ?)")
-      .run(rowid, id, note.parsed.meta.title, note.parsed.body);
+      // 模板提示注释（tpl-001）不进全文索引：否则搜「为什么做」会命中每一篇模板笔记
+      .run(rowid, id, note.parsed.meta.title, stripHtmlComments(note.parsed.body));
 
     // 知识简卡（srs-001）
     const cards = indexCards(id, parseCards(note.parsed.body));

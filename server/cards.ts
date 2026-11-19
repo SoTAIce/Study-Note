@@ -10,6 +10,7 @@
  * 改了标题由 matchRenamed 按位置和相似度认回原来的卡（复习日志里记一条别名）。
  */
 import crypto from "node:crypto";
+import { stripHtmlComments } from "./parse.ts";
 
 export type ParsedCard = {
   kind: "callout" | "line";
@@ -33,7 +34,8 @@ function maskInlineCode(line: string): string {
 }
 
 export function parseCards(body: string): ParsedCard[] {
-  const lines = body.split(/\r?\n/);
+  // 模板提示注释（tpl-001）里的「问题 :: 答案」只是示例，不算卡；去注释时行号不变
+  const lines = stripHtmlComments(body).split(/\r?\n/);
   const out: ParsedCard[] = [];
   let fenced = false;
   for (let i = 0; i < lines.length; i += 1) {

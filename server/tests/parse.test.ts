@@ -11,6 +11,8 @@ import {
   contentHash,
   type NoteMeta,
   patchFrontmatterGroup,
+  patchFrontmatterTemplate,
+  stripHtmlComments,
 } from "../parse.ts";
 
 const fb = { path: "2026-10-30-位置编码.md", mtime: "2026-10-30T02:00:00Z" };
@@ -272,4 +274,65 @@ test("没有 frontmatter 的笔记：归组再移出，文件逐字节回到原�
   // 整份文件是 CRLF 时，插入的块也用 CRLF（不制造混合换行）\n  assert.equal(setCrlf.raw, "---\r\ngroup: Go 学习\r\n---\r\n\r\n# 标题\r\n\r\n正文\r\n");
   const clearedCrlf = patchFrontmatterGroup(setCrlf.raw, null);
   assert.equal(clearedCrlf.raw, crlf);
+});
+
+// ---- 笔记模板（tpl-001） ----
+
+test("stripHtmlComments：去掉注释、换行和行号不变；代码块、行内代码、没闭合的不动", () => {
+  assert.equal(stripHtmlComments("## 背景\n<!-- 为什么做 -->\n正文"), "## 背景\n\n正文");
+  assert.equal(stripHtmlComments("a <!-- 两行\n注释 --> b"), "a \n b");
+  assert.equal(stripHtmlComments("<!-- <script>x</script> -->正文"), "正文");
+  assert.equal(stripHtmlComments("```\n<!-- 代码里 -->\n```\n<!-- 外面 -->"), "```\n<!-- 代码里 -->\n```\n");
+  assert.equal(stripHtmlComments("~~~~\n```\n<!-- 还在代码里 -->\n~~~~"), "~~~~\n```\n<!-- 还在代码里 -->\n~~~~");
+  assert.equal(stripHtmlComments("看 `<!-- 行内 -->` 和 <!-- 注释 -->"), "看 `<!-- 行内 -->` 和 ");
+  assert.equal(stripHtmlComments("<!-- 没闭合\n正文"), "<!-- 没闭合\n正文");
+  const plain = "没有注释的正文\n";
+  assert.equal(stripHtmlComments(plain), plain);
+});
+
+test("excerpt：模板提示注释不进摘要", () => {
+  assert.equal(excerpt("## 背景\n<!-- 为什么做、要解决什么问题 -->\n\n真正的内容\n"), "背景 真正的内容");
+});
+
+test("parseNote / serializeNote：template 键读写，写在 group 之后", () => {
+  const meta: NoteMeta = {
+    id: "t1",
+    title: "主循环",
+    created: "2026-11-19T09:00:00+08:00",
+    updated: "2026-11-19T09:00:00+08:00",
+    type: "note",
+    tags: [],
+    group: "agent/looprun",
+    template: "实现详情",
+  };
+  const raw = serializeNote(meta, "正文\n");
+  assert.match(raw, /group: agent\/looprun\ntemplate: 实现详情\n---/);
+  assert.equal(parseNote(raw, fb).meta.template, "实现详情");
+  assert.equal(parseNote('---\ntemplate: "a: b"\n---\n\nx', fb).meta.template, "a: b");
+  assert.equal(parseNote("---\ntitle: x\n---\n\ny", fb).meta.template, undefined);
+});
+
+test("patchFrontmatterTemplate：只改这一行，正文与其它键逐字节保留；插在 group 之后；null 删行", () => {
+  const raw = "---\nid: a\ntags: []\ngroup: g\nsource: s\n---\n\n正文 <!-- x -->\n";
+  const added = patchFrontmatterTemplate(raw, "实现详情");
+  assert.equal(added.raw, "---\nid: a\ntags: []\ngroup: g\ntemplate: 实现详情\nsource: s\n---\n\n正文 <!-- x -->\n");
+  const renamed = patchFrontmatterTemplate(added.raw, "实现细节");
+  assert.equal(renamed.raw, raw.replace("group: g\n", "group: g\ntemplate: 实现细节\n"));
+  // 只改大小写也算改
+  assert.equal(patchFrontmatterTemplate("---\ntemplate: daily\n---\nx", "Daily").raw, "---\ntemplate: Daily\n---\nx");
+  assert.deepEqual(patchFrontmatterTemplate(added.raw, "实现详情"), { raw: added.raw, changed: false });
+  assert.equal(patchFrontmatterTemplate(added.raw, null).raw, raw);
+  // 没有 group：插在 tags（含块状列表）之后
+  assert.equal(
+    patchFrontmatterTemplate("---\ntags:\n  - a\nsource: s\n---\nx", "T").raw,
+    "---\ntags:\n  - a\ntemplate: T\nsource: s\n---\nx",
+  );
+  // 没有 frontmatter：插最小块，再删掉逐字节回到原样
+  const bare = "# 标题\n正文";
+  const withBlock = patchFrontmatterTemplate(bare, "T");
+  assert.equal(withBlock.raw, "---\ntemplate: T\n---\n\n# 标题\n正文");
+  assert.equal(patchFrontmatterTemplate(withBlock.raw, null).raw, bare);
+  assert.deepEqual(patchFrontmatterTemplate(bare, null), { raw: bare, changed: false });
+  // 带引号的值要转义
+  assert.match(patchFrontmatterTemplate("---\nid: a\n---\nx", "a: b").raw, /template: "a: b"/);
 });

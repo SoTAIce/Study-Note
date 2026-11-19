@@ -18,6 +18,19 @@ export function parentOf(name: string): string | null {
   return at > 0 ? name.slice(0, at) : null;
 }
 
+/** 两个组名是否同一个组：空白规整（含 `/` 两边）、不区分大小写，与 server/groups.ts 的 sameGroup 同义。 */
+export function sameGroupName(a: string | null | undefined, b: string | null | undefined): boolean {
+  const norm = (name: string | null | undefined) =>
+    (name ?? "")
+      .replace(/[\s\u3000]+/g, " ")
+      .split(GROUP_SEP)
+      .map((part) => part.trim())
+      .join(GROUP_SEP)
+      .trim()
+      .toLowerCase();
+  return norm(a) === norm(b);
+}
+
 /** 子项目在树里显示的短名（`agent/looprun` → `looprun`）；顶层分组原样返回。 */
 export function leafName(name: string): string {
   const at = name.indexOf(GROUP_SEP);

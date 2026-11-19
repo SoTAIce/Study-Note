@@ -1,5 +1,29 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
+import type { TemplatesState } from "../templates-api.ts";
+import { findTemplate, groupDefaultTemplate, isBlankOrSkeleton, templatePrompt, templateSkeleton } from "../lib/templates.ts";
+import { copyText } from "../lib/clipboard.ts";
+import { useConfirm } from "./ConfirmDialog.tsx";
+
+/** 上次在新建页选的模板（本机浏览器记住；分组有默认模板时以默认的为准） */
+const LAST_TEMPLATE_KEY = "study-notes.compose.template";
+
+function readLastTemplate(): string {
+  try {
+    return window.localStorage.getItem(LAST_TEMPLATE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeLastTemplate(name: string): void {
+  try {
+    if (name) window.localStorage.setItem(LAST_TEMPLATE_KEY, name);
+    else window.localStorage.removeItem(LAST_TEMPLATE_KEY);
+  } catch {
+    // 隐私模式等拿不到存储：不记就是了
+  }
+}
 
 type Props = {
   busy: boolean;
@@ -8,8 +32,12 @@ type Props = {
   groups: string[];
   /** 打开新建页时左栏选中的分组：预先填进分组栏，可以改或清空 */
   initialGroup?: string;
+  /** 笔记模板（tpl-001）；null = 还没读到 */
+  templates: TemplatesState | null;
+  onManageTemplates: () => void;
+  onNotify: (text: string, kind?: "ok" | "info" | "error") => void;
   onCancel: () => void;
-  onCreate: (input: { title: string; body: string; group: string | null }) => void;
+  onCreate: (input: { title: string; body: string; group: string | null; template: string | null }) => void;
 };
 
 /**
@@ -17,20 +45,92 @@ type Props = {
  * 这里什么都不写磁盘，点「创建并开始编辑」才 POST /api/notes；
  * 取消则整页丢弃（不会留下「未命名」的空笔记）。
  */
-export default function ComposeView({ busy, error, groups, initialGroup = "", onCancel, onCreate }: Props) {
+function sameName(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+export default function ComposeView({
+  busy,
+  error,
+  groups,
+  initialGroup = "",
+  templates,
+  onManageTemplates,
+  onNotify,
+  onCancel,
+  onCreate,
+}: Props) {
+  const confirm = useConfirm();
   const [title, setTitle] = useState("");
   const [group, setGroup] = useState(initialGroup);
   const [body, setBody] = useState("");
+  /** 选中的模板名；空串 = 不用模板 */
+  const [template, setTemplate] = useState("");
+  /** 用户自己动过模板选择后，换分组不再自动跟着换 */
+  const touchedRef = useRef(false);
   const titleRef = useRef<HTMLInputElement | null>(null);
   const bodyRef = useRef<HTMLTextAreaElement | null>(null);
+  const list = templates?.templates ?? [];
+  const chosen = findTemplate(list, template);
 
   useEffect(() => {
     titleRef.current?.focus();
   }, []);
 
+  // 模板读到以后定初值：分组有默认模板用默认的，否则用上次选的（tpl-001 方案 5.2）
+  useEffect(() => {
+    if (!templates || touchedRef.current) return;
+    const preset =
+      groupDefaultTemplate(templates.groupDefaults, templates.templates, initialGroup) ??
+      findTemplate(templates.templates, readLastTemplate());
+    if (preset) void choose(preset.name, { quiet: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templates]);
+
+  /** 换模板：正文空着或只有骨架就直接换成新骨架；写了东西先问 */
+  async function choose(name: string, opts: { quiet?: boolean } = {}): Promise<void> {
+    setTemplate(name);
+    const all = templates?.templates ?? [];
+    const next = findTemplate(all, name);
+    if (!next) {
+      if (body.trim() && isBlankOrSkeleton(body, all)) setBody("");
+      return;
+    }
+    if (isBlankOrSkeleton(body, all)) {
+      setBody(templateSkeleton(next));
+      return;
+    }
+    if (opts.quiet) return;
+    const ok = await confirm({
+      title: `换成「${next.name}」的骨架？`,
+      message: "正文已经写了东西。换成骨架会清掉现在的正文；不换就只记下模板名，正文照旧。",
+      confirmLabel: "换成骨架",
+      cancelLabel: "保留正文",
+      danger: true,
+    });
+    if (ok) setBody(templateSkeleton(next));
+  }
+
+  function changeGroup(next: string): void {
+    setGroup(next);
+    if (touchedRef.current || !templates) return;
+    const preset = groupDefaultTemplate(templates.groupDefaults, templates.templates, next.trim());
+    if (preset && !sameName(preset.name, template)) void choose(preset.name, { quiet: true });
+  }
+
+  async function copyPrompt(): Promise<void> {
+    if (!chosen) return;
+    const ok = await copyText(templatePrompt(chosen, title));
+    onNotify(
+      ok ? "已复制提示词：发给 Claude、GPT 或 Gemini，把回答粘进正文" : "复制失败：浏览器没给剪贴板权限",
+      ok ? "ok" : "error",
+    );
+  }
+
   function submit(): void {
     if (busy) return;
-    onCreate({ title: title.trim(), body, group: group.trim() ? group.trim() : null });
+    writeLastTemplate(chosen?.name ?? "");
+    onCreate({ title: title.trim(), body, group: group.trim() ? group.trim() : null, template: chosen?.name ?? null });
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLElement>): void {
@@ -95,7 +195,7 @@ export default function ComposeView({ busy, error, groups, initialGroup = "", on
             id="compose-group"
             className="compose__group-input"
             value={group}
-            onChange={(event) => setGroup(event.target.value)}
+            onChange={(event) => changeGroup(event.target.value)}
             list="compose-group-options"
             placeholder="不填就是未分组；填新的会自动建组"
             spellCheck={false}
@@ -105,6 +205,41 @@ export default function ComposeView({ busy, error, groups, initialGroup = "", on
               <option key={name} value={name} />
             ))}
           </datalist>
+        </div>
+        <div className="compose__group compose__template">
+          <label className="compose__group-label" htmlFor="compose-template">
+            模板
+          </label>
+          <select
+            id="compose-template"
+            className="compose__template-select"
+            value={chosen?.name ?? ""}
+            onChange={(event) => {
+              touchedRef.current = true;
+              void choose(event.target.value);
+            }}
+            disabled={!templates}
+          >
+            <option value="">不用模板</option>
+            {list.map((item) => (
+              <option key={item.name} value={item.name}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+          {chosen ? (
+            <button
+              type="button"
+              className="btn btn--small"
+              onClick={() => void copyPrompt()}
+              title="复制一段提示词：让外部 AI 按这个模板的小节写，回答粘回正文"
+            >
+              复制成提示词
+            </button>
+          ) : null}
+          <button type="button" className="link-btn" onClick={onManageTemplates}>
+            管理模板
+          </button>
         </div>
         <textarea
           ref={bodyRef}

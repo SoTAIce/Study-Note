@@ -931,14 +931,19 @@
       "area": "editor",
       "title": "笔记模板：设置里管理、新建预填、复制成提示词、子项目默认模板",
       "user_visible_behavior": "设置面板里管理模板（内置「实现详情」「学习笔记」）；新建笔记选模板预填 ## 小节骨架（提示写成预览里不显示的注释），文件头记 template:；新建页一键复制成给外部 AI 的提示词；子项目可设默认模板，在里面新建或连读里新建章自动套用。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
         "单测：模板校验、骨架、提示词、template: 行读写、注释渲染",
         "接口测试：模板读写与版本冲突、改名连带笔记、默认模板随分组改名删除、新建自动套用",
         "E2E：设置里建模板、子项目默认模板预填、复制成提示词、预览不显示提示注释"
       ],
-      "evidence": [],
-      "notes": "方案：docs/superpowers/specs/2026-11-18-note-templates-design.md（草案，等用户批准）。第十节第 1 期。"
+      "evidence": [
+        "2026-11-19 ./init.sh 全绿：pnpm test 563/563（新增 web/src/lib/templates.test.ts 9 条：内置模板、名字与小节校验、骨架、提示词、默认模板查找；server/tests/templates.test.ts 11 条接口测试：无文件给内置、PUT 版本冲突 409、坏 JSON 报 500 不覆盖、设 / 清默认、删模板清默认、新建自动套用与显式 null / 指定 / 不存在 400 且不留空组、连读新建章用骨架、PUT 笔记改 template、改名连带笔记只改一行、分组改名删除连带默认值、备份带 templates.json；parse / cards / markdown 测试补注释去除、template: 行读写、提示里的 :: 不算卡）",
+        "四个基准通过（search 中位数 ≤ 66ms、index 二次启动 312ms、review 72ms、book 70ms）",
+        "E2E 30 步全绿，新增「笔记模板」一步：面板新建模板并落盘、子项目设默认模板、新建页预选并预填骨架、复制成提示词读剪贴板核对、换「不用模板」清骨架、文件头 template:、编辑页显示模板名、摘要无提示语、预览与连读看不到提示、连读新建章默认模板、Ctrl+K「模板」打开面板",
+        "截图 e2e-artifacts/25-templates-panel.png / 25-templates-panel-dark.png / 26-compose-template.png 人工看过：浅色深色都清楚，提示注释不再被连写成箭头"
+      ],
+      "notes": "方案：docs/superpowers/specs/2026-11-18-note-templates-design.md（用户 2026-11-19 批准）。第十节第 1 期。 实现与方案的差异见方案第十二节。"
     },
     {
       "id": "tpl-002",
@@ -953,7 +958,7 @@
         "E2E：粘贴大段 → 提示条 → 规整预览 → 应用 → 撤销"
       ],
       "evidence": [],
-      "notes": "方案：docs/superpowers/specs/2026-11-18-note-templates-design.md（草案，等用户批准）。第十节第 2 期，依赖 tpl-001。"
+      "notes": "方案：docs/superpowers/specs/2026-11-18-note-templates-design.md（用户 2026-11-19 批准）。第十节第 2 期，依赖 tpl-001。"
     },
     {
       "id": "help-001",

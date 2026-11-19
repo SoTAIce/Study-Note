@@ -16,6 +16,8 @@ import { caretCoords } from "../lib/caret-coords.ts";
 import { downloadBlob, printHtml } from "../lib/download.ts";
 import type { ExportPrefs } from "../lib/export.ts";
 import { leafName } from "../lib/group-tree.ts";
+import { groupDefaultTemplate, templateSkeleton } from "../lib/templates.ts";
+import type { TemplatesState } from "../templates-api.ts";
 import { toggleTask } from "../lib/markdown.ts";
 import { autosaveDelay } from "../lib/save-plan.ts";
 import ExportDialog from "./ExportDialog.tsx";
@@ -36,6 +38,8 @@ type Props = {
   /** 生成目录、新建缺章等写入之后，App 刷新左栏 */
   onChanged: () => void;
   onToast: (text: string, kind: "ok" | "error" | "info") => void;
+  /** 笔记模板（tpl-001）：新建章默认用项目的默认模板，输入框旁边可以临时换 */
+  templates?: TemplatesState | null;
 };
 
 const EDIT_STATUS_TEXT = { saving: "保存中…", dirty: "未保存", saved: "已保存", conflict: "有冲突", error: "保存失败" } as const;
@@ -68,7 +72,7 @@ type Editing = {
 };
 
 /** 「在此后新建一章」的输入框挂在哪一章下面 */
-type Adding = { after: string | null; title: string };
+type Adding = { after: string | null; title: string; template: string };
 
 function isDirty(editing: Editing | null): boolean {
   return editing !== null && editing.draft !== editing.original;
@@ -78,7 +82,17 @@ function isDirty(editing: Editing | null): boolean {
  * 连读（book-001）：目录笔记的正文作总览，链接顺序就是章节顺序，整个项目上下连成一篇。
  * book-002：双击或点「编辑」让一章原地变成编辑框；同一时间只编辑一章；「在此后新建一章」。
  */
-export default function BookView({ group, tick, knownTitles, onOpenNote, onOpenTitle, onFilterTag, onChanged, onToast }: Props) {
+export default function BookView({
+  group,
+  tick,
+  knownTitles,
+  onOpenNote,
+  onOpenTitle,
+  onFilterTag,
+  onChanged,
+  onToast,
+  templates = null,
+}: Props) {
   const [book, setBook] = useState<Book | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -367,6 +381,15 @@ export default function BookView({ group, tick, knownTitles, onOpenNote, onOpenT
     }
   }
 
+  /** 项目的默认模板（tpl-001） */
+  function projectTemplate() {
+    return templates ? groupDefaultTemplate(templates.groupDefaults, templates.templates, group) : undefined;
+  }
+
+  function startAdding(after: string | null): void {
+    setAdding({ after, title: "", template: projectTemplate()?.name ?? "" });
+  }
+
   /** 在此后新建一章：建好后直接进入编辑 */
   async function submitAdding(): Promise<void> {
     if (!adding || busy) return;
@@ -380,6 +403,8 @@ export default function BookView({ group, tick, knownTitles, onOpenNote, onOpenT
         title,
         after: adding.after ?? undefined,
         baseHash: book?.index?.hash,
+        // 显式传：空串 = 这次不用模板
+        template: adding.template || null,
       });
       setAdding(null);
       const next = await getBook(group);
@@ -518,7 +543,14 @@ export default function BookView({ group, tick, knownTitles, onOpenNote, onOpenT
 
   const createMissing = (title: string) =>
     run(async () => {
-      await api.createNote({ title, body: `# ${title}\n`, tags: [], group });
+      const template = projectTemplate();
+      await api.createNote({
+        title,
+        body: template ? templateSkeleton(template) : `# ${title}\n`,
+        tags: [],
+        group,
+        template: template?.name ?? null,
+      });
       return `已新建「${title}」`;
     });
 
@@ -568,6 +600,22 @@ export default function BookView({ group, tick, knownTitles, onOpenNote, onOpenT
           autoFocus
           spellCheck={false}
         />
+        {templates && templates.templates.length > 0 ? (
+          <select
+            className="book__adding-template"
+            value={adding.template}
+            onChange={(event) => setAdding({ ...adding, template: event.target.value })}
+            aria-label="新一章用的模板"
+            title="新一章用的模板（默认是项目的默认模板）"
+          >
+            <option value="">不用模板</option>
+            {templates.templates.map((item) => (
+              <option key={item.name} value={item.name}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <button type="submit" className="btn btn--small btn--primary" disabled={busy || !adding.title.trim()}>
           新建
         </button>
@@ -676,7 +724,7 @@ export default function BookView({ group, tick, knownTitles, onOpenNote, onOpenT
             <>
               <p className="book__notice">
                 这个分组里还没有笔记。
-                <button type="button" className="link-btn" onClick={() => setAdding({ after: null, title: "" })}>
+                <button type="button" className="link-btn" onClick={() => startAdding(null)}>
                   新建第一章
                 </button>
               </p>
@@ -768,7 +816,7 @@ export default function BookView({ group, tick, knownTitles, onOpenNote, onOpenT
                           className="icon-btn"
                           title="在此后新建一章"
                           aria-label={`在《${section.title}》之后新建一章`}
-                          onClick={() => setAdding({ after: section.note!.id, title: "" })}
+                          onClick={() => startAdding(section.note!.id)}
                         >
                           <Icon name="plus" size={14} />
                         </button>

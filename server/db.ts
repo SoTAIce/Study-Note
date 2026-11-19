@@ -2,9 +2,10 @@ import { DatabaseSync } from "node:sqlite";
 
 /**
  * 改了表结构或索引里的派生字段（摘要、类型）就加一，旧库打开时整库重建。
- * 3：list-001 摘要规则、ui-008 inbox/ 默认算想法；4：notes_fts 的 rowid 与 notes 对齐（perf-006）；5：知识简卡表 cards（srs-001）
+ * 3：list-001 摘要规则、ui-008 inbox/ 默认算想法；4：notes_fts 的 rowid 与 notes 对齐（perf-006）；5：知识简卡表 cards（srs-001）；
+ * 6：notes.template 列、全文索引不含 HTML 注释（tpl-001）
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -23,7 +24,8 @@ CREATE TABLE IF NOT EXISTS notes (
   content_hash TEXT,
   chars INTEGER,
   indexed_at TEXT,
-  group_name TEXT
+  group_name TEXT,
+  template TEXT
 );
 CREATE INDEX IF NOT EXISTS notes_updated ON notes(updated DESC);
 CREATE INDEX IF NOT EXISTS notes_title ON notes(title);

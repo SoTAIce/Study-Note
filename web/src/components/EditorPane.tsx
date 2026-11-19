@@ -42,6 +42,8 @@ type Props = {
   tags: string[];
   /** 已有分组，供输入框联想 */
   groups: string[];
+  /** 现有模板名（tpl-001）：文件头写的模板已经删了时提示一下；null = 还没读到，不提示 */
+  templateNames?: string[] | null;
   /**
    * 把这篇笔记移到某个组（null = 移出分组）。
    * 返回值表示是否成功；失败时输入框要还原成磁盘上的组名。
@@ -106,6 +108,7 @@ export default function EditorPane({
   body,
   tags,
   groups,
+  templateNames = null,
   onMoveToGroup,
   status,
   saveError,
@@ -136,6 +139,10 @@ export default function EditorPane({
 }: Props) {
   const lines = body ? body.split("\n").length : 0;
   const [groupDraft, setGroupDraft] = useState(note.meta.group ?? "");
+  const templateGone =
+    !!note.meta.template &&
+    !!templateNames &&
+    !templateNames.some((name) => name.trim().toLowerCase() === note.meta.template!.trim().toLowerCase());
   const previewBody = usePreviewBody(note.id, body, viewMode !== "write");
 
   // —— 分栏同步滚动（editor-004）：编辑区滚动时预览跟着走 ——
@@ -253,6 +260,19 @@ export default function EditorPane({
                 ))}
               </datalist>
             </label>
+            {note.meta.template ? (
+              <span
+                className={`editor__template${templateGone ? " is-gone" : ""}`}
+                title={
+                  templateGone
+                    ? `文件头里写的模板「${note.meta.template}」已经不存在了（删了或改了名），笔记本身不受影响`
+                    : `新建时套用的模板：${note.meta.template}`
+                }
+              >
+                <Icon name="template" size={12} />
+                {templateGone ? `模板「${note.meta.template}」已不存在` : note.meta.template}
+              </span>
+            ) : null}
             <span className="editor__tags" aria-label="标签">
               {tags.length === 0 ? (
                 <span className="tagline__hint">正文里写 #标签 自动归类</span>

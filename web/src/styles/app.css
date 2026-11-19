@@ -361,7 +361,11 @@ kbd {
 .agent__select,
 .ai__ask,
 .group-edit__input,
-.book__adding-input {
+.book__adding-input,
+.compose__template-select,
+.tpl-panel input,
+.tpl-panel select,
+.book__adding-template {
   background: var(--bg-raised);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
@@ -377,7 +381,11 @@ kbd {
 .agent__select:focus,
 .ai__ask:focus,
 .group-edit__input:focus,
-.book__adding-input:focus {
+.book__adding-input:focus,
+.compose__template-select:focus,
+.tpl-panel input:focus,
+.tpl-panel select:focus,
+.book__adding-template:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.2);
 }
@@ -2788,6 +2796,20 @@ button.stat-card:hover {
 .compose__group-input::placeholder {
   color: var(--text-faint);
 }
+/* 模板（tpl-001）：选择框 + 复制成提示词 + 管理模板 */
+.compose__template {
+  flex-wrap: wrap;
+}
+.compose__template-select {
+  min-width: 140px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding: 4px 8px;
+}
+.compose__template-select:focus {
+  color: var(--text);
+}
 
 .compose__body {
   flex: 1;
@@ -2798,6 +2820,8 @@ button.stat-card:hover {
   font-family: var(--font-mono);
   font-size: 13.5px;
   line-height: 1.75;
+  /* 和编辑器一致：<!-- --> 不能被等宽字体连写成箭头（模板提示，tpl-001） */
+  font-variant-ligatures: none;
   color: var(--text);
   background: transparent;
   border: none;
@@ -5062,6 +5086,7 @@ button.stat-card:hover {
 }
 .book__adding {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   margin: 4px 0 12px;
@@ -5089,4 +5114,241 @@ button.stat-card:hover {
   .book__paper {
     padding: 20px 16px 120px;
   }
+}
+
+/* ---------------- 笔记模板管理（tpl-001） ---------------- */
+
+.tpl-panel {
+  width: min(880px, 100%);
+  max-height: 90vh;
+  padding: 16px;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-ctl);
+  box-shadow: var(--shadow-lg);
+}
+.tpl-panel input,
+.tpl-panel select {
+  padding: 5px 8px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  min-width: 0;
+}
+.tpl-panel input::placeholder {
+  color: var(--text-faint);
+}
+.tpl-panel__state {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.tpl-panel__main {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 16px;
+}
+.tpl-panel__list ul {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tpl-panel__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 9px;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+}
+.tpl-panel__item:hover {
+  background: var(--bg-hover);
+}
+.tpl-panel__item.is-active {
+  background: rgba(var(--accent-rgb), 0.1);
+  border-color: rgba(var(--accent-rgb), 0.3);
+}
+.tpl-panel__item-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+.tpl-panel__item-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.tpl-panel__list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.tpl-panel__editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.tpl-panel__name-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.tpl-panel__name {
+  flex: 1;
+  min-width: 160px;
+  margin-bottom: 0;
+}
+.tpl-panel__name-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tpl-panel__sections {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tpl-panel__sections-head,
+.tpl-panel__section {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.7fr) minmax(0, 1.6fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+.tpl-panel__sections-head {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.tpl-panel__section-actions {
+  display: flex;
+  gap: 2px;
+}
+/* 表头的占位：和每行的三个按钮一样宽，两列标题才能对齐输入框 */
+.tpl-panel__section-actions--ghost {
+  width: 94px;
+}
+.tpl-panel__add-section {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tpl-panel__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tpl-panel__preview-label {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.tpl-panel__preview pre {
+  margin: 0;
+  font-variant-ligatures: none;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: var(--text-dim);
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.tpl-panel__defaults {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.tpl-panel__defaults h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.tpl-panel__default-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tpl-panel__default,
+.tpl-panel__default-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tpl-panel__default {
+  padding: 3px 6px;
+  border-radius: var(--radius);
+}
+.tpl-panel__default.is-focused {
+  background: rgba(var(--accent-rgb), 0.08);
+}
+.tpl-panel__default-group {
+  flex: 1;
+  min-width: 120px;
+  font-size: 12.5px;
+}
+.tpl-panel__dirty {
+  margin-right: auto;
+  align-self: center;
+  font-size: 11.5px;
+  color: var(--warn);
+}
+
+@media (max-width: 720px) {
+  .tpl-panel__main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tpl-panel__sections-head {
+    display: none;
+  }
+  .tpl-panel__section {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .tpl-panel__section input:nth-child(2) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+/* 左栏分组行：设了默认模板的组，模板按钮用强调色（tpl-001） */
+.group-row__actions .icon-btn.is-on {
+  color: var(--accent);
+}
+/* 连读新建章旁边临时换模板（tpl-001） */
+.book__adding-template {
+  height: 32px;
+  max-width: 160px;
+  padding: 0 8px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+}
+/* 编辑页：这篇用的模板（tpl-001） */
+.editor__template {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+.editor__template.is-gone {
+  color: var(--warn);
 }

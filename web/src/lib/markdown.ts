@@ -213,8 +213,12 @@ const md = new Marked({
   breaks: true,
   renderer: {
     // 原始 HTML 一律转义：笔记里出现 <script> 也只当文字显示。
+    // 例外：完整的 HTML 注释 `<!-- … -->` 整段去掉（模板的小节提示，tpl-001）；没闭合的 `<!--` 照旧转义成文字。
+    // 代码块、行内代码不会走到这里（它们是 code / codespan 记号），里面的注释原样显示。
     html({ text }) {
-      return escapeHtml(text);
+      const rest = text.replace(/<!--[\s\S]*?-->/g, "");
+      if (rest === text) return escapeHtml(text);
+      return rest.trim() ? escapeHtml(rest) : "";
     },
     // 图片：有笔记上下文时换算地址（media-001）；没有上下文时只放行网络图片和 data:image
     image({ href, title, text }) {

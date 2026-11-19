@@ -62,6 +62,9 @@ import {
   type ViewMode,
 } from "./lib/theme.ts";
 import Icon from "./components/Icon.tsx";
+import TemplatesPanel from "./components/TemplatesPanel.tsx";
+import * as templatesApi from "./templates-api.ts";
+import type { TemplatesState } from "./templates-api.ts";
 import "./styles/app.css";
 import "./styles/content.css";
 import "./styles/reading.css";
@@ -125,6 +128,10 @@ export default function App() {
   // —— WebDAV 备份（侧栏只显示一行状态，面板自己再拉详细状态） ——
   const [backupOpen, setBackupOpen] = useState(false);
   const [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null);
+
+  // —— 笔记模板（tpl-001）：新建页、连读新建章用；面板打开时可定位到某个分组的默认模板 ——
+  const [templates, setTemplates] = useState<TemplatesState | null>(null);
+  const [templatesPanel, setTemplatesPanel] = useState<{ focusGroup: string | null } | null>(null);
 
   // —— 新建页 / AI 整篇替换的撤销 ——
   const [composeBusy, setComposeBusy] = useState(false);
@@ -218,6 +225,10 @@ export default function App() {
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+  useEffect(() => {
+    // 读不到（旧服务端、templates.json 写坏了）就当没有模板：新建页照常能用，面板里会显示原因
+    templatesApi.getTemplates().then(setTemplates, () => setTemplates(null));
+  }, []);
   useEffect(() => {
     currentRef.current = current;
   }, [current]);
@@ -625,7 +636,12 @@ export default function App() {
     setComposeError(null);
   }
 
-  async function createFromCompose(input: { title: string; body: string; group: string | null }): Promise<void> {
+  async function createFromCompose(input: {
+    title: string;
+    body: string;
+    group: string | null;
+    template: string | null;
+  }): Promise<void> {
     if (composeBusy) return;
     setComposeBusy(true);
     setComposeError(null);
@@ -640,6 +656,8 @@ export default function App() {
         body: input.body,
         tags: [],
         ...(input.group ? { group: input.group } : {}),
+        // 显式传：null = 用户选了「不用模板」，服务端就不会再自动套用分组默认模板
+        template: input.template,
       });
       setFilter(nextFilter);
       setScreen("notes");
@@ -665,6 +683,14 @@ export default function App() {
     }
   }
 
+  async function reloadTemplates(): Promise<void> {
+    try {
+      setTemplates(await templatesApi.getTemplates());
+    } catch {
+      // 读不到就保留旧的
+    }
+  }
+
   async function handleRenameGroup(from: string, to: string): Promise<void> {
     try {
       const res = await groupsApi.renameGroup(from, to);
@@ -676,7 +702,8 @@ export default function App() {
           ? { kind: "group", name: replacePrefix(filter.name, from, to) }
           : filter;
       if (followUp !== filter) setFilter(followUp);
-      await Promise.all([loadList(followUp), refreshSidebar()]);
+      // 子项目默认模板（tpl-001）跟着分组改名 / 删除变了，重读一次
+      await Promise.all([loadList(followUp), refreshSidebar(), reloadTemplates()]);
       if (current) await refreshCurrentNote();
       showToast(
         failed === 0 ? `已改名为「${to}」` : `已改名，但有 ${failed} 篇没改成功（可能刚被外部改过）`,
@@ -692,7 +719,8 @@ export default function App() {
       const res = await groupsApi.deleteGroup(name);
       const followUp: Filter = filter.kind === "group" && isInGroup(filter.name, name) ? { kind: "all" } : filter;
       if (followUp !== filter) setFilter(followUp);
-      await Promise.all([loadList(followUp), refreshSidebar()]);
+      // 子项目默认模板（tpl-001）跟着分组改名 / 删除变了，重读一次
+      await Promise.all([loadList(followUp), refreshSidebar(), reloadTemplates()]);
       if (current) await refreshCurrentNote();
       showToast(
         res.failed.length === 0
@@ -1214,9 +1242,10 @@ export default function App() {
     openReview: () => undefined as void,
   });
   keyContext.current = {
-    modalOpen: paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen || screen === "ai",
+    modalOpen:
+      paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen || !!templatesPanel || screen === "ai",
     // 收左栏只在真的有弹窗时不响应（AI 对话页也能收）
-    dialogOpen: paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen,
+    dialogOpen: paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen || !!templatesPanel,
     toggleSidebar,
     openReview: () => openCards(true),
     openPalette: () => setPaletteOpen(true),
@@ -1406,6 +1435,9 @@ export default function App() {
           void refreshSidebar();
         }}
         onOpenBackup={fromNav(() => setBackupOpen(true))}
+        onOpenTemplates={fromNav(() => setTemplatesPanel({ focusGroup: null }))}
+        onGroupTemplate={(group) => setTemplatesPanel({ focusGroup: group })}
+        groupDefaults={templates?.groupDefaults ?? {}}
         onOpenAi={fromNav(() => {
           setAiMounted(true);
           setScreen("ai");
@@ -1462,6 +1494,9 @@ export default function App() {
               error={composeError}
               groups={groups.map((group) => group.name)}
               initialGroup={composeGroupRef.current}
+              templates={templates}
+              onManageTemplates={() => setTemplatesPanel({ focusGroup: null })}
+              onNotify={showToast}
               onCancel={cancelCompose}
               onCreate={(input) => void createFromCompose(input)}
             />
@@ -1502,6 +1537,7 @@ export default function App() {
                 void loadList(filter);
               }}
               onToast={showToast}
+              templates={templates}
             />
           ) : screen === "trash" ? (
             <TrashView onBack={() => setScreen("notes")} onRestored={(relPath) => void handleRestored(relPath)} />
@@ -1532,6 +1568,7 @@ export default function App() {
               body={draft.body}
               tags={current.tags}
               groups={groups.map((group) => group.name)}
+              templateNames={templates ? templates.templates.map((item) => item.name) : null}
               onMoveToGroup={(group) => handleMoveToGroup(group)}
               status={saveStatus}
               saveError={saveError}
@@ -1748,6 +1785,14 @@ export default function App() {
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
         onOpenNote={(id) => void openNote(id)}
+        commands={[
+          {
+            id: "templates",
+            label: "笔记模板：管理模板、设子项目默认模板",
+            keywords: ["模板", "笔记模板", "template", "templates"],
+            run: () => setTemplatesPanel({ focusGroup: null }),
+          },
+        ]}
       />
 
       {previewFull && current ? (
@@ -1796,6 +1841,15 @@ export default function App() {
         open={captureOpen}
         onClose={() => setCaptureOpen(false)}
         onCaptured={(result) => void handleCaptured(result)}
+      />
+
+      <TemplatesPanel
+        open={!!templatesPanel}
+        focusGroup={templatesPanel?.focusGroup ?? null}
+        groups={groups.map((group) => group.name)}
+        onClose={() => setTemplatesPanel(null)}
+        onChanged={setTemplates}
+        onNotify={showToast}
       />
 
       <BackupPanel

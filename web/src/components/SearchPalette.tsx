@@ -5,13 +5,29 @@ import * as api from "../api.ts";
 import type { SearchHit } from "../api.ts";
 import Icon from "./Icon.tsx";
 
+/** 输入关键词就出现在结果最上面的命令（例如输入「模板」打开模板管理，tpl-001） */
+export type PaletteCommand = { id: string; label: string; keywords: string[]; run: () => void };
+
 type Props = {
   open: boolean;
   onClose: () => void;
   onOpenNote: (id: string) => void;
+  commands?: PaletteCommand[];
 };
 
-export default function SearchPalette({ open, onClose, onOpenNote }: Props) {
+/** 命令匹配：关键词包含输入，或输入包含关键词（不区分大小写） */
+export function matchCommands(commands: PaletteCommand[], query: string): PaletteCommand[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  return commands.filter((command) =>
+    command.keywords.some((keyword) => {
+      const k = keyword.toLowerCase();
+      return k.includes(q) || q.includes(k);
+    }),
+  );
+}
+
+export default function SearchPalette({ open, onClose, onOpenNote, commands = [] }: Props) {
   const dialogFocusRef = useRef<HTMLDivElement>(null);
   useDialogFocus(dialogFocusRef, open);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -77,20 +93,33 @@ export default function SearchPalette({ open, onClose, onOpenNote }: Props) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
+  const matched = matchCommands(commands, query);
+  const total = matched.length + items.length;
+
+  function runAt(index: number): void {
+    const command = matched[index];
+    if (command) {
+      onClose();
+      command.run();
+      return;
+    }
+    const hit = items[index - matched.length];
+    if (hit) {
+      onOpenNote(hit.id);
+      onClose();
+    }
+  }
+
   function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>): void {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      if (items.length > 0) setActive((current) => (current + 1) % items.length);
+      if (total > 0) setActive((current) => (current + 1) % total);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
-      if (items.length > 0) setActive((current) => (current - 1 + items.length) % items.length);
+      if (total > 0) setActive((current) => (current - 1 + total) % total);
     } else if (event.key === "Enter") {
       event.preventDefault();
-      const hit = items[active];
-      if (hit) {
-        onOpenNote(hit.id);
-        onClose();
-      }
+      runAt(active);
     }
   }
 
@@ -130,7 +159,23 @@ export default function SearchPalette({ open, onClose, onOpenNote }: Props) {
               检索失败：{error}
             </p>
           ) : null}
-          {!loading && !error && query.trim() && items.length === 0 ? (
+          {matched.map((command, index) => (
+            <button
+              key={command.id}
+              type="button"
+              role="option"
+              aria-selected={index === active}
+              className={`hit hit--command${index === active ? " is-active" : ""}`}
+              onMouseEnter={() => setActive(index)}
+              onClick={() => runAt(index)}
+            >
+              <span className="hit__head">
+                <span className="hit__title">{command.label}</span>
+                <span className="hit__path">命令</span>
+              </span>
+            </button>
+          ))}
+          {!loading && !error && query.trim() && items.length === 0 && matched.length === 0 ? (
             <p className="palette__state">没有找到「{query.trim()}」。</p>
           ) : null}
           {!query.trim() ? (
@@ -139,7 +184,9 @@ export default function SearchPalette({ open, onClose, onOpenNote }: Props) {
             </p>
           ) : null}
 
-          {items.map((hit, index) => (
+          {items.map((hit, at) => {
+            const index = at + matched.length;
+            return (
             <button
               key={hit.id}
               type="button"
@@ -147,10 +194,7 @@ export default function SearchPalette({ open, onClose, onOpenNote }: Props) {
               aria-selected={index === active}
               className={`hit${index === active ? " is-active" : ""}`}
               onMouseEnter={() => setActive(index)}
-              onClick={() => {
-                onOpenNote(hit.id);
-                onClose();
-              }}
+              onClick={() => runAt(index)}
             >
               <span className="hit__head">
                 <span className="hit__title">{hit.title || "未命名"}</span>
@@ -159,7 +203,8 @@ export default function SearchPalette({ open, onClose, onOpenNote }: Props) {
               {/* snippet 已由服务端转义并加好 <mark>，可直接渲染。 */}
               <span className="hit__snippet" dangerouslySetInnerHTML={{ __html: hit.snippet }} />
             </button>
-          ))}
+            );
+          })}
         </div>
 
         <div className="palette__foot">

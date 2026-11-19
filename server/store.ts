@@ -7,6 +7,7 @@ import {
   extractTags,
   parseNote,
   patchFrontmatterGroup,
+  patchFrontmatterTemplate,
   serializeNote,
   slugify,
   type NoteMeta,
@@ -200,6 +201,7 @@ export class NoteStore {
     type?: NoteType;
     source?: string;
     group?: string | null;
+    template?: string | null;
   }): StoredNote {
     const at = toLocalIso(this.now());
     const type: NoteType = input.type ?? "note";
@@ -221,6 +223,8 @@ export class NoteStore {
     if (input.source) meta.source = input.source;
     const group = cleanGroup(input.group);
     if (group) meta.group = group;
+    const template = input.template?.trim();
+    if (template) meta.template = template;
 
     const date = at.slice(0, 10);
     const slug = slugify(title);
@@ -241,7 +245,15 @@ export class NoteStore {
    */
   createAt(
     relPath: string,
-    input: { title?: string; body: string; tags?: string[]; type?: NoteType; source?: string; group?: string | null },
+    input: {
+      title?: string;
+      body: string;
+      tags?: string[];
+      type?: NoteType;
+      source?: string;
+      group?: string | null;
+      template?: string | null;
+    },
   ): StoredNote {
     const rel = relPath.split("\\").join("/").replace(/^\/+/, "");
     if (!rel.toLowerCase().endsWith(".md")) throw new Error(`路径必须以 .md 结尾：${relPath}`);
@@ -267,6 +279,8 @@ export class NoteStore {
     if (input.source) meta.source = input.source;
     const group = cleanGroup(input.group);
     if (group) meta.group = group;
+    const template = input.template?.trim();
+    if (template) meta.template = template;
     this.writeAtomic(rel, serializeNote(meta, body));
     return this.read(rel);
   }
@@ -274,7 +288,7 @@ export class NoteStore {
     relPath: string,
     body: string,
     baseHash: string,
-    patch: { title?: string; tags?: string[]; group?: string | null } = {},
+    patch: { title?: string; tags?: string[]; group?: string | null; template?: string | null } = {},
     opts: { checkpoint?: HistoryReason } = {},
   ): StoredNote {
     const current = this.read(relPath);
@@ -294,6 +308,11 @@ export class NoteStore {
       if (group) meta.group = group;
       else delete meta.group;
     }
+    if (patch.template !== undefined) {
+      const template = patch.template?.trim();
+      if (template) meta.template = template;
+      else delete meta.template;
+    }
     this.snapshot(current, opts.checkpoint);
     this.writeAtomic(relPath, serializeNote(meta, body));
     return this.read(relPath);
@@ -312,7 +331,22 @@ export class NoteStore {
     if (group !== null && want && sameGroupName(current.parsed.meta.group ?? "", want)) return current;
     if (!want && !current.parsed.meta.group) return current;
 
-    const patched = patchFrontmatterGroup(current.raw, want || null);
+    return this.writePatched(relPath, patchFrontmatterGroup(current.raw, want || null), current);
+  }
+
+  /**
+   * 只改 frontmatter 里的 `template` 一行（tpl-001 模板改名时连带改笔记）：规则同 setGroup。
+   */
+  setTemplate(relPath: string, template: string | null, opts: { baseHash?: string } = {}): StoredNote {
+    const current = this.read(relPath);
+    if (opts.baseHash !== undefined && opts.baseHash !== current.hash) {
+      throw new ConflictError(current.hash, current.mtime);
+    }
+    return this.writePatched(relPath, patchFrontmatterTemplate(current.raw, template), current);
+  }
+
+  /** 整理类改动（只改文件头一行）落盘：不写历史、不动 updated，mtime 还原。 */
+  private writePatched(relPath: string, patched: { raw: string; changed: boolean }, current: StoredNote): StoredNote {
     if (!patched.changed) return current;
 
     // 没有 `updated:` 的笔记（比如刚用迁移脚本补了 group 的旧笔记）时间是从文件 mtime 推出来的：

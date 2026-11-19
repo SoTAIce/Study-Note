@@ -216,3 +216,17 @@ test("一行简卡：`概念 :: 解释` 渲染成术语 + 解释；行内代码�
   assert.doesNotMatch(renderMarkdown("> 引用 :: 不算"), /kline/);
   assert.doesNotMatch(renderMarkdown("用 std::vector 存"), /kline/);
 });
+
+test("HTML 注释不显示（tpl-001 小节提示）；注释里的 <script> 一起去掉；没闭合的、代码里的照旧转义显示", () => {
+  assert.equal(renderMarkdown("## 背景\n<!-- 为什么做 -->\n\n正文"), "<h2>背景</h2>\n<p>正文</p>\n");
+  assert.equal(renderMarkdown("文字 <!-- 行内 --> 后面"), "<p>文字  后面</p>\n");
+  const hidden = renderMarkdown("<!-- <script>alert(1)</script> -->\n\n正文");
+  assert.equal(hidden, "<p>正文</p>\n");
+  assert.equal(renderMarkdown("<!-- 没闭合\n\n正文"), "&lt;!-- 没闭合\n\n正文");
+  assert.match(renderMarkdown("```\n<!-- 代码里 -->\n```"), /&lt;!-- 代码里 --&gt;/);
+  assert.match(renderMarkdown("`<!-- 行内代码 -->`"), /<code>&lt;!-- 行内代码 --&gt;<\/code>/);
+  // 注释后面跟着别的原始 HTML：注释去掉，其余照旧转义
+  assert.equal(renderMarkdown("<!-- a --> <b>x</b>"), " &lt;b&gt;x&lt;/b&gt;");
+  // 分栏同步用的行号：注释占的行照算
+  assert.equal(renderMarkdown("## A\n<!-- 提示 -->\n\n## B", { sourceLines: true }), '<h2 data-line="0">A</h2>\n<h2 data-line="3">B</h2>\n');
+});

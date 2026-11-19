@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { contentHash } from "./parse.ts";
 import { reviewLogPath } from "./review.ts";
+import { templatesPath } from "./templates.ts";
 import { toLocalIso } from "./store.ts";
 import { maskSecret, patchSection, readSection } from "./config.ts";
 import { createWebdavClient, WebdavError, type WebdavClient } from "./webdav.ts";
@@ -196,14 +197,23 @@ function readForUpload(file: LocalFile): string | Buffer {
 export const REVIEW_BACKUP_PATH = "_review/log.jsonl";
 
 /** 要备份的文件：笔记、图片，再加上知识简卡的复习日志 */
+/** 笔记模板（tpl-001）在云端的位置：不含密钥，跟笔记一起备份（config.json 有密钥，不传） */
+export const TEMPLATES_BACKUP_PATH = "_templates/templates.json";
+
+/** 要备份的文件：笔记、图片，再加上知识简卡的复习日志、笔记模板 */
 export function scanBackupFiles(notesRoot: string, dataDir: string): LocalFile[] {
   const files = scanNotes(notesRoot);
-  const log = reviewLogPath(dataDir);
-  try {
-    const raw = fs.readFileSync(log, "utf8");
-    files.push({ relPath: REVIEW_BACKUP_PATH, abs: log, hash: contentHash(raw), bytes: Buffer.byteLength(raw, "utf8"), binary: false });
-  } catch {
-    // 还没复习过：没有日志文件
+  const extras: Array<[string, string]> = [
+    [REVIEW_BACKUP_PATH, reviewLogPath(dataDir)],
+    [TEMPLATES_BACKUP_PATH, templatesPath(dataDir)],
+  ];
+  for (const [relPath, abs] of extras) {
+    try {
+      const raw = fs.readFileSync(abs, "utf8");
+      files.push({ relPath, abs, hash: contentHash(raw), bytes: Buffer.byteLength(raw, "utf8"), binary: false });
+    } catch {
+      // 还没复习过 / 没改过模板：没有这个文件
+    }
   }
   return files;
 }
@@ -514,8 +524,10 @@ export function createBackupService(deps: BackupDeps): BackupService {
   function snapshotFiles(day: string): SnapshotFile[] {
     const entry = manifest().snapshots.find((item) => item.day === day);
     if (!entry) return [];
-    // 复习日志不是笔记，不出现在「从快照恢复笔记」的列表里（需要时手动从云端拷回 data/review/）
-    return entry.files.filter((relPath) => relPath !== REVIEW_BACKUP_PATH).map((relPath) => ({ path: relPath, bytes: 0 }));
+    // 复习日志、模板不是笔记，不出现在「从快照恢复笔记」的列表里（需要时手动从云端拷回 data/ 下）
+    return entry.files
+      .filter((relPath) => relPath !== REVIEW_BACKUP_PATH && relPath !== TEMPLATES_BACKUP_PATH)
+      .map((relPath) => ({ path: relPath, bytes: 0 }));
   }
 
   async function readSnapshotFile(day: string, relPath: string): Promise<string | null> {

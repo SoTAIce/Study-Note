@@ -13,6 +13,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { normalizeGroupName, sameGroup, validateGroupName } from "./groups.ts";
 import { extractLinks } from "./parse.ts";
 import { ConflictError, type NoteStore } from "./store.ts";
+import { templateSkeleton, type NoteTemplate } from "../web/src/lib/templates.ts";
 
 export const INDEX_TITLE = "目录";
 
@@ -138,6 +139,8 @@ export type BookDeps = {
   db: DatabaseSync;
   store: NoteStore;
   reindex: (relPath: string) => void;
+  /** 新建章节用哪个模板（tpl-001）；不给就一律不用模板 */
+  templateFor?: (group: string, requested: unknown) => NoteTemplate | null;
 };
 
 export function groupParam(raw: unknown): string {
@@ -300,7 +303,15 @@ export function createBookService(deps: BookDeps) {
     if (index && index.title.trim() === title) throw new BookHttpError(400, "新章节不能和目录同名");
     const baseHash = typeof payload.baseHash === "string" && payload.baseHash ? payload.baseHash : null;
 
-    const created = store.create({ title, type: "note", group, body: `# ${title}\n` });
+    // 模板（tpl-001）：所在组有默认模板或请求里指定了，就用骨架（骨架不写 # 标题）
+    const template = deps.templateFor ? deps.templateFor(group, payload.template) : null;
+    const created = store.create({
+      title,
+      type: "note",
+      group,
+      body: template ? templateSkeleton(template) : `# ${title}\n`,
+      template: template?.name ?? null,
+    });
     deps.reindex(created.relPath);
     const note = { id: created.id, hash: created.hash, title };
 
