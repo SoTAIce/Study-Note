@@ -36,6 +36,8 @@ type Props = {
   onOpenBackup: () => void;
   /** 笔记模板管理（tpl-001） */
   onOpenTemplates: () => void;
+  /** 帮助：速查表 + 使用手册（help-001） */
+  onOpenHelp?: () => void;
   /** 给某个分组 / 子项目设默认模板：打开模板面板并定位到它 */
   onGroupTemplate: (group: string) => void;
   /** 分组 → 默认模板名（行上的按钮提示用） */
@@ -101,6 +103,7 @@ export default function Sidebar({
   onReload,
   onOpenBackup,
   onOpenTemplates,
+  onOpenHelp,
   onGroupTemplate,
   groupDefaults,
   onOpenAi,
@@ -724,6 +727,11 @@ export default function Sidebar({
         >
           <Icon name="template" size={15} />
         </button>
+        {onOpenHelp ? (
+          <button type="button" className="icon-btn" onClick={onOpenHelp} title="帮助：快捷键速查和使用手册（?）" aria-label="帮助">
+            <Icon name="help" size={15} />
+          </button>
+        ) : null}
         <button
           type="button"
           className="icon-btn"

@@ -65,6 +65,7 @@ import { createTemplatesRoutes, resolveNewNoteTemplate, TemplatesHttpError } fro
 import { arrangeNote, ArrangeHttpError } from "./arrange.ts";
 import { generateTemplate, TemplateGenHttpError } from "./template-gen.ts";
 import { IMPORT_MAX_BYTES, isMarkdownFileName } from "./import-md.ts";
+import { createHelpRoutes, createHelpService, DEFAULT_MANUAL_DIR, HelpHttpError } from "./help.ts";
 import { templateSkeleton } from "../web/src/lib/templates.ts";
 
 const MAX_BODY = 5 * 1024 * 1024;
@@ -106,6 +107,8 @@ export type ApiDeps = {
   review?: ReviewLog;
   /** 代码指纹（repo-003）：推送通道的 hello 带给页面，页面据此提示「应用已更新」 */
   stamp?: string;
+  /** 使用手册（help-001）在哪个目录；默认仓库里的 manual/，测试可以换 */
+  manualDir?: string;
 };
 
 type NoteRow = {
@@ -244,6 +247,16 @@ export function createApi(deps: ApiDeps) {
   const bookService = createBookService({ db, store, reindex, templateFor });
   const bookRoutes = createBookRoutes({ db, store, reindex, templateFor }, bookService);
   const templatesRoutes = createTemplatesRoutes({ db, store, dataDir, reindex });
+  const helpRoutes = createHelpRoutes(
+    createHelpService({
+      db,
+      store,
+      dataDir,
+      manualDir: deps.manualDir ?? DEFAULT_MANUAL_DIR,
+      reindex,
+      removeFromIndex: (relPath) => indexer.removeFile(relPath),
+    }),
+  );
   /** 每次进程启动不同：前端重连后发现它变了，就知道服务重启过，整体刷新一次 */
   const bootId = randomUUID();
 
@@ -267,6 +280,11 @@ export function createApi(deps: ApiDeps) {
       const templatesResult = await templatesRoutes(method, route, () => readJson(req));
       if (templatesResult !== undefined) {
         sendJson(res, 200, templatesResult);
+        return true;
+      }
+      const helpResult = helpRoutes(method, route);
+      if (helpResult !== undefined) {
+        sendJson(res, 200, helpResult);
         return true;
       }
 
@@ -1453,7 +1471,7 @@ export function createApi(deps: ApiDeps) {
         sendJson(res, err.status, { error: err.message });
         return true;
       }
-      if (err instanceof BookHttpError || err instanceof TemplatesHttpError) {
+      if (err instanceof BookHttpError || err instanceof TemplatesHttpError || err instanceof HelpHttpError) {
         sendJson(res, err.status, { error: err.message, ...err.extra });
         return true;
       }

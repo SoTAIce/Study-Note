@@ -70,6 +70,8 @@ import { ARRANGE_PASTE_MIN } from "./lib/arrange.ts";
 import ArrangeDialog from "./components/ArrangeDialog.tsx";
 import ArrangeHint from "./components/ArrangeHint.tsx";
 import ImportDialog from "./components/ImportDialog.tsx";
+import HelpPanel, { type HelpTab } from "./components/HelpPanel.tsx";
+import { isHelpKey, MANUAL_GROUP } from "./lib/help.ts";
 import { defaultImportGroup, hasImageItem, isFileDrag, pickMarkdown } from "./lib/md-import.ts";
 import "./styles/app.css";
 import "./styles/content.css";
@@ -150,6 +152,8 @@ export default function App() {
   const [arrange, setArrange] = useState<{ initialTemplate: string | null; body: string } | null>(null);
   /** 粘贴大段后的提示条（10 秒自动消失） */
   const [arrangeHint, setArrangeHint] = useState<{ template: string | null } | null>(null);
+  /** 帮助面板（help-001）：打开时停在哪个页签；null = 关着 */
+  const [helpOpen, setHelpOpen] = useState<HelpTab | null>(null);
   /** 拖文件进窗口时的遮罩（import-001）：group = 指针下的项目（左栏分组行、连读页），null = 任意处 */
   const [dropHint, setDropHint] = useState<{ group: string | null } | null>(null);
   /** 拖进来的 .md，等人在框里确认 */
@@ -929,6 +933,17 @@ export default function App() {
     setArrangeHint({ template: arrangeTemplateFor(current) });
   }
 
+  /**
+   * 应用自己把几篇移进了回收站（帮助里删 / 重新生成练习笔记，help-001）：
+   * 当成自删——推送回声不再当外部删除去读、去「抢救」；开着的标签页关掉，正在编辑的这篇清空编辑器。
+   */
+  function forgetTrashed(ids: string[]): void {
+    if (ids.length === 0) return;
+    for (const id of ids) selfDeletedRef.current.add(id);
+    setNoteTabs((tabs) => tabs.filter((tab) => !ids.includes(tab.id)));
+    if (noteIdRef.current && ids.includes(noteIdRef.current)) clearEditor();
+  }
+
   /** 导入（import-001）：服务端合并文件头、写盘；成功后打开它的编辑页。返回错误文字，成功返回 null */
   async function importDropped(input: { title: string; group: string | null }): Promise<string | null> {
     const pending = importing;
@@ -1372,9 +1387,9 @@ export default function App() {
   });
   keyContext.current = {
     modalOpen:
-      paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen || !!templatesPanel || !!arrange || screen === "ai",
+      paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen || !!templatesPanel || !!arrange || !!helpOpen || screen === "ai",
     // 收左栏只在真的有弹窗时不响应（AI 对话页也能收）
-    dialogOpen: paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen || !!templatesPanel || !!arrange,
+    dialogOpen: paletteOpen || captureOpen || previewFull || exportOpen || backupOpen || historyOpen || !!templatesPanel || !!arrange || !!helpOpen,
     toggleSidebar,
     openReview: () => openCards(true),
     openPalette: () => setPaletteOpen(true),
@@ -1462,6 +1477,19 @@ export default function App() {
       window.removeEventListener("blur", flush);
       document.removeEventListener("visibilitychange", onVisibility);
     };
+  }, []);
+
+  // —— 按 ? 打开速查表（help-001）：不在输入框里、没开着别的弹窗时 ——
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
+      const target = event.target as HTMLElement | null;
+      const typing = Boolean(target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)));
+      if (!isHelpKey(event, typing) || keyContext.current.dialogOpen) return;
+      event.preventDefault();
+      setHelpOpen("cheat");
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
   // —— 拖 .md 进窗口导入（import-001）：窗口任意处都能松手；指针下是项目就预选它 ——
@@ -1661,6 +1689,7 @@ export default function App() {
         }}
         onOpenBackup={fromNav(() => setBackupOpen(true))}
         onOpenTemplates={fromNav(() => setTemplatesPanel({ focusGroup: null }))}
+        onOpenHelp={fromNav(() => setHelpOpen("cheat"))}
         onGroupTemplate={(group) => setTemplatesPanel({ focusGroup: group })}
         groupDefaults={templates?.groupDefaults ?? {}}
         onOpenAi={fromNav(() => {
@@ -2019,6 +2048,12 @@ export default function App() {
             keywords: ["模板", "笔记模板", "template", "templates"],
             run: () => setTemplatesPanel({ focusGroup: null }),
           },
+          {
+            id: "help",
+            label: "帮助：快捷键速查和使用手册",
+            keywords: ["帮助", "快捷键", "速查", "手册", "使用手册", "help", "?"],
+            run: () => setHelpOpen("cheat"),
+          },
         ]}
       />
 
@@ -2094,6 +2129,25 @@ export default function App() {
             <span className="drop-overlay__sub">只认 .md 文件，一次一个</span>
           </div>
         </div>
+      ) : null}
+
+      {helpOpen ? (
+        <HelpPanel
+          initialTab={helpOpen}
+          onClose={() => setHelpOpen(null)}
+          onNotify={showToast}
+          beforeChange={() => doSave()}
+          onInstalled={(group, trashedIds) => {
+            setHelpOpen(null);
+            forgetTrashed(trashedIds);
+            void Promise.all([refreshSidebar(), loadList(filter)]).then(() => openBook(group));
+          }}
+          onRemoved={(trashedIds) => {
+            forgetTrashed(trashedIds);
+            if (screen === "book" && bookGroup?.toLowerCase() === MANUAL_GROUP.toLowerCase()) setScreen("notes");
+            void Promise.all([refreshSidebar(), loadList(filter)]);
+          }}
+        />
       ) : null}
 
       {importing ? (

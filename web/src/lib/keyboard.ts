@@ -6,6 +6,9 @@
  */
 export type Action = "search" | "new" | "save" | "ai" | "capture" | "preview" | "history" | "sidebar" | "review";
 
+/** 全部应用级动作（速查表的单测拿它核对：每个动作都要在速查表里出现，help-001） */
+export const ACTIONS: readonly Action[] = ["search", "new", "save", "ai", "capture", "preview", "history", "sidebar", "review"];
+
 export type KeyInput = {
   key: string;
   /** 物理按键位置；Ctrl+\ 在部分键盘布局下 key 不是 "\\"，按 code 认 */

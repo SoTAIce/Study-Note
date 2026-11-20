@@ -2061,6 +2061,102 @@ try {
     expect((await page.locator(".drop-overlay").count()) === 0 && (await dialog.count()) === 0, "不弹框、遮罩消失");
   });
 
+  await step("帮助：? 打开速查并筛选、输入框里 ? 不打开、Ctrl+K 找到帮助、读手册并章内跳转、生成练习笔记连读、动手改双链、删除练习笔记", async () => {
+    const help = page.getByRole("dialog", { name: "帮助" });
+
+    // 1. 不在输入框里按 ?：打开速查；筛选「复习」只剩相关的
+    await page.locator(".sidebar__brand").click();
+    await page.keyboard.press("?");
+    await help.waitFor({ timeout: 3000 });
+    expect((await help.getByRole("tab", { name: "速查" }).getAttribute("aria-selected")) === "true", "默认是速查页签");
+    expect((await help.locator(".help-panel__row", { hasText: "Ctrl+Shift+R" }).count()) === 1, "速查里应有今日复习的快捷键");
+    await help.getByLabel("筛选快捷键和写法").fill("复习");
+    const kept = await help.locator(".help-panel__row").allTextContents();
+    expect(kept.length >= 4, `筛选「复习」后应剩几行：${kept.length}`);
+    expect((await help.locator('.help-panel__group[aria-label="编辑器"]').count()) === 0, "筛选后不相关的分组藏起来");
+    await page.waitForTimeout(300); // 等抽屉滑入结束
+    await page.screenshot({ path: path.join(artifacts, "32-help-cheat.png") });
+    await page.keyboard.press("Escape");
+    await help.waitFor({ state: "detached" });
+
+    // 2. 在输入框里按 ? 不打开；Ctrl+K 输入「快捷键」找到帮助命令
+    await page.keyboard.press("Control+k");
+    const search = page.getByLabel("搜索关键词");
+    await search.focus();
+    await page.keyboard.type("?");
+    await page.waitForTimeout(200);
+    expect((await help.count()) === 0, "在输入框里按 ? 不该打开帮助");
+    await search.fill("快捷键");
+    await page.locator(".hit--command", { hasText: "帮助" }).waitFor();
+    await page.keyboard.press("Enter");
+    await help.waitFor();
+
+    // 3. 使用手册：第一章；章内 [[手册：笔记模板]] 在面板里跳过去
+    await help.getByRole("tab", { name: "使用手册" }).click();
+    await help.locator('.help-panel__article[aria-label="手册：新建与保存"]').waitFor({ timeout: 5000 });
+    expect((await help.locator(".help-panel__chapter").count()) === 12, "目录应有 12 章");
+    expect((await help.textContent()).includes("动手试试"), "每章有「动手试试」");
+    await help.locator(".help-panel__article a.wikilink", { hasText: "手册：笔记模板" }).click();
+    await help.locator('.help-panel__article[aria-label="手册：笔记模板"]').waitFor({ timeout: 3000 });
+    expect((await help.locator(".help-panel__chapter.is-active").textContent()) === "笔记模板", "目录高亮跟着跳");
+    await page.screenshot({ path: path.join(artifacts, "32-help-manual.png") });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: path.join(artifacts, "32-help-manual-dark.png") });
+    await page.emulateMedia({ colorScheme: "light" });
+
+    // 4. 生成练习笔记：关掉面板、打开「使用手册/练习」的连读，12 章按目录顺序
+    await help.getByRole("button", { name: "生成练习笔记" }).click();
+    await help.waitFor({ state: "detached" });
+    await page.getByText("已生成 13 篇练习笔记").waitFor({ timeout: 5000 });
+    await page.waitForFunction(() => document.querySelector(".book__title")?.textContent === "练习", null, { timeout: 5000 });
+    const chapters = await page.locator(".book__chapter-title").allTextContents();
+    expect(chapters.length === 12 && chapters[0] === "手册：新建与保存" && chapters[11] === "手册：一键启动与更新", `连读章节：${JSON.stringify(chapters)}`);
+    const practice = (await api(`/api/notes?group=${encodeURIComponent("使用手册/练习")}`)).items;
+    expect(practice.length === 13, `练习笔记应有 13 篇（含目录）：${practice.length}`);
+
+    // 5. 动手试试：在练习笔记里把一行改成双链，预览里成了能点的链接
+    const md = practice.find((n) => n.title === "手册：Markdown、双链与标签");
+    await page.keyboard.press("Control+k");
+    await page.getByLabel("搜索关键词").fill("双链与标签");
+    await page.locator(".hit", { hasText: "手册：Markdown、双链与标签" }).first().click();
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "手册：Markdown、双链与标签", null, { timeout: 5000 });
+    const ta = page.locator(".editor__textarea");
+    const before = await ta.inputValue();
+    expect(before.includes("参见 手册：分组与子项目"), "练习里要改的那一行");
+    await ta.fill(before.replace("参见 手册：分组与子项目", "参见 [[手册：分组与子项目]]"));
+    await page.keyboard.press("Control+s");
+    await page.locator(".save-state--saved").waitFor({ timeout: 5000 });
+    const link = page.locator(".preview a.wikilink", { hasText: "手册：分组与子项目" }).first();
+    await link.waitFor();
+    expect(!(await link.getAttribute("class")).includes("is-missing"), "链到的练习笔记存在，不该是淡色");
+    expect(fs.readFileSync(path.join(notesDir, md.relPath), "utf8").includes("[[手册：分组与子项目]]"), "改动应存盘");
+
+    // 6. 左栏「帮助」→ 使用手册 → 删除练习笔记：都进回收站，左栏没了这个子项目
+    await page.getByRole("button", { name: "帮助", exact: true }).click();
+    await help.waitFor();
+    await help.getByRole("tab", { name: "使用手册" }).click();
+    await help.getByRole("button", { name: "删除练习笔记" }).click();
+    const confirmBox = page.getByRole("alertdialog", { name: "删除练习笔记？" });
+    await confirmBox.getByRole("button", { name: "删除", exact: true }).click();
+    await page.getByText("已把 13 篇练习笔记移进回收站").waitFor({ timeout: 5000 });
+    await help.getByRole("button", { name: "生成练习笔记" }).waitFor();
+    await page.keyboard.press("Escape");
+    await help.waitFor({ state: "detached" });
+    expect((await api(`/api/notes?group=${encodeURIComponent("使用手册/练习")}`)).items.length === 0, "练习笔记应都删了");
+    await page.locator('.group-row[data-drop-group="使用手册/练习"]').waitFor({ state: "detached", timeout: 5000 });
+    // 刚才开着的那篇也一起删了：当成自己删的，关掉编辑器，不当外部删除再「抢救」一份进回收站
+    await page.waitForTimeout(2000); // 外部删除的确认要等 1.5 秒，等过这段再查有没有多出来的
+    expect((await page.locator(".editor__title").count()) === 0 || (await page.locator(".editor__title").inputValue()) !== "手册：Markdown、双链与标签", "开着的练习笔记应关掉");
+    expect((await page.getByText("已在外部删除").count()) === 0, "不该提示「已在外部删除」");
+    const trash = await api("/api/trash");
+    const copies = trash.items.filter((item) => item.origPath === md.relPath).length;
+    expect(copies === 1, `回收站里这篇应只有 1 份，实际 ${copies}`);
+    const practicePaths = new Set(practice.map((n) => n.relPath));
+    const trashed = trash.items.filter((item) => practicePaths.has(item.origPath)).length;
+    expect(trashed === 13, `回收站里应正好有 13 篇练习笔记（每篇一份），实际 ${trashed}`);
+  });
+
   await step("外部编辑器写的文件头（块状 tags、aliases、未知键）在应用里编辑保存后原样保留", async () => {
     const file = path.join(notesDir, "obsidian-style.md");
     const head = "---\ntitle: Obsidian 写的笔记\naliases:\n  - 黑曜石\ntags:\n  - 读书\n  - 复习\ncssclass: wide\n---\n";
