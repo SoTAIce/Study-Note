@@ -5833,3 +5833,120 @@ button.stat-card:hover {
   border-radius: 999px;
   box-shadow: var(--shadow-lg);
 }
+
+/* —— 拖 .md 导入（import-001） —— */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(var(--accent-rgb), 0.08);
+  box-shadow: inset 0 0 0 3px rgba(var(--accent-rgb), 0.55);
+}
+.drop-overlay__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 26px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+.drop-overlay__card .icon {
+  color: var(--accent);
+}
+.drop-overlay__sub {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-faint);
+}
+.group-row.is-drop-target .group-row__main {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.14);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.5);
+}
+.import-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(560px, 100%);
+  max-height: 90vh;
+  padding: 16px;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-ctl);
+  box-shadow: var(--shadow-lg);
+}
+.import-dialog .settings__head {
+  margin-bottom: 0;
+}
+.import-dialog__file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.import-dialog__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.import-dialog__form .field {
+  margin-bottom: 0;
+}
+.import-dialog__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.import-dialog__preview pre {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-variant-ligatures: none;
+  color: var(--text-dim);
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.import-dialog__kept {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.import-dialog__kept code {
+  padding: 1px 6px;
+  font-size: 11.5px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.import-dialog .field select {
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+}

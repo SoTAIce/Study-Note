@@ -64,6 +64,7 @@ import { BookHttpError, createBookRoutes, createBookService, groupParam } from "
 import { createTemplatesRoutes, resolveNewNoteTemplate, TemplatesHttpError } from "./templates.ts";
 import { arrangeNote, ArrangeHttpError } from "./arrange.ts";
 import { generateTemplate, TemplateGenHttpError } from "./template-gen.ts";
+import { IMPORT_MAX_BYTES, isMarkdownFileName } from "./import-md.ts";
 import { templateSkeleton } from "../web/src/lib/templates.ts";
 
 const MAX_BODY = 5 * 1024 * 1024;
@@ -349,6 +350,40 @@ export function createApi(deps: ApiDeps) {
           });
           return true;
         }
+      }
+
+      // /api/notes/import（import-001）：拖进来的一个 .md 导入成新笔记；同样要排在 /api/notes/:id 之前
+      if (route[0] === "notes" && route.length === 2 && route[1] === "import" && method === "POST") {
+        const payload = await readJson(req);
+        const fileName = typeof payload.fileName === "string" ? payload.fileName.trim() : "";
+        const content = typeof payload.content === "string" ? payload.content : null;
+        if (!fileName || !isMarkdownFileName(fileName)) throw new HttpError(400, "只能导入 .md 文件");
+        if (content === null) throw new HttpError(400, "缺少文件内容");
+        if (Buffer.byteLength(content, "utf8") > IMPORT_MAX_BYTES) {
+          throw new HttpError(413, `文件超过 ${IMPORT_MAX_BYTES / 1024 / 1024}MB，不能导入`);
+        }
+        if (content.includes("\uFFFD")) throw new HttpError(400, "文件不是 UTF-8 编码（读出来有乱码），先另存为 UTF-8 再导入");
+        const title = typeof payload.title === "string" ? payload.title : undefined;
+        if (title !== undefined && ([...title.trim()].length > 200 || /[\u0000-\u001f]/.test(title))) {
+          throw new HttpError(400, "参数错误：标题太长或有不可见字符");
+        }
+        const group = groupInput(payload.group);
+        const note = store.importNote({
+          fileName,
+          content,
+          title,
+          group,
+          idTaken: (id) => db.prepare("SELECT 1 FROM notes WHERE id = ?").get(id) !== undefined,
+        });
+        reindex(note.relPath);
+        sendJson(res, 201, {
+          id: note.id,
+          relPath: note.relPath,
+          hash: note.hash,
+          meta: note.parsed.meta,
+          body: note.parsed.body,
+        });
+        return true;
       }
 
       // /api/notes/move（批量）——必须排在 /api/notes/:id 之前，否则 "move" 会被当成笔记 id

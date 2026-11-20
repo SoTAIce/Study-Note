@@ -632,7 +632,7 @@ export default function BookView({
   const listedCount = book ? book.chapters.length : 0;
 
   return (
-    <div className="book">
+    <div className="book" data-drop-group={group}>
       {tocOpen && toc.length > 0 ? (
         <nav className="reader__toc book__toc" aria-label="连读目录">
           {toc.map((item, position) => (

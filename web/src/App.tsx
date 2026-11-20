@@ -69,6 +69,8 @@ import { findTemplate, groupDefaultTemplate, isBlankOrSkeleton, sameTemplate } f
 import { ARRANGE_PASTE_MIN } from "./lib/arrange.ts";
 import ArrangeDialog from "./components/ArrangeDialog.tsx";
 import ArrangeHint from "./components/ArrangeHint.tsx";
+import ImportDialog from "./components/ImportDialog.tsx";
+import { defaultImportGroup, hasImageItem, isFileDrag, pickMarkdown } from "./lib/md-import.ts";
 import "./styles/app.css";
 import "./styles/content.css";
 import "./styles/reading.css";
@@ -148,8 +150,14 @@ export default function App() {
   const [arrange, setArrange] = useState<{ initialTemplate: string | null; body: string } | null>(null);
   /** 粘贴大段后的提示条（10 秒自动消失） */
   const [arrangeHint, setArrangeHint] = useState<{ template: string | null } | null>(null);
+  /** 拖文件进窗口时的遮罩（import-001）：group = 指针下的项目（左栏分组行、连读页），null = 任意处 */
+  const [dropHint, setDropHint] = useState<{ group: string | null } | null>(null);
+  /** 拖进来的 .md，等人在框里确认 */
+  const [importing, setImporting] = useState<{ fileName: string; content: string; skipped: number; initialGroup: string | null } | null>(null);
   /** 下次保存顺带写进文件头的模板名（规整后补 template:） */
   const pendingTemplateRef = useRef<string | null | undefined>(undefined);
+  /** 自己刚删掉的笔记：推送通道随后会报「被删了」，那是自己的回声，不再去读它（读了只会 404） */
+  const selfDeletedRef = useRef(new Set<string>());
   /** 规整前文件头里的模板名：「撤销 AI 改写」时一起还原（undefined = 这次替换没动模板） */
   const aiUndoTemplateRef = useRef<string | null | undefined>(undefined);
   const composeReturnRef = useRef<Screen>("notes");
@@ -921,6 +929,24 @@ export default function App() {
     setArrangeHint({ template: arrangeTemplateFor(current) });
   }
 
+  /** 导入（import-001）：服务端合并文件头、写盘；成功后打开它的编辑页。返回错误文字，成功返回 null */
+  async function importDropped(input: { title: string; group: string | null }): Promise<string | null> {
+    const pending = importing;
+    if (!pending) return null;
+    try {
+      const created = await api.importNote({ fileName: pending.fileName, content: pending.content, title: input.title, group: input.group });
+      setImporting(null);
+      setPreviewFull(false);
+      await Promise.all([refreshSidebar(), loadList(filter)]);
+      await openNote(created.id);
+      setScreen("notes");
+      showToast(`已导入《${created.meta.title}》${input.group ? `到「${input.group}」` : "（不分组）"}`, "ok");
+      return null;
+    } catch (err) {
+      return api.errorMessage(err);
+    }
+  }
+
   /** 双链 / 出链里点到不存在的标题：按标题建一条。 */
   async function openTitle(title: string): Promise<void> {
     const found =
@@ -954,6 +980,7 @@ export default function App() {
       saveTimer.current = null;
     }
     dirtyRef.current = false;
+    selfDeletedRef.current.add(note.id);
     try {
       await api.deleteNote(note.id);
       const result = closeNoteTab(noteTabs, note.id, note.id);
@@ -965,6 +992,7 @@ export default function App() {
       await Promise.all([loadList(filter), refreshSidebar()]);
       showToast("已移入回收站", "ok");
     } catch (err) {
+      selfDeletedRef.current.delete(note.id);
       showToast(`删除失败：${api.errorMessage(err)}`, "error");
     }
   }
@@ -1036,7 +1064,7 @@ export default function App() {
 
   async function checkCurrentNoteExternally(): Promise<void> {
     const id = noteIdRef.current;
-    if (!id) return;
+    if (!id || selfDeletedRef.current.has(id)) return;
     // 自己的保存还在路上：等它落地，hashRef 更新后再比，免得把回声当成外部修改
     if (savePromiseRef.current) await savePromiseRef.current.catch(() => false);
     if (noteIdRef.current !== id) return;
@@ -1436,6 +1464,79 @@ export default function App() {
     };
   }, []);
 
+  // —— 拖 .md 进窗口导入（import-001）：窗口任意处都能松手；指针下是项目就预选它 ——
+  const dropCtxRef = useRef({ filter, bookGroup: screen === "book" ? bookGroup : null });
+  dropCtxRef.current = { filter, bookGroup: screen === "book" ? bookGroup : null };
+  const notifyRef = useRef(showToast);
+  notifyRef.current = showToast;
+  useEffect(() => {
+    const groupUnder = (target: EventTarget | null): string | null =>
+      (target instanceof Element ? target.closest<HTMLElement>("[data-drop-group]")?.dataset.dropGroup : undefined) ?? null;
+    /** 拖着图片停在正文框上：交给正文框插图 */
+    const imageOnTextarea = (event: DragEvent): boolean =>
+      event.target instanceof Element &&
+      event.target.closest("textarea") !== null &&
+      hasImageItem(Array.from(event.dataTransfer?.items ?? []));
+    function onDragOver(event: DragEvent): void {
+      if (!event.dataTransfer || !isFileDrag(Array.from(event.dataTransfer.types))) return;
+      if (imageOnTextarea(event)) {
+        setDropHint(null);
+        return;
+      }
+      // 不拦下的话浏览器会直接打开这个文件，把应用页面换掉
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      const group = groupUnder(event.target);
+      setDropHint((current) => (current && current.group === group ? current : { group }));
+    }
+    function onDragLeave(event: DragEvent): void {
+      // 离开整个窗口时 relatedTarget 是 null
+      if (event.relatedTarget === null) setDropHint(null);
+    }
+    async function onDrop(event: DragEvent): Promise<void> {
+      setDropHint(null);
+      if (event.defaultPrevented || !event.dataTransfer || !isFileDrag(Array.from(event.dataTransfer.types))) return;
+      event.preventDefault();
+      const pick = pickMarkdown(Array.from(event.dataTransfer.files));
+      if (pick.rejected) {
+        notifyRef.current(pick.rejected, "error");
+        return;
+      }
+      if (!pick.md) return;
+      if (pick.md.size > 2 * 1024 * 1024) {
+        notifyRef.current(`《${pick.md.name}》超过 2MB，不能导入`, "error");
+        return;
+      }
+      const dropGroup = groupUnder(event.target);
+      let content: string;
+      try {
+        content = await pick.md.text();
+      } catch {
+        notifyRef.current(`读不了《${pick.md.name}》`, "error");
+        return;
+      }
+      if (content.includes("\uFFFD")) {
+        notifyRef.current(`《${pick.md.name}》不是 UTF-8 编码（读出来有乱码），先另存为 UTF-8 再导入`, "error");
+        return;
+      }
+      setImporting({
+        fileName: pick.md.name,
+        content,
+        skipped: pick.skipped,
+        initialGroup: defaultImportGroup({ dropGroup, ...dropCtxRef.current }),
+      });
+    }
+    const drop = (event: DragEvent) => void onDrop(event);
+    window.addEventListener("dragover", onDragOver);
+    window.addEventListener("dragleave", onDragLeave);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragover", onDragOver);
+      window.removeEventListener("dragleave", onDragLeave);
+      window.removeEventListener("drop", drop);
+    };
+  }, []);
+
   useEffect(() => {
     function onBeforeUnload(event: BeforeUnloadEvent): void {
       if (!dirtyRef.current) return;
@@ -1532,6 +1633,7 @@ export default function App() {
         trashActive={screen === "trash"}
         cardsActive={screen === "cards"}
         bookGroup={screen === "book" ? bookGroup : null}
+        dropTarget={dropHint?.group ?? null}
         onOpenBook={(group) => openBook(group)}
         reviewTodo={reviewTodo}
         onOpenCards={() => openCards(false)}
@@ -1983,6 +2085,28 @@ export default function App() {
         onClose={() => setCaptureOpen(false)}
         onCaptured={(result) => void handleCaptured(result)}
       />
+
+      {dropHint ? (
+        <div className="drop-overlay" aria-hidden="true">
+          <div className="drop-overlay__card">
+            <Icon name="download" size={18} />
+            {dropHint.group ? `松开导入到「${dropHint.group}」` : "松开导入为新笔记"}
+            <span className="drop-overlay__sub">只认 .md 文件，一次一个</span>
+          </div>
+        </div>
+      ) : null}
+
+      {importing ? (
+        <ImportDialog
+          fileName={importing.fileName}
+          content={importing.content}
+          skipped={importing.skipped}
+          groups={groups.map((group) => group.name)}
+          initialGroup={importing.initialGroup}
+          onImport={importDropped}
+          onClose={() => setImporting(null)}
+        />
+      ) : null}
 
       {arrange && current ? (
         <ArrangeDialog

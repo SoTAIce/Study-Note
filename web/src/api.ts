@@ -331,6 +331,16 @@ export function createNote(input: CreateInput): Promise<SaveResult & { body: str
   return request("/notes", { method: "POST", body: jsonBody(input) });
 }
 
+/** 拖进来的 .md 导入成新笔记（import-001）；group: null = 不分组 */
+export function importNote(input: {
+  fileName: string;
+  content: string;
+  title: string;
+  group: string | null;
+}): Promise<SaveResult & { body: string }> {
+  return request("/notes/import", { method: "POST", body: jsonBody(input) });
+}
+
 export function saveNote(id: string, input: SaveInput): Promise<SaveResult> {
   return request(`/notes/${encodeURIComponent(id)}`, { method: "PUT", body: jsonBody(input) });
 }

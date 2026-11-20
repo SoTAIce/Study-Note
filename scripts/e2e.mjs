@@ -135,10 +135,11 @@ async function until(check, message, timeout = 8000) {
 
 const pageErrors = [];
 function watch(page) {
-  page.on("pageerror", (e) => pageErrors.push(String(e)));
+  // 每条报错前面带上是哪一步报的：偶发的报错（比如一次 404）能直接定位到步骤
+  page.on("pageerror", (e) => pageErrors.push(`[${currentStep}] ${String(e)}`));
   page.on("console", (m) => {
     // 「Failed to load resource」不带地址：附上控制台给的位置，排查时知道是哪个请求
-    if (m.type() === "error") pageErrors.push(m.location()?.url ? `${m.text()}（${m.location().url}）` : m.text());
+    if (m.type() === "error") pageErrors.push(`[${currentStep}] ${m.location()?.url ? `${m.text()}（${m.location().url}）` : m.text()}`);
   });
 }
 
@@ -1968,6 +1969,103 @@ try {
     expect((await page.getByRole("separator", { name: "调整左右两栏的比例" }).getAttribute("aria-valuenow")) === "45", "比例应还是上次的 45%");
     await page.keyboard.press("Escape");
     await page.locator(".reader").waitFor({ state: "detached" });
+  });
+
+  await step("拖 .md 导入：空白处 → 遮罩 → 框里标题与预览 → 选分组 → 导入并打开；拖到子项目行预选它；拖两个只导第一个；拖 .txt 提示", async () => {
+    /** 在页面里造一次真实的拖放：dragover（看遮罩）→ drop，落点是 selector 元素的中心 */
+    const dragFiles = async (selector, files, { drop = true } = {}) => {
+      await page.evaluate(
+        ({ selector: sel, files: list, drop: doDrop }) => {
+          const target = document.querySelector(sel);
+          if (!target) throw new Error(`找不到 ${sel}`);
+          const rect = target.getBoundingClientRect();
+          const data = new DataTransfer();
+          for (const item of list) data.items.add(new File([item.content], item.name, { type: item.type }));
+          const init = { dataTransfer: data, bubbles: true, cancelable: true, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 };
+          target.dispatchEvent(new DragEvent("dragenter", init));
+          target.dispatchEvent(new DragEvent("dragover", init));
+          window.__lastDrop = () => target.dispatchEvent(new DragEvent("drop", init));
+          if (doDrop) window.__lastDrop();
+        },
+        { selector, files, drop },
+      );
+    };
+    const md = (name, content) => ({ name, content, type: "text/markdown" });
+    const obsidian = "---\ntitle: 拖进来的笔记\naliases:\n  - 别名\ntags:\n  - 读书\ncssclass: wide\n---\n\n# 拖进来的笔记\n\n第一段。![](img/本地图.png)\n";
+
+    // 导入的笔记引用了一张本地图片：打开它时那张图 404 是预期的（框里也提醒了），只放过这一条
+    const errorsBefore = pageErrors.length;
+    const dropExpectedImage404 = () => {
+      const during = pageErrors.splice(errorsBefore);
+      pageErrors.push(...during.filter((e) => !/status of 404 .*\/api\/files\/img\//.test(e)));
+    };
+
+    // 1. 拖到编辑页标题栏（不在任何项目上）：先看遮罩，再松手
+    await page.locator(".note-row").first().waitFor();
+    await page.locator(".editor__title").waitFor();
+    await dragFiles(".editor__title", [md("obsidian 笔记.md", obsidian)], { drop: false });
+    await page.locator(".drop-overlay", { hasText: "松开导入为新笔记" }).waitFor({ timeout: 3000 });
+    await page.screenshot({ path: path.join(artifacts, "31-import-overlay.png") });
+    await page.evaluate(() => window.__lastDrop());
+    const dialog = page.getByRole("dialog", { name: "导入笔记" });
+    await dialog.waitFor({ timeout: 3000 });
+    expect((await page.locator(".drop-overlay").count()) === 0, "松手后遮罩消失");
+    expect((await dialog.getByLabel("导入后的标题").inputValue()) === "拖进来的笔记", "标题取文件头 title");
+    expect((await dialog.getByLabel("正文开头").textContent()).startsWith("# 拖进来的笔记"), "正文开头预览");
+    const kept = await dialog.locator(".import-dialog__kept code").allTextContents();
+    expect(JSON.stringify(kept) === JSON.stringify(["aliases", "tags", "cssclass"]), `保留的键：${JSON.stringify(kept)}`);
+    expect((await dialog.textContent()).includes("本地图片不会一起导入"), "引用了本地图片要提醒");
+    expect((await dialog.getByLabel("导入到的分组").inputValue()) === "", "没在任何分组里：预选不分组");
+    await dialog.getByLabel("导入到的分组").selectOption("冒烟测试");
+    await dialog.getByLabel("导入后的标题").fill("拖进来的笔记（改过）");
+    await page.waitForTimeout(300); // 等弹框淡入结束
+    await page.screenshot({ path: path.join(artifacts, "31-import-dialog.png") });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForTimeout(300);
+    await page.screenshot({ path: path.join(artifacts, "31-import-dialog-dark.png") });
+    await page.emulateMedia({ colorScheme: "light" });
+    await dialog.getByRole("button", { name: "导入", exact: true }).click();
+    await dialog.waitFor({ state: "detached" });
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "拖进来的笔记（改过）", null, { timeout: 5000 });
+    await page.getByText("已导入《拖进来的笔记（改过）》到「冒烟测试」").waitFor({ timeout: 3000 });
+    const imported = (await api("/api/notes")).items.find((n) => n.title === "拖进来的笔记（改过）");
+    const raw = fs.readFileSync(path.join(notesDir, imported.relPath), "utf8");
+    for (const part of ["aliases:\n  - 别名", "tags:\n  - 读书", "cssclass: wide", "group: 冒烟测试", "title: 拖进来的笔记（改过）"]) {
+      expect(raw.includes(part), `导入的文件应有「${part}」：\n${raw}`);
+    }
+    expect(raw.endsWith("\n# 拖进来的笔记\n\n第一段。![](img/本地图.png)\n"), "正文原样");
+
+    dropExpectedImage404();
+
+    // 2. 拖到左栏子项目行：遮罩写这个项目、行高亮、框里预选它；拖两个只导第一个
+    const row = '.group-row--child[data-drop-group="冒烟测试/looprun"]';
+    await page.locator(row).waitFor();
+    await dragFiles(row, [md("第一个.md", "# 第一个\n\n内容一\n"), md("第二个.md", "# 第二个\n")], { drop: false });
+    await page.locator(".drop-overlay", { hasText: "松开导入到「冒烟测试/looprun」" }).waitFor({ timeout: 3000 });
+    expect((await page.locator(`${row}.is-drop-target`).count()) === 1, "指针下的项目行要高亮");
+    await page.evaluate(() => window.__lastDrop());
+    await dialog.waitFor();
+    expect((await dialog.getByLabel("导入到的分组").inputValue()) === "冒烟测试/looprun", "拖到项目上：预选这个项目");
+    expect((await dialog.getByLabel("导入后的标题").inputValue()) === "第一个", "只导第一个");
+    expect((await dialog.textContent()).includes("一次只导一个，这次导入《第一个.md》，另外 1 个没有导入"), "要说明只导了一个");
+    await dialog.getByRole("button", { name: "导入", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector(".editor__title")?.value === "第一个", null, { timeout: 5000 });
+    const first = (await api("/api/notes")).items.find((n) => n.title === "第一个");
+    expect(first && first.group === "冒烟测试/looprun", `应进了子项目：${JSON.stringify(first)}`);
+    expect(!(await api("/api/notes")).items.some((n) => n.title === "第二个"), "第二个不该导入");
+
+    // 3. 拖到正文框上的 .md 也走导入（不当图片拒掉）；取消不留东西
+    const countBefore = (await api("/api/notes")).items.length;
+    await dragFiles(".editor__textarea", [md("拖到正文框.md", "# 拖到正文框\n")]);
+    await dialog.waitFor();
+    await page.keyboard.press("Escape");
+    await dialog.waitFor({ state: "detached" });
+    expect((await api("/api/notes")).items.length === countBefore, "取消后不该多出笔记");
+
+    // 4. 拖 .txt：提示只能导入 .md
+    await dragFiles(".editor__title", [{ name: "随手记.txt", content: "x", type: "text/plain" }]);
+    await page.getByText("只能导入 .md 文件").waitFor({ timeout: 3000 });
+    expect((await page.locator(".drop-overlay").count()) === 0 && (await dialog.count()) === 0, "不弹框、遮罩消失");
   });
 
   await step("外部编辑器写的文件头（块状 tags、aliases、未知键）在应用里编辑保存后原样保留", async () => {

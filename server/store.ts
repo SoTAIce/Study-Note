@@ -16,6 +16,7 @@ import {
   type ParsedNote,
 } from "./parse.ts";
 import { normalizeGroupName, validateGroupName } from "./groups.ts";
+import { prepareImport, type ImportInput } from "./import-md.ts";
 import {
   COALESCE_MS,
   compareNewestFirst,
@@ -227,6 +228,13 @@ export class NoteStore {
     const template = input.template?.trim();
     if (template) meta.template = template;
 
+    const relPath = this.freePath(title, type, at);
+    this.writeAtomic(relPath, serializeNote(meta, body));
+    return this.read(relPath);
+  }
+
+  /** 新文件放哪：`日期-标题.md`（想法放 inbox/），重名就加 -2、-3…，从不覆盖已有文件 */
+  private freePath(title: string, type: NoteType, at: string): string {
     const date = at.slice(0, 10);
     const slug = slugify(title);
     const prefix = type === "idea" ? "inbox/" : "";
@@ -236,7 +244,18 @@ export class NoteStore {
       relPath = `${prefix}${date}-${slug}-${n}.md`;
       n += 1;
     }
-    this.writeAtomic(relPath, serializeNote(meta, body));
+    return relPath;
+  }
+
+  /**
+   * 导入一个外来的 .md（import-001）：文件头按 prepareImport 合并好（未知键原样留着），
+   * 文件名按标题生成、重名加后缀；和 create 一样原子写。
+   */
+  importNote(input: Omit<ImportInput, "now" | "newId">): StoredNote {
+    const at = toLocalIso(this.now());
+    const { meta, text } = prepareImport({ ...input, now: at, newId: () => randomUUID().slice(0, 8) });
+    const relPath = this.freePath(meta.title || "未命名", meta.type, at);
+    this.writeAtomic(relPath, text);
     return this.read(relPath);
   }
 

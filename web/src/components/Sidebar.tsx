@@ -56,6 +56,8 @@ type Props = {
   onOpenCards: () => void;
   /** 正在连读的分组（book-001）；没在连读时为 null */
   bookGroup: string | null;
+  /** 拖 .md 进来时指针下的那个项目（import-001），高亮这一行 */
+  dropTarget?: string | null;
   /** 打开某个分组的连读：点子项目、或父分组列表顶部的「连读」 */
   onOpenBook: (group: string) => void;
   /** 宽屏收起左栏（ui-009，Ctrl+\） */
@@ -115,6 +117,7 @@ export default function Sidebar({
   reviewTodo,
   onOpenCards,
   bookGroup,
+  dropTarget = null,
   onOpenBook,
 }: Props) {
   const confirm = useConfirm();
@@ -199,7 +202,8 @@ export default function Sidebar({
     return (
       <li
         key={group.name}
-        className={`group-row${options.child ? " group-row--child" : ""}${active ? " is-active" : ""}`}
+        className={`group-row${options.child ? " group-row--child" : ""}${active ? " is-active" : ""}${dropTarget !== null && dropTarget.toLowerCase() === group.name.toLowerCase() ? " is-drop-target" : ""}`}
+        data-drop-group={group.name}
       >
         {!options.child && hasSubprojects ? (
           childCount > 0 ? (

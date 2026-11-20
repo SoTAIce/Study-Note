@@ -1,3 +1,4 @@
+import { hasImageItem } from "../lib/md-import.ts";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { ClipboardEvent, DragEvent, KeyboardEvent, RefObject, SyntheticEvent } from "react";
 import { errorMessage, listNotes, uploadAttachment } from "../api.ts";
@@ -286,7 +287,11 @@ export default function MarkdownTextarea({
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
         onDragOver={(event) => {
-          if (!hasFiles(event)) return;
+          // 只接图片；拖的是 .md 等其它文件时让给窗口上的导入（import-001）
+          if (!hasFiles(event) || !hasImageItem(Array.from(event.dataTransfer.items))) {
+            if (dragging) setDragging(false);
+            return;
+          }
           event.preventDefault();
           event.dataTransfer.dropEffect = "copy";
           if (!dragging) setDragging(true);
@@ -296,6 +301,8 @@ export default function MarkdownTextarea({
           setDragging(false);
           const files = Array.from(event.dataTransfer.files);
           if (files.length === 0) return;
+          // 没有图片（比如拖的是 .md）：不拦，交给窗口上的导入
+          if (!files.some((file) => file.type.startsWith("image/"))) return;
           event.preventDefault();
           event.currentTarget.focus();
           takeImages(files, "");
