@@ -728,17 +728,11 @@ try {
 
     // 撤回后的内容要真的存到磁盘
     await page.keyboard.press("Control+s");
-    await page.waitForFunction(
-      async () => {
-        const list = await (await fetch("/api/notes")).json();
-        const item = list.items.find((n) => n.title === "改了分组");
-        if (!item) return false;
-        const note = await (await fetch(`/api/notes/${item.id}`)).json();
-        return note.body === "原文。";
-      },
-      null,
-      { timeout: 8000 },
-    );
+    // test-002：在 Node 这边轮询（waitForFunction 不会等 async 判断函数的结果）
+    await until(async () => {
+      const item = (await api("/api/notes")).items.find((n) => n.title === "改了分组");
+      return Boolean(item) && (await api(`/api/notes/${item.id}`)).body === "原文。";
+    }, "撤回后的内容应存到磁盘（正文应是「原文。」）");
     await page.unroute("**/api/config");
     await page.unroute("**/api/ai/continue");
     await page.unroute("**/api/ai/polish");
@@ -1020,10 +1014,9 @@ try {
 
     // ui-008：别的编辑器直接丢进 inbox/ 的文件（没写 type）出现在收件箱
     fs.writeFileSync(path.join(notesDir, "inbox", "外部丢进来.md"), "# 外部丢进来\n\n随手一记\n");
-    await page.waitForFunction(
-      async () => ((await (await fetch("/api/notes?type=idea")).json()).items ?? []).some((n) => n.title === "外部丢进来"),
-      null,
-      { timeout: 8000, polling: 300 },
+    await until(
+      async () => ((await api("/api/notes?type=idea")).items ?? []).some((n) => n.title === "外部丢进来"),
+      "丢进 inbox/ 的文件应出现在收件箱",
     );
 
     // a11y-001：导出弹窗里 Tab 一直停在弹窗内，关掉后焦点回到导出按钮
