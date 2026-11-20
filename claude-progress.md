@@ -6,7 +6,7 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-20，640 个单元/接口测试 + 四个基准 + E2E 37 步（本机；GitHub Actions 见会话 039）
+- 最近一次全绿：2026-11-20，640 个单元/接口测试 + 四个基准 + E2E 37 步（本机）；GitHub Actions run 44655633952 Ubuntu + Windows 全绿
 - 优先级最高的未完成功能：已批准的都做完了；剩下 srs-002、blog-001 为 blocked（等用户决定），其余见 docs/待实现.md
 - 当前阻塞：无
 
@@ -379,3 +379,4 @@
 - 做法：手册内容只有一份（仓库 `manual/`），只读页面和练习笔记都用它；速查表数据在 `web/src/lib/help.ts`，单测拿 keyboard.ts 逐条核对；后端 `server/help.ts` 复用 import-001 的 `store.importNote` 生成练习笔记。实现细节记在方案第十节。
 - E2E 抓到：删除练习笔记时正开着其中一篇 → 被当成外部删除又「抢救」一份进回收站。改成服务端返回 trashedIds、前端当自删处理，删除前先保存。
 - 验证：`./init.sh` 全绿（640 + 四个基准 + E2E 37 步）。
+- CI：run 44655633952（44d1585）Ubuntu + Windows 全绿，Ubuntu 日志确认 E2E 37 步含帮助一步；44d1585 已并入 main。
