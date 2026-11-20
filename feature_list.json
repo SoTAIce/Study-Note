@@ -672,7 +672,8 @@
       "evidence": [
         "2026-11-20 scripts/e2e.mjs 里剩下的 2 处 async 判断函数的 waitForFunction（「AI 插入 / 整篇替换后 Ctrl+Z」末尾等撤回后的正文落盘、「界面一批」等丢进 inbox/ 的文件出现在收件箱）改成 until() 在 Node 端轮询；当初记的「约 7 处」是把普通多行写法也数进去了，逐个看过其余 waitForFunction 都是同步判断",
         "server/tests/e2e-script.test.ts：扫描 scripts/e2e.mjs，出现 waitForFunction(async …) 就失败，免得这种写法再回来",
-        "LANG=C.UTF-8 ./init.sh 全绿：628 个单元 / 接口测试 + 四个基准 + E2E 36 步（两处改成真的等之后照样通过）"
+        "LANG=C.UTF-8 ./init.sh 全绿：628 个单元 / 接口测试 + 四个基准 + E2E 36 步（两处改成真的等之后照样通过）",
+        "GitHub Actions run 44651628102（提交 2a6b599）Ubuntu + Windows 全绿；已并入 main"
       ],
       "notes": "2026-11-19 写 tpl-002 的 E2E 时发现：Playwright 的 waitForFunction 遇到 async 判断函数，Promise 本身算真值立刻返回（实测设 1.5 秒后才成立的条件，43ms 就返回）。现有约 7 处（如「AI 插入 / 整篇替换后 Ctrl+Z」步骤末尾等磁盘内容）因此是空等，靠后面的步骤碰巧没出错。新写的 tpl-002 步骤已用 until() 轮询。"
     },

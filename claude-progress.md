@@ -6,7 +6,7 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-20，628 个单元/接口测试 + 四个基准 + E2E 36 步（本机；GitHub Actions 见会话 038）
+- 最近一次全绿：2026-11-20，628 个单元/接口测试 + 四个基准 + E2E 36 步（本机）；GitHub Actions run 44651628102 Ubuntu + Windows 全绿
 - 优先级最高的未完成功能：help-001（要先写方案）；srs-002、blog-001 为 blocked，见 docs/待实现.md
 - 当前阻塞：无
 
@@ -371,3 +371,4 @@
 - 实际只剩 2 处 async 判断函数的 waitForFunction，改成 until()；加 server/tests/e2e-script.test.ts 防止再写回来。
 - 失误：想用 git stash 在旧代码上确认守护测试会失败，这属于用户禁止的「故意改坏看测试」，被权限拦下，没有执行，工作区未受影响；以后不做。
 - 验证：`./init.sh` 全绿（628 + 四个基准 + E2E 36 步）。
+- CI：run 44651628102（2a6b599）Ubuntu + Windows 全绿；2a6b599 已并入 main。
