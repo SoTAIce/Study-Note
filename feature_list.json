@@ -995,11 +995,21 @@
       "area": "notes",
       "title": "拖入 .md 文件导入成笔记（拖到项目上就导入到该项目）",
       "user_visible_behavior": "把一个 .md 文件拖进窗口任意处：弹框确认标题和分组后导入成新笔记并打开；拖到左栏某个分组 / 子项目行或连读页上时，框里预选那个项目。文件自带的文件头（tags、aliases、自定义键）保留，缺的补上；一次只导一个。",
-      "status": "not_started",
+      "status": "passing",
       "verification": [
-        "待方案批准"
+        "server/tests/import-md.test.ts、import-api.test.ts、web/src/lib/md-import.test.ts",
+        "scripts/e2e.mjs 拖入导入一步",
+        "./init.sh 全绿 + CI 两平台全绿"
       ],
-      "evidence": [],
+      "evidence": [
+        "2026-11-20 server/import-md.ts：prepareImport 复用 rewriteFrontmatter（未知键原样保留、缺的补上），id 无效或冲突换新，group 按弹框选的来；store.importNote 原子写；POST /api/notes/import（400 / 413）",
+        "前端：窗口级拖放、左栏项目行 / 连读页用 data-drop-group 预选项目、ImportDialog；正文框只接图片，.md 交给导入",
+        "测试：单测 14 条（import-md、md-import）、接口测试 4 条；E2E 新增拖入导入一步",
+        "顺带的最小阻塞修复：自己删除当前笔记后推送回声让应用再读一次（偶发 404）→ selfDeletedRef 忽略自删的 id",
+        "LANG=C.UTF-8 ./init.sh 全绿（627 + 四个基准 + E2E 36 步），另连跑 5 轮 E2E 全过",
+        "GitHub Actions run 44648140521（提交 f3d5023）Ubuntu + Windows 全绿；已并入 main",
+        "2026-11-21 补记：当时 ab9c78f 只改了 claude-progress.md，漏改本条状态，现补上"
+      ],
       "notes": "2026-11-19 用户提出；问答结论：任意处新建 + 拖到项目上导入该项目、每次弹框选分组、文件头保留缺的补上、一次只导一个。方案：docs/superpowers/specs/2026-11-19-md-import-design.md（用户 2026-11-20 批准）。"
     },
     {
