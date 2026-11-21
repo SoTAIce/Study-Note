@@ -385,3 +385,5 @@
 
 - 发现 `feature_list.json` 里 import-001 还是 not_started、没有证据：当时的 ab9c78f 只改了本文件，漏改清单。按会话 037 的记录补成 passing 并写上证据，没有动代码。
 - 用户问「接下来修改什么」：已批准的都做完，等用户从剩余条目里选。
+- 用户选做 sec-001（其余条目「没有实际需求」）。调研：明文密钥三处（顶层 apiKey、providers.items[].apiKey、backup.appPassword），都经 config.ts 读写。问答：加密 + 钥匙放用户目录；只用 Windows。写成方案草案 `2026-11-21-secret-storage-design.md`，等批准。
+- 顺带发现 server/ai.ts 写死了 `D:\work\paper-reader\data\config.json`（借 Key 的本机路径），方案里注明这次不动。

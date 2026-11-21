@@ -714,7 +714,7 @@
         "config 测试：读写不落明文"
       ],
       "evidence": [],
-      "notes": ""
+      "notes": "2026-11-21 用户选做。问答结论：加密后存进 config.json，钥匙文件放 data 外的用户目录（%APPDATA%\\StudyNotes\\secret.key）；只用 Windows。方案：docs/superpowers/specs/2026-11-21-secret-storage-design.md（等批准）。"
     },
     {
       "id": "a11y-001",
