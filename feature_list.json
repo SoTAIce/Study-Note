@@ -709,7 +709,7 @@
       "area": "security",
       "title": "API Key 与 WebDAV 密码不再明文存储（先调研）",
       "user_visible_behavior": "密钥存进系统凭据管理器或至少加密存储，文档写明风险。",
-      "status": "in_progress",
+      "status": "passing",
       "verification": [
         "server/tests/secrets.test.ts、secrets-api.test.ts：读写不落明文、迁移、解不开时的表现",
         "scripts/e2e.mjs 密钥一步",
@@ -721,7 +721,8 @@
         "前端：SecretNotice（钥匙位置说明 + 解不开时的提示）放进 AI 服务商、AI 网关、备份设置",
         "测试：secrets.test.ts 8 条（往返与随机 iv、改过 / 换钥匙 / 钥匙不在都解不开、坏钥匙文件不覆盖、三处密钥原文无明文、密文沿用与段间互不影响、服务商换顺序、迁移幂等且无密钥不生成钥匙、钥匙丢失后当没填且其他段密文保留可找回）；secrets-api.test.ts 2 条（状态接口、经接口保存服务商 Key 和备份密码后文件只有密文、删钥匙后报 2 处解不开）；setup-env.ts 让测试的钥匙目录指到临时目录（跑完确认 ~/.config/study-notes 未生成）",
         "E2E 新增一步：服务商设置里填 Key 保存 → config.json 无明文（含之前经 /api/config 存的 sk-e2e-stub）、有密文、钥匙文件在临时钥匙目录、界面只显示打码值、说明写出钥匙位置；截图 33-secret-notice（浅色 + 深色）看过",
-        "LANG=C.UTF-8 ./init.sh 全绿：650 个单元 / 接口测试 + 四个基准 + E2E 38 步"
+        "LANG=C.UTF-8 ./init.sh 全绿：650 个单元 / 接口测试 + 四个基准 + E2E 38 步",
+        "GitHub Actions run 44871078742（提交 41f1397）Ubuntu + Windows 全绿：两边日志里都有 650 条测试全过和 E2E「密钥加密存放」一步（Windows 上也跑了，确认 %APPDATA% 路径以外的原子改名等在 Windows 正常）；已并入 main"
       ],
       "notes": "2026-11-21 用户选做。问答结论：加密后存进 config.json，钥匙文件放 data 外的用户目录（%APPDATA%\\StudyNotes\\secret.key）；只用 Windows。方案：docs/superpowers/specs/2026-11-21-secret-storage-design.md（用户 2026-11-21 批准）。"
     },

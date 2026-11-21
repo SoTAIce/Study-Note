@@ -6,8 +6,8 @@
 
 - 仓库根目录：`Study-Note/`
 - 标准启动 / 验证：`./init.sh`（依赖 → typecheck → test → build → e2e）
-- 最近一次全绿：2026-11-20，640 个单元/接口测试 + 四个基准 + E2E 37 步（本机）；GitHub Actions run 44655633952 Ubuntu + Windows 全绿
-- 优先级最高的未完成功能：已批准的都做完了；剩下 srs-002、blog-001 为 blocked（等用户决定），其余见 docs/待实现.md
+- 最近一次全绿：2026-11-21，650 个单元/接口测试 + 四个基准 + E2E 38 步（本机）；GitHub Actions run 44871078742 Ubuntu + Windows 全绿
+- 优先级最高的未完成功能：用户 2026-11-21 说其余条目暂无实际需求；srs-002、blog-001 为 blocked（等用户决定），其余见 docs/待实现.md
 - 当前阻塞：无
 
 ## 会话记录
@@ -389,4 +389,5 @@
 - 顺带发现 server/ai.ts 写死了 `D:\work\paper-reader\data\config.json`（借 Key 的本机路径），方案里注明这次不动。
 - 用户批准 sec-001 方案并开工：新增 server/secrets.ts（AES-256-GCM，钥匙在 %APPDATA%\StudyNotes\secret.key），config.ts 读出明文、写盘加密 + 原子写，启动迁移，GET /api/secrets/status，设置页 SecretNotice。实现细节记在方案第八节。
 - 踩坑：新测试的 before/beforeEach 写在文件顶层，`--test-isolation=none` 下会挂到所有文件上，别的文件顶层设的 STUDY_AI_KEY 让 config.json 多出一处密文；改成 describe 里的 hooks。测试的钥匙目录由 server/tests/setup-env.ts 指到临时目录。
-- 验证：`./init.sh` 全绿（650 + 四个基准 + E2E 38 步）；E2E 一次通过，截图浅色 / 深色看过。CI 待跑。
+- 验证：`./init.sh` 全绿（650 + 四个基准 + E2E 38 步）；E2E 一次通过，截图浅色 / 深色看过。
+- CI：run 44871078742（41f1397）Ubuntu + Windows 全绿，两边日志都有 E2E 密钥一步；41f1397 已并入 main。
