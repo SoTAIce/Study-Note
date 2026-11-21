@@ -61,6 +61,8 @@ function freePort() {
 
 // —— 准备临时数据：两篇互相链接的笔记 ——
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "study-e2e-"));
+// 密钥的钥匙目录（sec-001）：指到临时目录，不碰真实的 %APPDATA%\StudyNotes
+const secretDir = fs.mkdtempSync(path.join(os.tmpdir(), "study-e2e-key-"));
 const notesDir = path.join(dataDir, "notes");
 fs.mkdirSync(notesDir, { recursive: true });
 fs.writeFileSync(
@@ -87,7 +89,7 @@ const port = await freePort();
 const base = `http://127.0.0.1:${port}`;
 const server = spawn(process.execPath, [path.join(root, "server", "main.ts")], {
   cwd: root,
-  env: { ...process.env, STUDY_DATA: dataDir, STUDY_PORT: String(port), ...pdfBrowserEnv() },
+  env: { ...process.env, STUDY_DATA: dataDir, STUDY_PORT: String(port), STUDY_SECRET_DIR: secretDir, ...pdfBrowserEnv() },
   stdio: ["ignore", "pipe", "pipe"],
 });
 let serverLog = "";
@@ -2157,6 +2159,35 @@ try {
     expect(trashed === 13, `回收站里应正好有 13 篇练习笔记（每篇一份），实际 ${trashed}`);
   });
 
+  await step("密钥加密存放：服务商设置里填 Key 保存后 config.json 里只有密文，设置里写明钥匙在哪", async () => {
+    await page.locator(".sidebar").getByRole("button", { name: /AI 对话/ }).first().click();
+    await page.getByRole("button", { name: /服务商设置/ }).click();
+    const dialog = page.getByRole("dialog", { name: "AI 服务商设置" });
+    await dialog.waitFor({ timeout: 5000 });
+    const notice = dialog.locator(".secret-notice").first();
+    await notice.waitFor({ timeout: 5000 });
+    expect((await notice.textContent()).includes(path.join(secretDir, "secret.key")), `说明里应写出钥匙位置：${await notice.textContent()}`);
+    const plain = "sk-e2e-provider-plaintext-0042";
+    await dialog.locator('input[type="password"]').first().fill(plain);
+    await dialog.getByRole("button", { name: "保存", exact: true }).click();
+    await dialog.getByText("已保存").waitFor({ timeout: 5000 });
+    const raw = fs.readFileSync(path.join(dataDir, "config.json"), "utf8");
+    expect(!raw.includes(plain), "新填的 Key 不该以明文出现在 config.json");
+    expect(!raw.includes("sk-e2e-stub"), "前面经 /api/config 存的 Key 也不该是明文");
+    expect((raw.match(/enc:v1:/g) ?? []).length >= 2, `config.json 里应有密文：\n${raw}`);
+    expect(fs.existsSync(path.join(secretDir, "secret.key")), "钥匙文件应生成在钥匙目录里");
+    const masked = await dialog.locator('input[type="password"]').first().getAttribute("placeholder");
+    expect(masked && !masked.includes("plaintext"), `界面只显示打码值：${masked}`);
+    expect((await dialog.locator(".secret-notice--warn").count()) === 0, "钥匙在，不该提示解不开");
+    await page.screenshot({ path: path.join(artifacts, "33-secret-notice.png") });
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.screenshot({ path: path.join(artifacts, "33-secret-notice-dark.png") });
+    await page.emulateMedia({ colorScheme: "light" });
+    await dialog.getByRole("button", { name: "关闭" }).click();
+    await page.locator(".sidebar").getByRole("button", { name: /全部笔记/ }).first().click();
+    await page.locator(".note-row").first().waitFor({ timeout: 5000 });
+  });
+
   await step("外部编辑器写的文件头（块状 tags、aliases、未知键）在应用里编辑保存后原样保留", async () => {
     const file = path.join(notesDir, "obsidian-style.md");
     const head = "---\ntitle: Obsidian 写的笔记\naliases:\n  - 黑曜石\ntags:\n  - 读书\n  - 复习\ncssclass: wide\n---\n";
@@ -2251,5 +2282,6 @@ try {
   server.kill();
   if (process.env.E2E_KEEP === "1") console.log(`数据目录保留在：${dataDir}`);
   else fs.rmSync(dataDir, { recursive: true, force: true });
+  fs.rmSync(secretDir, { recursive: true, force: true });
 }
 process.exit(exitCode);

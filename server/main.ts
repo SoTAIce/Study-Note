@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createApp } from "./app.ts";
 import { appStamp } from "./app-stamp.ts";
+import { migrateSecrets } from "./config.ts";
 import { createApi } from "./api.ts";
 import { createBackupService } from "./backup.ts";
 import { openDb } from "./db.ts";
@@ -15,6 +16,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const dataDir = process.env.STUDY_DATA ?? path.join(root, "data");
 const notesRoot = path.join(dataDir, "notes");
 fs.mkdirSync(notesRoot, { recursive: true });
+
+// 密钥加密存放（sec-001）：旧版 config.json 里的明文密钥，启动时改成密文（值不变）
+try {
+  const sealed = migrateSecrets(dataDir);
+  if (sealed > 0) console.log(`已把 ${sealed} 处密钥改成加密存放`);
+} catch (err) {
+  console.warn(`密钥加密失败，暂时保持原样：${(err as Error).message}`);
+}
 
 const store = new NoteStore({
   notesRoot,

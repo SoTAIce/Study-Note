@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useDialogFocus } from "../lib/use-dialog-focus.ts";
 import * as agent from "../agent-api.ts";
+import SecretNotice from "./SecretNotice.tsx";
 
 type Props = {
   open: boolean;
@@ -20,6 +21,7 @@ export default function ProviderSettings({ open, onClose, onSaved }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
+  const [savedCount, setSavedCount] = useState(0);
 
   useEffect(() => {
     if (!open) return;
@@ -74,6 +76,7 @@ export default function ProviderSettings({ open, onClose, onSaved }: Props) {
         return next;
       });
       if (!opts.silent) setNote("已保存");
+      setSavedCount((count) => count + 1);
       onSaved();
     } catch (err) {
       setError((err as Error).message);
@@ -110,6 +113,7 @@ export default function ProviderSettings({ open, onClose, onSaved }: Props) {
         </header>
 
         <div className="agent-settings__body">
+          <SecretNotice refresh={savedCount} />
           {providers?.items.map((item) => (
             <section key={item.id} className="agent-provider">
               <div className="agent-provider__title">

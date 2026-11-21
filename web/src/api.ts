@@ -709,6 +709,13 @@ export function testBackup(): Promise<{ ok: boolean; message?: string }> {
   return request("/backup/test", { method: "POST" });
 }
 
+/** 密钥加密存放（sec-001）：钥匙文件在哪、有几处已保存的密钥解不开 */
+export type SecretStatus = { keyPath: string; keyExists: boolean; unreadable: number };
+
+export function getSecretStatus(): Promise<SecretStatus> {
+  return request("/secrets/status");
+}
+
 export function getBackupConfig(): Promise<BackupConfigView> {
   return request("/backup/config");
 }

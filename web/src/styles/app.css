@@ -3173,6 +3173,25 @@ button.stat-card:hover {
   line-height: 1.6;
   color: var(--text-faint);
 }
+/* 密钥加密存放的说明（sec-001） */
+.secret-notice {
+  margin: 4px 0 10px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+.secret-notice code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+.secret-notice--warn {
+  padding: 6px 8px;
+  color: var(--warn);
+  background: rgba(var(--warn-rgb), 0.08);
+  border: 1px solid rgba(var(--warn-rgb), 0.25);
+  border-radius: 6px;
+}
 .backup-hint--lead {
   padding: 8px 10px;
   color: var(--text-dim);

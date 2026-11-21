@@ -27,7 +27,7 @@ import {
 import { executePlan, undoPlan } from "./agent-exec.ts";
 import { runTurn, type StreamTurn } from "./agent.ts";
 import { createTools } from "./agent-tools.ts";
-import { readSection, patchSection } from "./config.ts";
+import { readSection, patchSection, secretStatus } from "./config.ts";
 import { createGroup, deleteGroup, GroupsHttpError, groupsOverview, renameGroup } from "./groups-api.ts";
 import { groupFilterSql, upsertGroup, validateGroupName } from "./groups.ts";
 import { loadProviders, maskProviders, runtimeOf, saveProviders, streamTurn } from "./providers/index.ts";
@@ -883,6 +883,12 @@ export function createApi(deps: ApiDeps) {
 
       if (route[0] === "reindex" && route.length === 1 && method === "POST") {
         sendJson(res, 200, { ok: true, ...indexer.reindexAll({ force: true }) });
+        return true;
+      }
+
+      // 密钥加密存放（sec-001）：钥匙在哪、有几处已保存的密钥解不开
+      if (route[0] === "secrets" && route[1] === "status" && route.length === 2 && method === "GET") {
+        sendJson(res, 200, secretStatus(dataDir));
         return true;
       }
 

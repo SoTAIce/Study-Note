@@ -12,7 +12,7 @@
     "dev:server": "node --watch server/main.ts",
     "build": "vite build",
     "start": "node server/main.ts",
-    "test": "node --test --test-isolation=none \"server/tests/*.test.ts\" \"web/src/lib/*.test.ts\"",
+    "test": "node --import ./server/tests/setup-env.ts --test --test-isolation=none \"server/tests/*.test.ts\" \"web/src/lib/*.test.ts\"",
     "typecheck": "tsc --noEmit",
     "e2e": "node scripts/e2e.mjs",
     "bench:search": "node scripts/bench-search.ts",

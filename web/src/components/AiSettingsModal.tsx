@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useDialogFocus } from "../lib/use-dialog-focus.ts";
 import * as api from "../api.ts";
 import type { AiConfig } from "../api.ts";
+import SecretNotice from "./SecretNotice.tsx";
 
 type Props = {
   open: boolean;
@@ -117,6 +118,7 @@ export default function AiSettingsModal({ open, config, available, onClose, onSa
             autoComplete="off"
           />
         </label>
+        <SecretNotice />
 
         <div className="settings__row">
           <label className="field">

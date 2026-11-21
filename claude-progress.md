@@ -387,3 +387,6 @@
 - 用户问「接下来修改什么」：已批准的都做完，等用户从剩余条目里选。
 - 用户选做 sec-001（其余条目「没有实际需求」）。调研：明文密钥三处（顶层 apiKey、providers.items[].apiKey、backup.appPassword），都经 config.ts 读写。问答：加密 + 钥匙放用户目录；只用 Windows。写成方案草案 `2026-11-21-secret-storage-design.md`，等批准。
 - 顺带发现 server/ai.ts 写死了 `D:\work\paper-reader\data\config.json`（借 Key 的本机路径），方案里注明这次不动。
+- 用户批准 sec-001 方案并开工：新增 server/secrets.ts（AES-256-GCM，钥匙在 %APPDATA%\StudyNotes\secret.key），config.ts 读出明文、写盘加密 + 原子写，启动迁移，GET /api/secrets/status，设置页 SecretNotice。实现细节记在方案第八节。
+- 踩坑：新测试的 before/beforeEach 写在文件顶层，`--test-isolation=none` 下会挂到所有文件上，别的文件顶层设的 STUDY_AI_KEY 让 config.json 多出一处密文；改成 describe 里的 hooks。测试的钥匙目录由 server/tests/setup-env.ts 指到临时目录。
+- 验证：`./init.sh` 全绿（650 + 四个基准 + E2E 38 步）；E2E 一次通过，截图浅色 / 深色看过。CI 待跑。

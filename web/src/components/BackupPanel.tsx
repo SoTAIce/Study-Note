@@ -3,6 +3,7 @@ import { useDialogFocus } from "../lib/use-dialog-focus.ts";
 import * as api from "../api.ts";
 import type { BackupConfigView, BackupStatus, SnapshotDay, SnapshotFile } from "../api.ts";
 import Preview from "./Preview.tsx";
+import SecretNotice from "./SecretNotice.tsx";
 import { clockTime, dayKey, relativeTime, todayKey } from "../lib/time.ts";
 
 type Props = {
@@ -111,6 +112,7 @@ export default function BackupPanel({ open, onClose, localPaths, openNote, onRes
   const [url, setUrl] = useState(DEFAULT_CONFIG.url);
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
+  const [secretRefresh, setSecretRefresh] = useState(0);
   const [remoteRoot, setRemoteRoot] = useState(DEFAULT_CONFIG.remoteRoot);
   const [intervalMinutes, setIntervalMinutes] = useState(DEFAULT_CONFIG.intervalMinutes);
   const [keepDays, setKeepDays] = useState(DEFAULT_CONFIG.keepDays);
@@ -306,7 +308,9 @@ export default function BackupPanel({ open, onClose, localPaths, openNote, onRes
     setConfigError(null);
     setTestMessage(null);
     try {
-      return await api.saveBackupConfig(patch);
+      const saved = await api.saveBackupConfig(patch);
+      setSecretRefresh((count) => count + 1);
+      return saved;
     } catch (err) {
       setConfigError(api.errorMessage(err));
       return null;
@@ -567,6 +571,7 @@ export default function BackupPanel({ open, onClose, localPaths, openNote, onRes
             autoComplete="new-password"
           />
         </label>
+        <SecretNotice refresh={secretRefresh} />
 
         <label className="field">
           <span>远端根目录</span>

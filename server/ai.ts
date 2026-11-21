@@ -255,7 +255,8 @@ export function loadAiConfig(dataDir: string, env: AiEnv = readAiEnv()): AiConfi
   const file = configFile(dataDir);
   if (fs.existsSync(file)) {
     try {
-      const raw = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<AiConfig>;
+      // 经 readConfig 读：密钥已解密（sec-001）；文件损坏时 readConfig 给空对象，这里也就是「没配置」
+      const raw = readConfig(dataDir) as Partial<AiConfig>;
       const apiKey = env.apiKey ?? raw.apiKey ?? "";
       if (!apiKey) return null;
       return {

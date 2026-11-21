@@ -33,7 +33,8 @@ data/notes/*.md  ──(唯一真源)──►  store.ts  ──►  indexer.ts 
 | `cards.ts` / `fsrs.ts` / `review.ts` / `review-api.ts` | 知识简卡（srs-001）：从正文解析 `> [!card] 标题` 和 `概念 :: 解释`（索引进 `cards` 表）；FSRS 调度；`data/review/log.jsonl` 只追加的复习日志（打分 / 撤回 / 别名），启动重放算状态；卡片墙、今日队列、打分接口 | 复习状态只在日志里，SQLite 只放可重建的卡片；卡片 id 不写进笔记，改标题靠别名接上记录 |
 | `attachments.ts` | 图片附件：按文件头认类型（PNG / JPEG / GIF / WebP）、起名（带内容指纹，去重）、原子写到 `attachments/`；读文件接口的白名单 | 不收 SVG；读文件只限库内图片、隐藏目录不给，越界一律 404 |
 | `app-stamp.ts` | 代码指纹（repo-003）：`appStamp` 对 server/、web/、构建配置和依赖清单（不含测试和文档）做内容哈希，服务启动时算一次放进 `/api/health` 和推送通道的 hello；`depsStamp` 只看依赖清单；`preparePlan` 决定要不要重装依赖 / 重建前端。`scripts/prestart.ts`（`bin/start.ps1` 调用）照它安装 / 构建并写 `node_modules/.study-deps-stamp`、`dist/.study-build-stamp` | 只用 Node 内置模块（依赖没装时也要能跑）；Windows 上的完整流程由 CI 跑 `scripts/test-start.ps1` 验证 |
-| `config.ts` / `net.ts` / `sse.ts` | 配置读写、网络错误翻译、SSE | |
+| `config.ts` / `net.ts` / `sse.ts` | 配置读写、网络错误翻译、SSE | `config.ts` 读出来是明文、写盘前加密（sec-001），原子写；只替换传进来的顶层段，其余段按文件原文保留；`migrateSecrets` 启动时把明文改成密文，`secretStatus` 给 `GET /api/secrets/status` |
+| `secrets.ts` | 密钥加密存放（sec-001）：任何层级叫 `apiKey` / `appPassword` 的字段存成 `enc:v1:<钥匙指纹>:<iv>:<tag>:<密文>`（AES-256-GCM，`node:crypto`）；钥匙文件在 `%APPDATA%\StudyNotes\secret.key`（其他系统 `~/.config/study-notes/`，`STUDY_SECRET_DIR` 可改），第一次加密时才生成 | 钥匙每次现读，不缓存；解不开（钥匙不在 / 不对 / 密文被改）当空串，不会把密文当 Key 发出去；明文没变就沿用原密文；测试和 E2E 一律把钥匙目录指到临时目录（`server/tests/setup-env.ts`） |
 | `events.ts` | 笔记变化推送（`GET /api/events`）的合并：300ms 一批、同一路径留最后一次、超过 100 条改发 resync | 事件由 `Indexer.onChange` 发出（外部编辑和应用自己的写入都走这里），只说哪篇变了，不带正文 |
 
 ## 测试
